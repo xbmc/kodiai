@@ -346,8 +346,11 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("routeMentionWriteOutputIfEnabled({");
     expect(source).not.toContain("publishMentionExecutionFallbacks({");
     expect(source).not.toContain("publishCombinedReviewAndFormatMentionFormatterResult({");
+    expect(source).not.toContain("getOctokit: () => githubApp.getInstallationOctokit(event.installationId),\n          canPublishExplicitReviewOutput,");
+    expect(source).toContain("buildMentionPostExecutorPublicationAdapters");
     expect(source).toContain("publishMentionPostExecutorOutputs");
     expect(source).toContain("./mention-post-executor-publication.ts");
+    expect(publicationSource).toContain("export function buildMentionPostExecutorPublicationAdapters");
     expect(publicationSource).toContain("export async function publishMentionPostExecutorOutputs");
     expect(publicationSource).toContain("publishExplicitMentionReviewIfEligible({");
     expect(publicationSource).toContain("publishMentionExecutionFallbacks({");

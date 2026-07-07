@@ -1,5 +1,5 @@
+import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
-import type { GitHubApp } from "../auth/github-app.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import type { Workspace } from "../jobs/types.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
@@ -28,6 +28,15 @@ export type MentionPostExecutorPublicationResult = {
   writeOutputHandled: boolean;
 };
 
+export function buildMentionPostExecutorPublicationAdapters(params: {
+  installationId: number;
+  getInstallationOctokit: (installationId: number) => Promise<Octokit>;
+}): Pick<Parameters<typeof publishMentionPostExecutorOutputs>[0], "getOctokit"> {
+  return {
+    getOctokit: () => params.getInstallationOctokit(params.installationId),
+  };
+}
+
 export async function publishMentionPostExecutorOutputs(params: {
   executorDispatch: MentionExecutorDispatchPhaseResult;
   explicitReviewRequest: boolean;
@@ -42,7 +51,7 @@ export async function publishMentionPostExecutorOutputs(params: {
   appSlug: string;
   autoApprove: boolean;
   explicitReviewPromptFileCount: number | undefined;
-  getOctokit: () => ReturnType<GitHubApp["getInstallationOctokit"]>;
+  getOctokit: () => Promise<Octokit>;
   canPublishExplicitReviewOutput: Parameters<typeof publishExplicitMentionReviewIfEligible>[0]["canPublishExplicitReviewOutput"];
   setReviewWorkPhase: Parameters<typeof publishExplicitMentionReviewIfEligible>[0]["setReviewWorkPhase"];
   postMentionError: Parameters<typeof publishExplicitMentionReviewIfEligible>[0]["postMentionError"];

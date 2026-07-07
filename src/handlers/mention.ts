@@ -35,7 +35,10 @@ import { runMentionPrePromptGates } from "./mention-pre-prompt-gates.ts";
 import { prepareMentionPromptInputs } from "./mention-prompt-preparation.ts";
 import { runMentionExecutorDispatchPhase } from "./mention-executor-dispatch-phase.ts";
 import { prepareMentionRequestExecutionContext } from "./mention-request-preparation.ts";
-import { publishMentionPostExecutorOutputs } from "./mention-post-executor-publication.ts";
+import {
+  buildMentionPostExecutorPublicationAdapters,
+  publishMentionPostExecutorOutputs,
+} from "./mention-post-executor-publication.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -426,6 +429,10 @@ export function createMentionHandler(deps: {
         });
         reviewOutputKey = mentionExecutorDispatch.reviewOutputKey;
 
+        const postExecutorPublicationAdapters = buildMentionPostExecutorPublicationAdapters({
+          installationId: event.installationId,
+          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+        });
         const postExecutorPublication = await publishMentionPostExecutorOutputs({
           executorDispatch: mentionExecutorDispatch,
           explicitReviewRequest,
@@ -440,7 +447,7 @@ export function createMentionHandler(deps: {
           appSlug,
           autoApprove: config.review.autoApprove,
           explicitReviewPromptFileCount,
-          getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+          getOctokit: postExecutorPublicationAdapters.getOctokit,
           canPublishExplicitReviewOutput,
           setReviewWorkPhase,
           postMentionError,
