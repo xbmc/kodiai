@@ -1,8 +1,3 @@
-import type {
-  IssueCommentCreatedEvent,
-  PullRequestReviewCommentCreatedEvent,
-  PullRequestReviewSubmittedEvent,
-} from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
@@ -21,13 +16,7 @@ import {
   buildReviewFamilyKey,
   createReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
-import {
-  type MentionEvent,
-  normalizeIssueComment,
-  normalizeReviewComment,
-  normalizeReviewBody,
-  stripMention,
-} from "./mention-types.ts";
+import { stripMention, type MentionEvent } from "./mention-types.ts";
 import {
   detectImplicitIssueIntent,
   detectImplicitPrPatchIntent,
@@ -74,7 +63,6 @@ import {
 import {
   type ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
-import { detectFormatterSuggestionRequest } from "./formatter-suggestion-intent.ts";
 import { isMentionAuthorAllowed } from "./mention-allowed-users.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
@@ -104,7 +92,6 @@ import {
 } from "./mention-result-fallback-publication.ts";
 import { publishExplicitMentionReviewResult } from "./mention-explicit-review-publication.ts";
 import {
-  buildMentionQueueKey,
   findLatestReviewPredecessor,
   prepareMentionCheckoutAndLoadConfig,
 } from "./mention-workspace.ts";
@@ -143,6 +130,7 @@ import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatc
 import { resolveExplicitMentionReviewPublishDecision } from "./mention-explicit-review-publish-decision.ts";
 import { resolveMentionRequestContext } from "./mention-request-context.ts";
 import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
+import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -247,70 +235,27 @@ export function createMentionHandler(deps: {
 
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
-    const possibleHandles = [appSlug, "kodai", "claude"];
-
-    const action = (event.payload as Record<string, unknown>).action as string | undefined;
-
-    // Normalize payload based on event type
-    let mention: MentionEvent;
-
-    if (event.name === "issue_comment") {
-      if ((event.payload as Record<string, unknown>).action !== "created") return;
-      mention = normalizeIssueComment(event.payload as unknown as IssueCommentCreatedEvent);
-    } else if (event.name === "pull_request_review_comment") {
-      if ((event.payload as Record<string, unknown>).action !== "created") return;
-      mention = normalizeReviewComment(
-        event.payload as unknown as PullRequestReviewCommentCreatedEvent,
-      );
-    } else if (event.name === "pull_request_review") {
-      if ((event.payload as Record<string, unknown>).action !== "submitted") return;
-      const payload = event.payload as unknown as PullRequestReviewSubmittedEvent;
-      // Review body can be null (e.g. approval with no comment)
-      if (!payload.review.body) return;
-      mention = normalizeReviewBody(payload);
-    } else {
-      return;
-    }
-
-    // Fast filter: ignore if neither @appSlug nor @claude appear.
-    // NOTE: Use a simple substring check here to avoid regex edge cases.
-    // We still do the authoritative accepted-handles check inside the job after loading config.
-    const bodyLower = mention.commentBody.toLowerCase();
-    const appHandle = `@${appSlug.toLowerCase()}`;
-    if (!bodyLower.includes(appHandle) && !bodyLower.includes("@kodai") && !bodyLower.includes("@claude")) return;
-
-    const normalizedCommentAuthor = mention.commentAuthor.toLowerCase();
-    if (
-      normalizedCommentAuthor === appSlug.toLowerCase() ||
-      normalizedCommentAuthor.endsWith("[bot]")
-    ) {
-      logger.debug(
-        {
-          owner: mention.owner,
-          repo: mention.repo,
-          commentAuthor: mention.commentAuthor,
-          issueNumber: mention.issueNumber,
-          prNumber: mention.prNumber,
-        },
-        "Skipping mention from self (comment-author defense)",
-      );
+    const triggerContext = resolveMentionTriggerContext({ event, appSlug });
+    if (triggerContext.action === "skip") {
+      if (triggerContext.reason === "self-authored") {
+        logger.debug(
+          triggerContext.logContext,
+          "Skipping mention from self (comment-author defense)",
+        );
+      }
       return;
     }
 
     // No tracking comment. Tracking is via eyes reaction only.
     // The response will be posted as a new comment.
-
-    const provisionalUserQuestion = stripMention(mention.commentBody, possibleHandles);
-    const provisionalFormatterSuggestionRequest = detectFormatterSuggestionRequest(provisionalUserQuestion);
-    const reviewPrNumber = mention.prNumber;
-    const isExplicitReviewRequest =
-      reviewPrNumber !== undefined &&
-      (isReviewRequest(provisionalUserQuestion) || provisionalFormatterSuggestionRequest?.mode === "review-and-format");
-    const mentionQueueKey = buildMentionQueueKey(
-      mention.owner,
-      mention.repo,
-      reviewPrNumber ?? mention.issueNumber,
-    );
+    const {
+      mention,
+      possibleHandles,
+      eventAction: action,
+      reviewPrNumber,
+      isExplicitReviewRequest,
+      mentionQueueKey,
+    } = triggerContext;
     const queuedReviewWorkAttempt = reviewPrNumber !== undefined && isExplicitReviewRequest
       ? reviewWorkCoordinator.claim({
           familyKey: buildReviewFamilyKey(mention.owner, mention.repo, reviewPrNumber),

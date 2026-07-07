@@ -135,6 +135,19 @@ describe("mention handler structure", () => {
     expect(requestContextSource).toContain("mentionBodyMatchesAcceptedHandles");
   });
 
+  test("keeps pre-queue mention trigger normalization out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("let mention: MentionEvent;");
+    expect(source).not.toContain("normalizeIssueComment(event.payload");
+    expect(source).not.toContain("normalizeReviewComment(");
+    expect(source).not.toContain("normalizeReviewBody(payload)");
+    expect(source).not.toContain("const provisionalUserQuestion = stripMention");
+    expect(source).not.toContain("const provisionalFormatterSuggestionRequest = detectFormatterSuggestionRequest");
+    expect(source).toContain("resolveMentionTriggerContext");
+    expect(source).toContain("./mention-trigger-context.ts");
+  });
+
   test("keeps post-config mention request context parsing out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
