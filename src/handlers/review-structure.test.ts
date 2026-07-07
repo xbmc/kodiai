@@ -553,6 +553,7 @@ describe("review handler structure", () => {
 
   test("keeps review runtime planning out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const planningSource = readFileSync(new URL("./review-planning-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("let resolvedSeverityMinLevel = config.review.severity.minLevel");
     expect(source).not.toContain("const selectedPreset = PROFILE_PRESETS[profileSelection.selectedProfile]");
@@ -560,31 +561,57 @@ describe("review handler structure", () => {
     expect(source).not.toContain("const reviewRouting = resolveReviewTaskRouting({\n          changedFileCount: changedFiles.length");
     expect(source).not.toContain("profileSelection.selectedProfile = \"minimal\"");
     expect(source).not.toContain("const reviewBoundedness = resolveReviewBoundedness({");
-    expect(source).toContain("buildReviewRuntimePlan");
-    expect(source).toContain("./review-runtime-plan.ts");
+    expect(source).toContain("resolveReviewPlanningContext");
+    expect(planningSource).toContain("buildReviewRuntimePlan");
+    expect(planningSource).toContain("./review-runtime-plan.ts");
   });
 
   test("keeps review plan publication context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const planningSource = readFileSync(new URL("./review-planning-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const reviewPlanLinesChangedSource =");
     expect(source).not.toContain("const reviewPlanGraphValidation = resolveGraphValidationPlanStatus({");
     expect(source).not.toContain("const reviewPlanPublication = buildReviewPlanPublicationContext({");
     expect(source).not.toContain("candidateFinding: {\n              mode: \"preferred\"");
-    expect(source).toContain("buildReviewPlanPublication");
-    expect(source).toContain("./review-plan-publication-context.ts");
+    expect(source).toContain("resolveReviewPlanningContext");
+    expect(planningSource).toContain("buildReviewPlanPublication");
+    expect(planningSource).toContain("./review-plan-publication-context.ts");
   });
 
   test("keeps review plan publication logging policy out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const planningSource = readFileSync(new URL("./review-planning-context.ts", import.meta.url), "utf8");
     const planPublicationSource = readFileSync(new URL("./review-plan-publication-context.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Review plan ready");
     expect(source).not.toContain("Review plan builder failed; continuing with degraded plan metadata");
     expect(source).not.toContain("serializeReviewPlanBuilderError(reviewPlanPublication.error)");
-    expect(source).toContain("logReviewPlanPublication");
+    expect(source).toContain("resolveReviewPlanningContext");
+    expect(planningSource).toContain("logReviewPlanPublication");
     expect(planPublicationSource).toContain("logReviewPlanPublication");
     expect(planPublicationSource).toContain("serializeReviewPlanBuilderError");
+  });
+
+  test("keeps review planning orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const planningSource = readFileSync(new URL("./review-planning-context.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("buildReviewRuntimePlan({");
+    expect(source).not.toContain("buildReviewPlanPublication({");
+    expect(source).not.toContain("logReviewPlanPublication({");
+    expect(source).not.toContain("toReviewPlanConfigSnapshot(reviewPlan)");
+    expect(source).not.toContain("applyReviewPrIntentAreas({");
+    expect(source).not.toContain("logReviewDiffAnalysisCompleted({");
+    expect(source).toContain("resolveReviewPlanningContext");
+    expect(source).toContain("./review-planning-context.ts");
+    expect(planningSource).toContain("export function resolveReviewPlanningContext");
+    expect(planningSource).toContain("buildReviewRuntimePlan({");
+    expect(planningSource).toContain("buildReviewPlanPublication({");
+    expect(planningSource).toContain("logReviewPlanPublication({");
+    expect(planningSource).toContain("toReviewPlanConfigSnapshot(reviewPlan)");
+    expect(planningSource).toContain("applyReviewPrIntentAreas({");
+    expect(planningSource).toContain("logReviewDiffAnalysisCompleted({");
   });
 
   test("keeps executor result state projection out of the monster handler", () => {
@@ -928,11 +955,13 @@ describe("review handler structure", () => {
 
   test("keeps diff-analysis completion logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const planningSource = readFileSync(new URL("./review-planning-context.ts", import.meta.url), "utf8");
     const logSource = readFileSync(new URL("./review-diff-analysis-completion-log.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Diff analysis and context enrichment complete");
-    expect(source).toContain("logReviewDiffAnalysisCompleted");
-    expect(source).toContain("./review-diff-analysis-completion-log.ts");
+    expect(source).toContain("resolveReviewPlanningContext");
+    expect(planningSource).toContain("logReviewDiffAnalysisCompleted");
+    expect(planningSource).toContain("./review-diff-analysis-completion-log.ts");
     expect(logSource).toContain("Diff analysis and context enrichment complete");
     expect(logSource).toContain("diffCollectionAttempts");
   });
@@ -959,13 +988,15 @@ describe("review handler structure", () => {
 
   test("keeps PR intent focus/style area application out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const planningSource = readFileSync(new URL("./review-planning-context.ts", import.meta.url), "utf8");
     const intentAreasSource = readFileSync(new URL("./review-pr-intent-areas.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("parsedIntent.styleOk && !resolvedIgnoredAreas.includes(\"style\")");
     expect(source).not.toContain("for (const area of parsedIntent.focusAreas as ReviewArea[])");
     expect(source).not.toContain("resolvedFocusAreas.push(area)");
-    expect(source).toContain("applyReviewPrIntentAreas");
-    expect(source).toContain("./review-pr-intent-areas.ts");
+    expect(source).toContain("resolveReviewPlanningContext");
+    expect(planningSource).toContain("applyReviewPrIntentAreas");
+    expect(planningSource).toContain("./review-pr-intent-areas.ts");
     expect(intentAreasSource).toContain("styleOk");
     expect(intentAreasSource).toContain("focusAreas");
   });

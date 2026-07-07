@@ -76,7 +76,6 @@ import {
 export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
 import {
   buildRepoDoctrineLogFields,
-  toReviewPlanConfigSnapshot,
 } from "../review-orchestration/review-plan-doctrine-log.ts";
 import {
   toProductionLogBudgetReasoning,
@@ -108,7 +107,6 @@ import {
 import { evaluateReviewOutputIdempotencyGate } from "./review-idempotency-gate.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
 import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
-import { buildReviewRuntimePlan } from "./review-runtime-plan.ts";
 import { buildReviewPromptEnrichment } from "./review-prompt-enrichment.ts";
 import { buildInitialReviewPromptContext } from "./review-prompt-build-context.ts";
 import {
@@ -136,10 +134,6 @@ import {
 import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 import { resolveReviewDiffContext } from "./review-diff-context.ts";
-import {
-  buildReviewPlanPublication,
-  logReviewPlanPublication,
-} from "./review-plan-publication-context.ts";
 import { projectReviewExecutorState } from "./review-executor-state.ts";
 import { buildReviewExecutionContext, buildReviewRetryExecutionContext } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
@@ -188,13 +182,12 @@ import {
 } from "./review-job-context.ts";
 import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
 import { buildReviewReducerInput } from "./review-reducer-input.ts";
-import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
-import { logReviewDiffAnalysisCompleted } from "./review-diff-analysis-completion-log.ts";
 import { resolveReviewChangedFileContext } from "./review-changed-file-context.ts";
+import { resolveReviewPlanningContext } from "./review-planning-context.ts";
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
 import { recordReviewTimeoutRetryPreEnqueueSideEffects } from "./review-timeout-retry-pre-enqueue.ts";
@@ -688,33 +681,29 @@ export function createReviewHandler(deps: {
         const unifiedResultsForPrompt = reviewRetrievalContext.unifiedResults;
         const contextWindowForPrompt = reviewRetrievalContext.contextWindow;
 
-        const runtimePlan = buildReviewRuntimePlan({
+        const planningContext = resolveReviewPlanningContext({
           parsedIntent: {
             profileOverride: parsedIntent.profileOverride,
+            styleOk: parsedIntent.styleOk,
+            focusAreas: parsedIntent.focusAreas,
           },
-          reviewConfig: {
-            profile: config.review.profile ?? null,
-            severityMinLevel: config.review.severity.minLevel,
-            maxComments: config.review.maxComments,
-            focusAreas: config.review.focusAreas,
-            ignoredAreas: config.review.ignoredAreas,
-          },
-          timeoutConfig: {
-            timeoutSeconds: config.timeoutSeconds,
-            dynamicScaling: config.timeout.dynamicScaling !== false,
-            autoReduceScope: config.timeout.autoReduceScope !== false,
-          },
-          baseMaxTurns: config.maxTurns,
+          reviewConfig: config,
           prLinesChanged: (pr.additions ?? 0) + (pr.deletions ?? 0),
           changedFiles,
-          diffMetrics: {
-            totalLinesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
-            totalLinesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
-            filesByLanguage: diffAnalysis?.filesByLanguage ?? {},
-            isLargePR: diffAnalysis?.isLargePR ?? false,
-          },
+          diffAnalysis,
           tieredFiles,
           promptFiles,
+          reviewPlanBuilder,
+          retrievalContextAvailable: Boolean(retrievalCtx),
+          matchedPathInstructionCount: matchedPathInstructions.length,
+          repoDoctrineProjection,
+          repoDoctrineReviewSurface,
+          graphQueryAvailable: Boolean(reviewGraphQuery),
+          graphQueryBypassedForTrivialChange,
+          graphBlastRadius,
+          diffCollectionStrategy: diffContext.strategy,
+          mergeBaseRecovered: diffContext.mergeBaseRecovered,
+          diffCollectionAttempts: diffContext.deepenAttempts,
           logger,
           baseLog,
         });
@@ -735,65 +724,12 @@ export function createReviewHandler(deps: {
           reviewMaxTurnsOverride,
           checkpointEnabled,
           reviewBoundedness,
-        } = runtimePlan;
-        tieredFiles = runtimePlan.tieredFiles;
-        promptFiles = runtimePlan.promptFiles;
-
-        const reviewPlanPublication = buildReviewPlanPublication({
-          builder: reviewPlanBuilder,
-          reviewRouting,
-          changedFileCount: changedFiles.length,
-          reviewRoutingLinesChanged,
-          diffAnalysisLinesChanged,
-          prApiLinesChanged,
-          timeoutSeconds: config.timeoutSeconds,
-          appliedTimeoutSeconds: appliedTimeoutBudget?.totalTimeoutSeconds,
-          maxTurns: config.maxTurns,
-          reviewMaxTurnsOverride,
-          retrievalContextAvailable: Boolean(retrievalCtx),
-          matchedPathInstructionCount: matchedPathInstructions.length,
-          repoDoctrineEnabled: repoDoctrineProjection.enabled,
-          repoDoctrineReviewSurface,
-          reviewBoundednessAvailable: Boolean(reviewBoundedness),
-          graphValidationConfigEnabled: config.review.graphValidation.enabled,
-          graphQueryAvailable: Boolean(reviewGraphQuery),
-          graphQueryBypassedForTrivialChange,
-          graphBlastRadiusAvailable: Boolean(graphBlastRadius),
-        });
-        const {
-          plan: reviewPlan,
-          detailsSummary: reviewPlanDetailsSummary,
-        } = reviewPlanPublication;
-        logReviewPlanPublication({
-          logger,
-          baseLog,
-          publication: reviewPlanPublication,
-          reviewRouting,
-          reviewBoundedness,
-          repoDoctrineProjection,
-        });
-        const reviewPlanConfigSnapshot = toReviewPlanConfigSnapshot(reviewPlan);
-
-        applyReviewPrIntentAreas({
-          styleOk: parsedIntent.styleOk,
-          focusAreas: parsedIntent.focusAreas,
-          resolvedFocusAreas,
-          resolvedIgnoredAreas,
-        });
-
-        logReviewDiffAnalysisCompleted({
-          logger,
-          baseLog,
-          totalFiles: diffAnalysis.metrics.totalFiles,
-          isLargePR: diffAnalysis.isLargePR,
-          riskSignals: diffAnalysis.riskSignals.length,
-          matchedInstructions: matchedPathInstructions.length,
-          detectedLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}).length,
-          profile: config.review.profile ?? null,
-          diffCollectionStrategy: diffContext.strategy,
-          mergeBaseRecovered: diffContext.mergeBaseRecovered,
-          diffCollectionAttempts: diffContext.deepenAttempts,
-        });
+          reviewPlan,
+          reviewPlanDetailsSummary,
+          reviewPlanConfigSnapshot,
+        } = planningContext;
+        tieredFiles = planningContext.tieredFiles;
+        promptFiles = planningContext.promptFiles;
 
         // Extract PR labels for intent scoping (FORMAT-07)
         const prLabels = (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [];
