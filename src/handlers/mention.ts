@@ -34,22 +34,7 @@ import {
   createMentionReviewWorkRuntime,
   usesCanonicalExplicitReviewHandle,
 } from "./mention-review-work-runtime.ts";
-import { buildMentionTriageContext } from "./mention-triage-context.ts";
-import {
-  createMentionFindingLookup,
-  hydrateMentionFindingContext,
-} from "./mention-finding-context.ts";
-import { buildMentionAgentInstructions } from "./mention-agent-instructions.ts";
-import { appendMentionIssueCodePointers } from "./mention-code-pointers.ts";
-import { buildMentionDerivedContext } from "./mention-derived-context.ts";
-import {
-  buildMentionRetrievalContextForPrompt,
-  type MentionRetrievalContext,
-} from "./mention-retrieval-context.ts";
-import {
-  resolveMentionPrDiffContext,
-  type MentionPrDiffContext,
-} from "./mention-pr-diff-context.ts";
+import { createMentionFindingLookup } from "./mention-finding-context.ts";
 import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatch.ts";
 import { publishExplicitMentionReviewIfEligible } from "./mention-explicit-review-publication-orchestration.ts";
 import { publishMentionExecutionFallbacks } from "./mention-execution-fallbacks.ts";
@@ -61,7 +46,6 @@ import { routeMentionWriteOutputIfEnabled } from "./mention-write-output-routing
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
 import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
 import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
-import { resolveMentionPromptContextRouting } from "./mention-prompt-context-routing.ts";
 import { claimMentionReviewWorkAttempt } from "./mention-review-work-claim.ts";
 import { createMentionHandlerRuntime, type MentionDerivedContextCacheOptions } from "./mention-handler-runtime.ts";
 import { cleanupMentionExecutionResources } from "./mention-execution-cleanup.ts";
@@ -70,6 +54,7 @@ import { resolveMentionConfigRequestGate } from "./mention-config-request-gate.t
 import { handleMentionPostExecution } from "./mention-post-execution.ts";
 import { createMentionFormatterRuntime } from "./mention-formatter-runtime.ts";
 import { runMentionPrePromptGates } from "./mention-pre-prompt-gates.ts";
+import { prepareMentionPromptInputs } from "./mention-prompt-preparation.ts";
 
 const FORMATTER_REVIEW_OUTPUT_ACTION = "mention-format-suggestions";
 
@@ -368,113 +353,38 @@ export function createMentionHandler(deps: {
         if (prePromptGates.action === "stop") return;
 
         const {
-          allowIssueCodePointers,
-          allowPrDiffContext,
-          includeIssueCorpus,
-        } = resolveMentionPromptContextRouting({
-          isIssueThreadComment,
-          prNumber: mention.prNumber,
-          writeRequest: writeIntent.request,
-        });
-        let {
           mentionContext,
           mentionContextSectionMetrics,
-          mentionAdmissionPolicy,
           mentionDerivedContextCacheStatus,
           mentionDerivedContextCacheReason,
-        } = await buildMentionDerivedContext({
-          octokit,
-          mention,
-          explicitReviewRequest,
-          mentionAdmission: config.mention.admission,
-          maxThreadChars: config.mention.conversation.contextBudgetChars,
-          findingLookup,
-          cache: mentionDerivedContextCache,
-          getCacheErrorCount: getMentionDerivedContextCacheErrorCount,
-          logger,
-        });
-
-        ({
-          mentionContext,
-          mentionContextSectionMetrics,
-        } = await appendMentionIssueCodePointers({
-          enabled: allowIssueCodePointers,
-          mentionContext,
-          mentionContextSectionMetrics,
-          workspaceDir: workspace.dir,
-          question: writeIntent.request,
-          logger,
-          logContext: { surface: mention.surface, issueNumber: mention.issueNumber },
-        }));
-
-        const triageContext = await buildMentionTriageContext({
-          enabled: config.triage.enabled,
-          isIssueThreadComment,
-          owner: mention.owner,
-          repo: mention.repo,
-          issueNumber: mention.issueNumber,
-          issueBody: mention.issueBody,
-          workspaceDir: workspace.dir,
-          cooldownMinutes: config.triage.cooldownMinutes,
-          labelAllowlist: config.triage.labelAllowlist,
-          cooldownStore: triageCooldownStore,
-          logger,
-        });
-
-        const findingContext = await hydrateMentionFindingContext({
-          owner: mention.owner,
-          repo: mention.repo,
-          inReplyToId: mention.inReplyToId,
-          findingLookup,
-          logger,
-        });
-
-        let retrievalContext: MentionRetrievalContext | undefined;
-        let unifiedResultsForPrompt: import("../knowledge/cross-corpus-rrf.ts").UnifiedRetrievalChunk[] = [];
-        let contextWindowForPrompt: string | undefined;
-        let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
-        let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
-        ({
           retrievalContext,
           unifiedResultsForPrompt,
           contextWindowForPrompt,
           reviewPrecedentsForPrompt,
           wikiKnowledgeForPrompt,
-        } = await buildMentionRetrievalContextForPrompt({
+          planOnlyInstructions,
+          writeInstructions,
+          triageContext,
+          findingContext,
+          prDiffContext,
+        } = await prepareMentionPromptInputs({
+          octokit,
+          mention,
+          explicitReviewRequest,
+          config,
+          findingLookup,
+          mentionDerivedContextCache,
+          getMentionDerivedContextCacheErrorCount,
           retriever,
-          retrievalEnabled: config.knowledge?.retrieval?.enabled === true,
-          topK: config.knowledge?.retrieval?.topK,
-          telemetryEnabled: config.telemetry.enabled,
           telemetryStore,
           deliveryId: event.id,
-          owner: mention.owner,
-          repo: mention.repo,
-          surface: mention.surface,
-          issueNumber: mention.issueNumber,
-          prNumber: mention.prNumber,
-          baseRef: mention.baseRef,
           workspaceDir: workspace.dir,
           writeRequest: writeIntent.request,
-          mentionContext,
-          allowHeavyContext: allowIssueCodePointers,
-          allowDiffContext: allowPrDiffContext,
-          explicitReviewRequest,
-          inReplyToId: mention.inReplyToId,
-          includeIssueCorpus,
-          logger,
-        }));
-
-        const { planOnlyInstructions, writeInstructions } = buildMentionAgentInstructions({
+          isIssueThreadComment,
           isPlanOnly,
           isWriteRequest,
           writeEnabled,
-        });
-
-        const prDiffContext: MentionPrDiffContext | undefined = await resolveMentionPrDiffContext({
-          allowPrDiffContext,
-          writeEnabled,
-          mention,
-          workspaceDir: workspace.dir,
+          triageCooldownStore,
           logger,
         });
 

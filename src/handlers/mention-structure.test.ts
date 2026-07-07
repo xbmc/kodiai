@@ -168,13 +168,41 @@ describe("mention handler structure", () => {
 
   test("keeps mention retrieval context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const variants = buildRetrievalVariants({");
     expect(source).not.toContain("await retriever.retrieve({");
     expect(source).not.toContain("Mention retrieval reuse telemetry write failed (non-blocking)");
     expect(source).not.toContain("Mention retrieval context generation failed (fail-open)");
-    expect(source).toContain("buildMentionRetrievalContextForPrompt");
-    expect(source).toContain("./mention-retrieval-context.ts");
+    expect(source).toContain("prepareMentionPromptInputs");
+    expect(source).toContain("./mention-prompt-preparation.ts");
+    expect(promptPreparationSource).toContain("buildMentionRetrievalContextForPrompt");
+    expect(promptPreparationSource).toContain("./mention-retrieval-context.ts");
+  });
+
+  test("keeps mention prompt preparation orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("resolveMentionPromptContextRouting({");
+    expect(source).not.toContain("buildMentionDerivedContext({");
+    expect(source).not.toContain("appendMentionIssueCodePointers({");
+    expect(source).not.toContain("buildMentionTriageContext({");
+    expect(source).not.toContain("hydrateMentionFindingContext({");
+    expect(source).not.toContain("buildMentionRetrievalContextForPrompt({");
+    expect(source).not.toContain("buildMentionAgentInstructions({");
+    expect(source).not.toContain("resolveMentionPrDiffContext({");
+    expect(source).toContain("prepareMentionPromptInputs");
+    expect(source).toContain("./mention-prompt-preparation.ts");
+    expect(promptPreparationSource).toContain("export async function prepareMentionPromptInputs");
+    expect(promptPreparationSource).toContain("resolveMentionPromptContextRouting({");
+    expect(promptPreparationSource).toContain("buildMentionDerivedContext({");
+    expect(promptPreparationSource).toContain("appendMentionIssueCodePointers({");
+    expect(promptPreparationSource).toContain("buildMentionTriageContext({");
+    expect(promptPreparationSource).toContain("hydrateMentionFindingContext({");
+    expect(promptPreparationSource).toContain("buildMentionRetrievalContextForPrompt({");
+    expect(promptPreparationSource).toContain("buildMentionAgentInstructions({");
+    expect(promptPreparationSource).toContain("resolveMentionPrDiffContext({");
   });
 
   test("keeps formatter visible diagnostic option binding out of the monster handler", () => {
@@ -602,34 +630,40 @@ describe("mention handler structure", () => {
 
   test("keeps issue triage context cooldown and validation out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const cooldownKey = `${mention.owner}/${mention.repo}#${mention.issueNumber}`;");
     expect(source).not.toContain("generateGenericNudge()");
     expect(source).not.toContain("generateLabelRecommendation({");
     expect(source).not.toContain("Triage validation failed (fail-open)");
-    expect(source).toContain("buildMentionTriageContext");
-    expect(source).toContain("./mention-triage-context.ts");
+    expect(source).toContain("prepareMentionPromptInputs");
+    expect(promptPreparationSource).toContain("buildMentionTriageContext");
+    expect(promptPreparationSource).toContain("./mention-triage-context.ts");
   });
 
   test("keeps finding metadata hydration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("let findingContext:");
     expect(source).not.toContain("Failed to hydrate finding context; proceeding without finding metadata");
     expect(source).not.toContain("findingLookup(`${mention.owner}/${mention.repo}`, mention.inReplyToId)");
-    expect(source).toContain("hydrateMentionFindingContext");
+    expect(source).toContain("prepareMentionPromptInputs");
     expect(source).toContain("./mention-finding-context.ts");
+    expect(promptPreparationSource).toContain("hydrateMentionFindingContext");
   });
 
   test("keeps mention agent instruction templates out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
     const instructionsSource = readFileSync(new URL("./mention-agent-instructions.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("Plan-only request detected (plan:).");
     expect(source).not.toContain("NEVER fabricate checksums");
     expect(source).not.toContain("FORK_WRITE_POLICY_INSTRUCTIONS");
-    expect(source).toContain("buildMentionAgentInstructions");
-    expect(source).toContain("./mention-agent-instructions.ts");
+    expect(source).toContain("prepareMentionPromptInputs");
+    expect(promptPreparationSource).toContain("buildMentionAgentInstructions");
+    expect(promptPreparationSource).toContain("./mention-agent-instructions.ts");
     expect(instructionsSource).toContain("export function buildMentionAgentInstructions");
     expect(instructionsSource).toContain("FORK_WRITE_POLICY_INSTRUCTIONS");
   });
@@ -687,12 +721,14 @@ describe("mention handler structure", () => {
 
   test("keeps PR diff prefetch fail-open orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("let prDiffContext: { stat: string; diff: string; truncated: boolean; fileCount: number } | undefined");
     expect(source).not.toContain("Pre-fetched PR diff for mention context");
     expect(source).not.toContain("collectCappedPrDiff({");
-    expect(source).toContain("resolveMentionPrDiffContext");
-    expect(source).toContain("./mention-pr-diff-context.ts");
+    expect(source).toContain("prepareMentionPromptInputs");
+    expect(promptPreparationSource).toContain("resolveMentionPrDiffContext");
+    expect(promptPreparationSource).toContain("./mention-pr-diff-context.ts");
   });
 
   test("keeps write-mode PR draft assembly out of the monster handler", () => {
@@ -730,27 +766,32 @@ describe("mention handler structure", () => {
 
   test("keeps issue code pointer context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("## Candidate Code Pointers");
     expect(source).not.toContain("Failed to build issue code context; proceeding without code pointers");
     expect(source).not.toContain("sectionName: \"candidate-code-pointers\"");
-    expect(source).toContain("appendMentionIssueCodePointers");
-    expect(source).toContain("./mention-code-pointers.ts");
+    expect(source).toContain("prepareMentionPromptInputs");
+    expect(promptPreparationSource).toContain("appendMentionIssueCodePointers");
+    expect(promptPreparationSource).toContain("./mention-code-pointers.ts");
   });
 
   test("keeps mention prompt context routing policy out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const allowIssueCodePointers =");
     expect(source).not.toContain("const isPrMention = mention.prNumber !== undefined;");
     expect(source).not.toContain("const allowPrDiffContext = isPrMention;");
     expect(source).not.toContain("const includeIssueCorpus = !isPrMention;");
-    expect(source).toContain("resolveMentionPromptContextRouting");
-    expect(source).toContain("./mention-prompt-context-routing.ts");
+    expect(source).toContain("prepareMentionPromptInputs");
+    expect(promptPreparationSource).toContain("resolveMentionPromptContextRouting");
+    expect(promptPreparationSource).toContain("./mention-prompt-context-routing.ts");
   });
 
   test("keeps mention-derived context cache orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const promptPreparationSource = readFileSync(new URL("./mention-prompt-preparation.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("createSearchCache<PromptBuildResult>");
     expect(source).not.toContain("let mentionDerivedContextCacheErrorCount = 0;");
@@ -759,8 +800,9 @@ describe("mention handler structure", () => {
     expect(source).not.toContain("mentionDerivedContextCacheErrorCount > cacheErrorsBeforeLookup");
     expect(source).not.toContain("context-build-failed");
     expect(source).toContain("createMentionHandlerRuntime");
-    expect(source).toContain("buildMentionDerivedContext");
-    expect(source).toContain("./mention-derived-context.ts");
+    expect(source).toContain("prepareMentionPromptInputs");
+    expect(promptPreparationSource).toContain("buildMentionDerivedContext");
+    expect(promptPreparationSource).toContain("./mention-derived-context.ts");
   });
 
   test("keeps handler-local mention runtime store construction out of the monster handler", () => {
