@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1518);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1505);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -651,14 +651,17 @@ describe("review handler structure", () => {
 
   test("keeps dependency bump context assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const dependencyBumpFlowSource = readFileSync(new URL("./review-dependency-bump-flow.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const detection = detectDepBump({");
     expect(source).not.toContain("depBumpContext.security = secResult.status === \"fulfilled\"");
     expect(source).not.toContain("depBumpContext.mergeConfidence = computeMergeConfidence(depBumpContext)");
     expect(source).not.toContain("depBumpContext.usageEvidence = result;");
     expect(source).not.toContain("depBumpContext.scopeGroups = groups;");
-    expect(source).toContain("buildReviewDepBumpContext");
-    expect(source).toContain("./review-dep-bump-context.ts");
+    expect(source).toContain("resolveReviewDependencyBumpFlowContext");
+    expect(source).toContain("./review-dependency-bump-flow.ts");
+    expect(dependencyBumpFlowSource).toContain("buildReviewDepBumpContext");
+    expect(dependencyBumpFlowSource).toContain("./review-dep-bump-context.ts");
   });
 
   test("keeps structural-impact graph selection out of the monster handler", () => {
@@ -1083,13 +1086,16 @@ describe("review handler structure", () => {
 
   test("keeps depends review publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const dependencyBumpFlowSource = readFileSync(new URL("./review-dependency-bump-flow.ts", import.meta.url), "utf8");
     const dependsFlowSource = readFileSync(new URL("./review-depends-flow.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("publishedDependsSummary = true");
     expect(source).not.toContain("publishedDependsInlineComments = true");
     expect(source).not.toContain("[depends] deep review inline comments");
-    expect(source).toContain("./review-depends-flow.ts");
-    expect(source).toContain("resolveReviewDependsFlow");
+    expect(source).toContain("./review-dependency-bump-flow.ts");
+    expect(source).toContain("resolveReviewDependencyBumpFlowContext");
+    expect(dependencyBumpFlowSource).toContain("./review-depends-flow.ts");
+    expect(dependencyBumpFlowSource).toContain("resolveReviewDependsFlow");
     expect(dependsFlowSource).toContain("./review-depends-publication.ts");
     expect(dependsFlowSource).toContain("publishDependsReviewOutput");
   });
@@ -1284,13 +1290,18 @@ describe("review handler structure", () => {
 
   test("keeps depends deep-review pipeline orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const dependencyBumpFlowSource = readFileSync(new URL("./review-dependency-bump-flow.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("detectDependsBump(pr.title)");
     expect(source).not.toContain("buildDependsReviewContext({");
     expect(source).not.toContain("publishDependsReviewOutput({");
     expect(source).not.toContain("[depends] pipeline failed (fail-open, falling through to standard review)");
-    expect(source).toContain("resolveReviewDependsFlow");
-    expect(source).toContain("./review-depends-flow.ts");
+    expect(source).not.toContain("resolveReviewDependsFlow({");
+    expect(source).not.toContain("buildReviewDepBumpContext({");
+    expect(source).toContain("resolveReviewDependencyBumpFlowContext");
+    expect(source).toContain("./review-dependency-bump-flow.ts");
+    expect(dependencyBumpFlowSource).toContain("resolveReviewDependsFlow");
+    expect(dependencyBumpFlowSource).toContain("buildReviewDepBumpContext");
   });
 
   test("keeps finalized Review Details timing updates out of the monster handler", () => {

@@ -39,7 +39,6 @@ import {
 import {
   toProductionLogBudgetReasoning,
 } from "../review-audit/production-log-projection.ts";
-import { type DepBumpContext } from "../lib/dep-bump-detector.ts";
 import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
@@ -52,7 +51,7 @@ import { resolveReviewDetailsBodyBase } from "./review-details-body-base.ts";
 import { buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies } from "./review-handler-failure-publication-adapter.ts";
 import { resolveReviewIdempotencyContext } from "./review-idempotency-context.ts";
 import { buildReviewRetrievalContext } from "./review-retrieval-context.ts";
-import { buildReviewDepBumpContext } from "./review-dep-bump-context.ts";
+import { resolveReviewDependencyBumpFlowContext } from "./review-dependency-bump-flow.ts";
 import {
   persistReviewKnowledgeIfAvailable,
 } from "./review-knowledge-persistence.ts";
@@ -66,7 +65,6 @@ import {
 } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
-import { resolveReviewDependsFlow } from "./review-depends-flow.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 import { evaluateReviewRunStateGate } from "./review-run-state-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
@@ -428,27 +426,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           baseLog,
         });
 
-        const dependsFlow = await resolveReviewDependsFlow({
-          prTitle: pr.title,
-          octokit: idempotencyOctokit,
-          owner: apiOwner,
-          repo: apiRepo,
-          prNumber: pr.number,
-          workspaceDir: workspace?.dir ?? null,
-          logger,
-          baseLog,
-          botHandles: reviewBotHandles,
-          canPublishVisibleOutput,
-          setReviewWorkPhase,
-          retriever,
-        });
-        if (dependsFlow.action === "skip-standard-review") return;
-        const dependsBumpInfo = dependsFlow.dependsBumpInfo;
-
-        // ── Dependency bump detection (DEP-01/02/03) ──
-        // Skipped when [depends] detection matched (mutual exclusivity)
-        const depBumpContext: DepBumpContext | null = await buildReviewDepBumpContext({
-          dependsBumpInfo,
+        const dependencyBumpFlow = await resolveReviewDependencyBumpFlowContext({
           prTitle: pr.title,
           prBody: pr.body ?? null,
           prLabels: (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [],
@@ -457,11 +435,20 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           changedFiles: allChangedFiles,
           workspaceDir: workspace.dir,
           octokit: idempotencyOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
           logger,
           baseLog,
+          botHandles: reviewBotHandles,
+          canPublishVisibleOutput,
+          setReviewWorkPhase,
+          retriever,
           usageAnalyzer: usageAnalyzer?.analyzePackageUsage,
           detectScopeCoordination: scopeCoordinator?.detectScopeCoordination,
         });
+        if (dependencyBumpFlow.action === "skip-standard-review") return;
+        const depBumpContext = dependencyBumpFlow.depBumpContext;
 
         const skipPathsGate = evaluateReviewSkipPathsGate({
           prNumber: pr.number,
