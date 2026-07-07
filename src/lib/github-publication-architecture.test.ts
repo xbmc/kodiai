@@ -24,6 +24,10 @@ describe("GitHub publication architecture", () => {
           const payload = { owner, repo, issue_number, body };
           await octokit.rest.issues.createComment(payload);
         `,
+        "src/handlers/unsafe-nested-payload-alias.ts": `
+          const payload = { owner, repo, issue_number, metadata: { source: "review" }, body };
+          await octokit.rest.issues.createComment(payload);
+        `,
         "src/handlers/unsafe-payload-spread.ts": `
           const payload = { owner, repo, issue_number, body };
           await octokit.rest.issues.createComment({ ...payload });
@@ -94,6 +98,10 @@ describe("GitHub publication architecture", () => {
       {
         file: "src/handlers/unsafe-method-and-payload-alias.ts",
         method: "pulls.createReplyForReviewComment",
+      },
+      {
+        file: "src/handlers/unsafe-nested-payload-alias.ts",
+        method: "issues.createComment",
       },
       {
         file: "src/handlers/unsafe-payload-alias.ts",

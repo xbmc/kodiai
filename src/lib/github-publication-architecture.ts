@@ -121,14 +121,67 @@ export function findDirectGitHubPublicationWrites(
 
 function findBodyBearingPayloadAliases(source: string): string[] {
   const aliases = new Set<string>();
-  const payloadPattern = /\b(?:const|let|var)\s+(\w+)(?:\s*:[^=]+)?\s*=\s*\{[^}]*\bbody\b[^}]*\}/gs;
-  for (const match of source.matchAll(payloadPattern)) {
-    if (match[1]) {
-      aliases.add(match[1]);
+  const declarationPattern = /\b(?:const|let|var)\s+(\w+)(?:\s*:[^=]+)?\s*=\s*\{/g;
+  for (const match of source.matchAll(declarationPattern)) {
+    const alias = match[1];
+    if (!alias || match.index === undefined) {
+      continue;
+    }
+
+    const initializerStart = source.indexOf("{", match.index);
+    if (initializerStart === -1) {
+      continue;
+    }
+
+    const initializer = readBalancedObjectLiteral(source, initializerStart);
+    if (initializer && /\bbody\b/.test(initializer)) {
+      aliases.add(alias);
     }
   }
 
   return [...aliases];
+}
+
+function readBalancedObjectLiteral(source: string, openBraceIndex: number): string | null {
+  let depth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    const char = source[index];
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === "'" || char === "\"" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(openBraceIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
 }
 
 function findPublicationMethodAliases(source: string, namespace: string, name: string): string[] {
