@@ -248,6 +248,7 @@ import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome
 import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-recovery.ts";
 import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
 import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-outcome.ts";
+import { resolveReviewContinuationRevisionCounts } from "./review-continuation-revision-counts.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2962,50 +2963,23 @@ export function createReviewHandler(deps: {
                       });
 
                       if (settlementDecision.decision === "merge-continuation") {
-                        let continuationRevisionCounts: DeltaClassification["counts"] | null = null;
-                        if (knowledgeStore?.getPriorReviewFindings) {
-                          try {
-                            const priorFindings = await knowledgeStore.getPriorReviewFindings({
-                              repo: `${apiOwner}/${apiRepo}`,
-                              prNumber: pr.number,
-                            });
-                            if (priorFindings.length > 0) {
-                              const currentFindings = await extractFindingsFromReviewComments({
-                                octokit: await githubApp.getInstallationOctokit(event.installationId),
-                                owner: apiOwner,
-                                repo: apiRepo,
-                                prNumber: pr.number,
-                                reviewOutputKey,
-                                logger,
-                                baseLog,
-                              });
-                              continuationRevisionCounts = classifyFindingDeltas({
-                                currentFindings: currentFindings.map((finding) => ({
-                                  filePath: finding.filePath,
-                                  title: finding.title,
-                                  severity: finding.severity,
-                                  category: finding.category,
-                                  commentId: finding.commentId,
-                                  suppressed: false,
-                                  confidence: 100,
-                                })),
-                                priorFindings,
-                                fingerprintFn: fingerprintFindingTitle,
-                              }).counts;
-                            }
-                          } catch (err) {
-                            logger.warn(
-                              {
-                                ...baseLog,
-                                gate: "continuation-delta",
-                                gateResult: "failed",
-                                reviewOutputKey,
-                                err,
-                              },
-                              "Continuation delta classification failed (fail-open, merging without revision labels)",
-                            );
-                          }
-                        }
+                        const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({
+                          repo: `${apiOwner}/${apiRepo}`,
+                          prNumber: pr.number,
+                          reviewOutputKey,
+                          logger,
+                          baseLog,
+                          getPriorReviewFindings: knowledgeStore?.getPriorReviewFindings,
+                          extractFindings: async () => await extractFindingsFromReviewComments({
+                            octokit: await githubApp.getInstallationOctokit(event.installationId),
+                            owner: apiOwner,
+                            repo: apiRepo,
+                            prNumber: pr.number,
+                            reviewOutputKey,
+                            logger,
+                            baseLog,
+                          }),
+                        });
 
                         if (
                           continuationRevisionCounts

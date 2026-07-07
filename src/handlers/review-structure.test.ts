@@ -434,6 +434,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-retry-execution-outcome.ts");
   });
 
+  test("keeps continuation revision delta classification out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("knowledgeStore.getPriorReviewFindings({\n                              repo: `${apiOwner}/${apiRepo}`");
+    expect(source).not.toContain("currentFindings: currentFindings.map((finding) => ({");
+    expect(source).not.toContain("Continuation delta classification failed (fail-open, merging without revision labels)");
+    expect(source).toContain("resolveReviewContinuationRevisionCounts");
+    expect(source).toContain("./review-continuation-revision-counts.ts");
+  });
+
   test("keeps clean review approval body assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const cleanApprovalSource = readFileSync(new URL("./review-clean-approval.ts", import.meta.url), "utf8");
