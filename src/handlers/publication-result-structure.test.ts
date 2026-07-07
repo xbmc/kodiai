@@ -314,4 +314,19 @@ describe("publication result structure", () => {
     expect(source).toContain("publishRetryReviewDetailsMergeFn");
     expect(retrySettlementSource).toContain("publishRetryMergeContinuationResults");
   });
+
+  test("keeps retry continuation settlement orchestration on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-retry-continuation-settlement.ts", import.meta.url),
+      "utf8",
+    );
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("RetryContinuationSettlementResult");
+    expect(source).toContain("Result<RetryContinuationSettlementStatus");
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toContain("publishRetryMergeContinuationResultsFn");
+    expect(retryJobSource).toContain("settleRetryContinuationResults");
+  });
 });

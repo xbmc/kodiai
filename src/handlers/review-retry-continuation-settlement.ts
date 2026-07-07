@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { ExecutionResult } from "../execution/types.ts";
 import type { CheckpointRecord, KnowledgeStore } from "../knowledge/types.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
+import { ok, type Result } from "../lib/result.ts";
 import { settleReviewContinuation } from "../lib/review-continuation-lifecycle.ts";
 import type { ReviewFirstPassBoundedReason } from "../lib/review-first-pass.ts";
 import { extractFindingsFromReviewComments } from "../review-orchestration/review-comment-finding-extraction.ts";
@@ -10,8 +11,21 @@ import { resolveReviewContinuationMergeContext } from "./review-continuation-mer
 import { resolveReviewContinuationRevisionCounts } from "./review-continuation-revision-counts.ts";
 import type { ReviewDetailsPublicationRuntime } from "./review-details-publication-runtime.ts";
 import { discardCheckpointsFailOpen } from "./review-handler-utils.ts";
-import { publishRetryMergeContinuationResults } from "./review-retry-merge-publication.ts";
+import {
+  publishRetryMergeContinuationResults,
+  type RetryMergeContinuationPublicationStatus,
+} from "./review-retry-merge-publication.ts";
 import { settleRetryWithNoAdditionalResults } from "./review-retry-settlement.ts";
+
+type PublishRetryMergeContinuationResults = typeof publishRetryMergeContinuationResults;
+
+export type RetryContinuationSettlementStatus =
+  | { status: "quiet-settled"; published: false; reason: string }
+  | { status: "settled-without-canonical-update"; published: false; reason: string }
+  | RetryMergeContinuationPublicationStatus;
+
+export type RetryContinuationSettlementResult =
+  Result<RetryContinuationSettlementStatus, never>;
 
 export async function settleRetryContinuationResults(params: {
   retryCompletedWithResults: boolean;
@@ -48,7 +62,8 @@ export async function settleRetryContinuationResults(params: {
     logMessage: string;
   }) => Promise<void>;
   persistContinuationFamilyState: Parameters<typeof publishRetryMergeContinuationResults>[0]["persistContinuationFamilyState"];
-}): Promise<void> {
+  publishRetryMergeContinuationResultsFn?: PublishRetryMergeContinuationResults;
+}): Promise<RetryContinuationSettlementResult> {
   if (!params.retryCompletedWithResults) {
     await settleRetryWithNoAdditionalResults({
       logger: params.logger,
@@ -56,7 +71,7 @@ export async function settleRetryContinuationResults(params: {
       prNumber: params.prNumber,
       retryConclusion: params.retryResult.conclusion,
     });
-    return;
+    return ok({ status: "quiet-settled", published: false, reason: "no-retry-results" });
   }
 
   if (!params.baseCheckpoint) {
@@ -67,7 +82,11 @@ export async function settleRetryContinuationResults(params: {
       reason: "missing-base-checkpoint",
       logMessage: "Retry settlement skipped because the base checkpoint was missing",
     });
-    return;
+    return ok({
+      status: "settled-without-canonical-update",
+      published: false,
+      reason: "missing-base-checkpoint",
+    });
   }
 
   const settlementDecision = settleReviewContinuation({
@@ -91,7 +110,11 @@ export async function settleRetryContinuationResults(params: {
         persistContinuationFamilyState: params.persistContinuationFamilyState,
       },
     });
-    return;
+    return ok({
+      status: "quiet-settled",
+      published: false,
+      reason: settlementDecision.reason,
+    });
   }
 
   const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({
@@ -134,7 +157,11 @@ export async function settleRetryContinuationResults(params: {
         params.retryReviewOutputKey,
       ]),
     });
-    return;
+    return ok({
+      status: "quiet-settled",
+      published: false,
+      reason: "no-meaningful-delta",
+    });
   }
 
   const mergeContext = resolveReviewContinuationMergeContext({
@@ -164,10 +191,16 @@ export async function settleRetryContinuationResults(params: {
       reason: mergeContext.reason,
       logMessage: "Retry merge skipped because bounded first-pass state became non-publishable",
     });
-    return;
+    return ok({
+      status: "settled-without-canonical-update",
+      published: false,
+      reason: mergeContext.reason,
+    });
   }
 
-  await publishRetryMergeContinuationResults({
+  const publishRetryMerge =
+    params.publishRetryMergeContinuationResultsFn ?? publishRetryMergeContinuationResults;
+  return await publishRetryMerge({
     getOctokit: params.getOctokit,
     getAppSlug: params.getAppSlug,
     owner: params.owner,
