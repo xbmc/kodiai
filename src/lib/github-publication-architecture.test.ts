@@ -28,6 +28,14 @@ describe("GitHub publication architecture", () => {
           const createReview = octokit.rest.pulls.createReview;
           await createReview({ owner, repo, pull_number, body, event: "COMMENT" });
         `,
+        "src/handlers/unsafe-namespace-alias.ts": `
+          const issues = params.octokit.rest.issues;
+          await issues.createComment({ owner, repo, issue_number, body });
+        `,
+        "src/handlers/unsafe-bracket-namespace-alias.ts": `
+          const pulls = octokit.rest["pulls"];
+          await pulls["createReview"]({ owner, repo, pull_number, body, event: "COMMENT" });
+        `,
         "src/handlers/unsafe-payload-alias.ts": `
           const payload = { owner, repo, issue_number, body };
           await octokit.rest.issues.createComment(payload);
@@ -155,6 +163,10 @@ describe("GitHub publication architecture", () => {
         method: "issues.createComment",
       },
       {
+        file: "src/handlers/unsafe-bracket-namespace-alias.ts",
+        method: "pulls.createReview",
+      },
+      {
         file: "src/handlers/unsafe-bracket-namespace.ts",
         method: "pulls.createReview",
       },
@@ -177,6 +189,10 @@ describe("GitHub publication architecture", () => {
       {
         file: "src/handlers/unsafe-method-and-payload-alias.ts",
         method: "pulls.createReplyForReviewComment",
+      },
+      {
+        file: "src/handlers/unsafe-namespace-alias.ts",
+        method: "issues.createComment",
       },
       {
         file: "src/handlers/unsafe-nested-payload-alias.ts",

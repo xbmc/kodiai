@@ -72,12 +72,16 @@ export function findDirectGitHubPublicationWrites(
       const [namespace, name] = method.split(".") as [string, string];
       const namespaceAccess = buildPropertyAccessPattern(namespace);
       const methodAccess = buildPropertyAccessPattern(name);
+      const namespaceCalleePatterns = [
+        String.raw`${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}`,
+        ...findPublicationNamespaceAliases(source, namespace).map((alias) => String.raw`\b${escapeRegExp(alias)}\b`),
+      ];
       const directCallPattern = new RegExp(
-        String.raw`${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\([^)]*\bbody\b`,
+        String.raw`(?:${namespaceCalleePatterns.join("|")})\s*${methodAccess}\s*\([^)]*\bbody\b`,
         "s",
       );
       const directPayloadAliasCallPattern = new RegExp(
-        String.raw`${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}\s*\(\s*(?:(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})|\{\s*\.\.\.\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*\})\s*[,)]`,
+        String.raw`(?:${namespaceCalleePatterns.join("|")})\s*${methodAccess}\s*\(\s*(?:(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})|\{\s*\.\.\.\s*(${bodyBearingPayloadAliases.map(escapeRegExp).join("|")})\s*\})\s*[,)]`,
         "s",
       );
       if (
@@ -348,6 +352,22 @@ function findPublicationMethodAliases(source: string, namespace: string, name: s
 
   const assignmentPattern = new RegExp(
     String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}\s*${methodAccess}`,
+    "g",
+  );
+  for (const match of source.matchAll(assignmentPattern)) {
+    if (match[1]) {
+      aliases.add(match[1]);
+    }
+  }
+
+  return [...aliases];
+}
+
+function findPublicationNamespaceAliases(source: string, namespace: string): string[] {
+  const aliases = new Set<string>();
+  const namespaceAccess = buildPropertyAccessPattern(namespace);
+  const assignmentPattern = new RegExp(
+    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${OCTOKIT_RECEIVER_PATTERN}\s*\.\s*rest\s*${namespaceAccess}`,
     "g",
   );
   for (const match of source.matchAll(assignmentPattern)) {
