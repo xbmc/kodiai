@@ -1416,13 +1416,17 @@ describe("review handler structure", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const deltaSource = readFileSync(new URL("./review-delta-classification.ts", import.meta.url), "utf8");
 
+    expect(source).not.toContain("knowledgeStore?.getPriorReviewFindings");
+    expect(source).not.toContain("knowledgeStore.getPriorReviewFindings!({");
     expect(source).not.toContain("knowledgeStore!.getPriorReviewFindings({");
     expect(source).not.toContain("classifyFindingDeltas({");
     expect(source).not.toContain("Delta classification failed (fail-open, publishing without delta labels)");
     expect(source).toContain("resolveReviewDeltaClassification");
+    expect(source).toContain("buildReviewDeltaPriorFindingLookup");
     expect(source).toContain("./review-delta-classification.ts");
     expect(deltaSource).toContain("classifyFindingDeltas");
     expect(deltaSource).toContain("fingerprintFindingTitle");
+    expect(deltaSource).toContain("export function buildReviewDeltaPriorFindingLookup");
   });
 
   test("keeps retry continuation merge body context out of the monster handler", () => {

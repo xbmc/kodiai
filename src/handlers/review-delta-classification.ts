@@ -5,7 +5,24 @@ import {
   type FindingForDelta,
 } from "../lib/delta-classifier.ts";
 import { fingerprintFindingTitle } from "../lib/review-finding-metadata.ts";
-import type { PriorFinding } from "../knowledge/types.ts";
+import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
+
+export function buildReviewDeltaPriorFindingLookup(params: {
+  knowledgeStore: Pick<KnowledgeStore, "getPriorReviewFindings"> | undefined;
+  repo: string;
+  prNumber: number;
+}): (() => Promise<PriorFinding[]>) | undefined {
+  const { knowledgeStore } = params;
+  if (!knowledgeStore) {
+    return undefined;
+  }
+
+  return () =>
+    knowledgeStore.getPriorReviewFindings({
+      repo: params.repo,
+      prNumber: params.prNumber,
+    });
+}
 
 export async function resolveReviewDeltaClassification(params: {
   enabled: boolean;

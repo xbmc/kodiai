@@ -156,7 +156,10 @@ import { createReviewJobRuntime } from "./review-job-runtime.ts";
 import {
   buildReviewJobQueueContext,
 } from "./review-job-context.ts";
-import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
+import {
+  buildReviewDeltaPriorFindingLookup,
+  resolveReviewDeltaClassification,
+} from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
@@ -925,12 +928,11 @@ export function createReviewHandler(deps: {
         const deltaClassification: DeltaClassification | null = await resolveReviewDeltaClassification({
           enabled: incrementalResult?.mode === "incremental" && priorFindingCtx !== null,
           currentFindings: processedFindings,
-          getPriorReviewFindings: knowledgeStore?.getPriorReviewFindings
-            ? () => knowledgeStore.getPriorReviewFindings!({
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-              })
-            : undefined,
+          getPriorReviewFindings: buildReviewDeltaPriorFindingLookup({
+            knowledgeStore,
+            repo: `${apiOwner}/${apiRepo}`,
+            prNumber: pr.number,
+          }),
           logger,
           baseLog,
         });
