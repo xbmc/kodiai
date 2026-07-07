@@ -119,7 +119,7 @@ import {
 import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
 import { resolveReviewDiffContext } from "./review-diff-context.ts";
-import { projectReviewExecutorState } from "./review-executor-state.ts";
+import { applyReviewExecutorState, projectReviewExecutorState } from "./review-executor-state.ts";
 import { buildReviewExecutionContext } from "./review-execution-context.ts";
 import { resolveReviewHandlerCandidatePublicationBridge } from "./review-candidate-publication-bridge.ts";
 import { resolveReviewCandidatePublicationPreparation } from "./review-candidate-publication-preparation.ts";
@@ -792,15 +792,14 @@ export function createReviewHandler(deps: {
           result,
           currentPromptSectionRecords: visibleBudgetState.promptSectionRecords,
         });
-        publicationState.executorResult = executorState.executorResult;
-        publicationState.reviewExecutorPublished = executorState.reviewExecutorPublished;
-        publicationState.reviewOutputPublished = executorState.reviewOutputPublished;
-        publicationState.reviewPublishResolution = executorState.reviewPublishResolution;
-        visibleBudgetState.promptSectionRecords = executorState.promptSectionRecords;
-        visibleBudgetState.refresh();
-        timingState.executorPhaseTimings = executorState.executorPhaseTimings;
-        recordReviewExecutorPhaseTimings(reviewPhaseTimings, timingState.executorPhaseTimings);
-        timingState.publicationPhaseStartedAt = Date.now();
+        applyReviewExecutorState({
+          projection: executorState,
+          publicationState,
+          visibleBudgetState,
+          timingState,
+          reviewPhaseTimings,
+          recordExecutorPhaseTimings: recordReviewExecutorPhaseTimings,
+        });
 
         let reviewCandidateVerificationPublicationEvidence = result.candidateVerificationPublicationEvidence;
 

@@ -687,6 +687,10 @@ describe("review handler structure", () => {
     expect(source).not.toContain("visibleBudgetState.promptSectionRecords = result.promptSections ?? visibleBudgetState.promptSectionRecords");
     expect(source).not.toContain("reviewPublishResolution = reviewOutputPublished ? \"executor\" : \"none\"");
     expect(source).not.toContain("executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases");
+    expect(source).not.toContain("publicationState.executorResult = executorState.executorResult");
+    expect(source).not.toContain("visibleBudgetState.promptSectionRecords = executorState.promptSectionRecords");
+    expect(source).not.toContain("timingState.executorPhaseTimings = executorState.executorPhaseTimings");
+    expect(source).toContain("applyReviewExecutorState");
     expect(source).toContain("projectReviewExecutorState");
     expect(source).toContain("./review-executor-state.ts");
   });

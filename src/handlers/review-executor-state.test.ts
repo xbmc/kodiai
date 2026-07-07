@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { ExecutionResult } from "../execution/types.ts";
+import type { ExecutionResult, ExecutorPhaseTiming } from "../execution/types.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
-import { projectReviewExecutorState } from "./review-executor-state.ts";
+import { applyReviewExecutorState, projectReviewExecutorState } from "./review-executor-state.ts";
 
 function makeExecutionResult(overrides: Partial<ExecutionResult> = {}): ExecutionResult {
   return {
@@ -50,7 +50,7 @@ describe("projectReviewExecutorState", () => {
     const promptSections: PromptSectionRecord[] = [
       makePromptSectionRecord("review.executor"),
     ];
-    const executorPhaseTimings = [
+    const executorPhaseTimings: ExecutorPhaseTiming[] = [
       { name: "executor handoff" as const, status: "completed" as const, durationMs: 12 },
       { name: "remote runtime" as const, status: "completed" as const, durationMs: 34 },
     ];
@@ -100,5 +100,75 @@ describe("projectReviewExecutorState", () => {
         detail: "executor phase timings unavailable",
       },
     ]);
+  });
+});
+
+describe("applyReviewExecutorState", () => {
+  test("applies executor projection to publication, budget, and timing targets", () => {
+    const result = makeExecutionResult({ published: true });
+    const promptSectionRecords = [makePromptSectionRecord("review.executor")];
+    const executorPhaseTimings = [
+      { name: "executor handoff" as const, status: "completed" as const, durationMs: 12 },
+    ];
+    const projection = {
+      executorResult: result,
+      reviewExecutorPublished: true,
+      reviewOutputPublished: true,
+      reviewPublishResolution: "executor" as const,
+      promptSectionRecords,
+      executorPhaseTimings,
+    };
+    const publicationState: {
+      executorResult?: ExecutionResult;
+      reviewExecutorPublished: boolean;
+      reviewOutputPublished: boolean;
+      reviewPublishResolution: "executor" | "none";
+    } = {
+      reviewExecutorPublished: false,
+      reviewOutputPublished: false,
+      reviewPublishResolution: "none",
+    };
+    const visibleBudgetState = {
+      promptSectionRecords: [makePromptSectionRecord("review.old")],
+      refreshCount: 0,
+      refresh() {
+        this.refreshCount += 1;
+      },
+    };
+    const timingState: {
+      executorPhaseTimings: ExecutorPhaseTiming[];
+      publicationPhaseStartedAt?: number;
+    } = {
+      executorPhaseTimings: [],
+    };
+    const reviewPhaseTimings = new Map();
+    const recordExecutorPhaseTimings = (
+      target: Map<string, unknown>,
+      timings: ExecutorPhaseTiming[],
+    ) => {
+      for (const timing of timings) target.set(timing.name, timing);
+    };
+
+    applyReviewExecutorState({
+      projection,
+      publicationState,
+      visibleBudgetState,
+      timingState,
+      reviewPhaseTimings,
+      recordExecutorPhaseTimings,
+      now: () => 12345,
+    });
+
+    expect(publicationState).toEqual({
+      executorResult: result,
+      reviewExecutorPublished: true,
+      reviewOutputPublished: true,
+      reviewPublishResolution: "executor",
+    });
+    expect(visibleBudgetState.promptSectionRecords).toBe(promptSectionRecords);
+    expect(visibleBudgetState.refreshCount).toBe(1);
+    expect(timingState.executorPhaseTimings).toBe(executorPhaseTimings);
+    expect(timingState.publicationPhaseStartedAt).toBe(12345);
+    expect(reviewPhaseTimings.get("executor handoff")).toEqual(executorPhaseTimings[0]);
   });
 });
