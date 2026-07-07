@@ -67,7 +67,7 @@ import { resolveMentionTriggerContext } from "./mention-trigger-context.ts";
 import { resolveMentionExecutorPlan } from "./mention-executor-plan.ts";
 import { buildMentionExecutionContext } from "./mention-execution-context.ts";
 import { resolveMentionPromptRuntimeContext } from "./mention-prompt-runtime.ts";
-import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
+import { routeMentionWriteOutputIfEnabled } from "./mention-write-output-routing.ts";
 import { publishFormatOnlyMentionFormatterResult } from "./mention-format-only-publication.ts";
 import { publishCombinedReviewAndFormatMentionFormatterResult } from "./mention-combined-format-publication.ts";
 import { resolveMentionWriteRequestContext } from "./mention-write-request-context.ts";
@@ -718,34 +718,24 @@ export function createMentionHandler(deps: {
           botHandles: possibleHandles,
         });
 
-        // Write-mode: trusted code publishes the branch + PR and replies with a link.
-        if (writeEnabled && writeOutputKey && writeBranchName) {
-          await routeMentionWriteOutput({
-            workspaceDir: workspace.dir,
-            workspaceToken: workspace.token,
-            octokit,
-            mention,
-            forkContext,
-            gistPublisher,
-            writeKeyword: writeIntent.keyword ?? "",
-            writeBranchName,
-            writeOutputKey,
-            writeRequest: writeIntent.request,
-            triggerCommentUrl,
-            deliveryId: event.id,
-            installationId: event.installationId,
-            cloneRef,
-            allowPaths: config.write.allowPaths,
-            denyPaths: config.write.denyPaths,
-            secretScanEnabled: config.write.secretScan.enabled,
-            retryCommand,
-            isIssueThreadComment,
-            botHandles: [appSlug, "claude", "kodai"],
-            logger,
-            postMentionReply,
-            maybeReplyWritePermissionFailure,
-            recordWriteRateLimitSuccess: (owner, repo) => writeRateLimit.recordSuccess(owner, repo),
-          });
+        if (await routeMentionWriteOutputIfEnabled({
+          workspace,
+          workspaceToken: workspace.token,
+          octokit,
+          mention,
+          forkContext,
+          gistPublisher,
+          writeContext: mentionWriteRequestContext,
+          cloneRef,
+          writeConfig: config.write,
+          deliveryId: event.id,
+          installationId: event.installationId,
+          appSlug,
+          logger,
+          postMentionReply,
+          maybeReplyWritePermissionFailure,
+          writeRateLimit,
+        })) {
           return;
         }
 

@@ -797,6 +797,18 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-write-output-routing.ts");
   });
 
+  test("keeps write-output routing parameter plumbing out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const routingSource = readFileSync(new URL("./mention-write-output-routing.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("if (writeEnabled && writeOutputKey && writeBranchName)");
+    expect(source).not.toContain("writeKeyword: writeIntent.keyword ?? \"\"");
+    expect(source).not.toContain("recordWriteRateLimitSuccess: (owner, repo) => writeRateLimit.recordSuccess(owner, repo)");
+    expect(source).toContain("routeMentionWriteOutputIfEnabled");
+    expect(routingSource).toContain("export async function routeMentionWriteOutputIfEnabled");
+    expect(routingSource).toContain("routeMentionWriteOutput({");
+  });
+
   test("keeps pre-workspace fork setup orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const workspaceRuntimeSource = readFileSync(new URL("./mention-workspace-runtime.ts", import.meta.url), "utf8");

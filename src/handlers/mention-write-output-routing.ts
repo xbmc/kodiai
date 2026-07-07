@@ -2,10 +2,13 @@ import type { Logger } from "pino";
 import {
   getGitStatusPorcelain as defaultGetGitStatusPorcelain,
 } from "../jobs/workspace.ts";
+import type { Workspace } from "../jobs/types.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import { ok, type Result } from "../lib/result.ts";
 import { buildNoFileChangesReply, createIssueWriteFailurePoster } from "./mention-write-replies.ts";
 import type { MentionEvent } from "./mention-types.ts";
+import type { MentionWriteRequestContext } from "./mention-write-request-context.ts";
+import type { MentionWriteRateLimitRuntime } from "./mention-write-rate-limit.ts";
 import {
   isSameRepoPrHead,
 } from "./mention-pr-write.ts";
@@ -42,6 +45,76 @@ type PublishMentionForkWriteOutput = typeof defaultPublishMentionForkWriteOutput
 type AttemptSameRepoPrWrite = typeof defaultAttemptSameRepoPrWrite;
 type PublishMentionBotWritePullRequest = typeof defaultPublishMentionBotWritePullRequest;
 type MentionWriteOutputRoutingResult = Result<{ status: "handled" }>;
+
+export async function routeMentionWriteOutputIfEnabled(params: {
+  workspace: Workspace;
+  workspaceToken?: string;
+  octokit: PullsListOctokit;
+  mention: MentionEvent;
+  forkContext: ForkContext | undefined;
+  gistPublisher: Pick<GistPublisher, "enabled" | "createPatchGist"> | undefined;
+  writeContext: Pick<
+    MentionWriteRequestContext,
+    | "writeEnabled"
+    | "writeIntent"
+    | "writeBranchName"
+    | "writeOutputKey"
+    | "triggerCommentUrl"
+    | "retryCommand"
+    | "isIssueThreadComment"
+  >;
+  cloneRef?: string;
+  writeConfig: {
+    allowPaths: string[];
+    denyPaths: string[];
+    secretScan: { enabled: boolean };
+  };
+  deliveryId: string;
+  installationId: number;
+  appSlug: string;
+  logger: Logger;
+  postMentionReply: PostMentionReply;
+  maybeReplyWritePermissionFailure: (input: {
+    err: unknown;
+    retryCommand: string;
+    postReply: PostMentionReply;
+  }) => Promise<boolean>;
+  writeRateLimit: MentionWriteRateLimitRuntime;
+}): Promise<boolean> {
+  const { writeContext } = params;
+  if (!writeContext.writeEnabled || !writeContext.writeOutputKey || !writeContext.writeBranchName) {
+    return false;
+  }
+
+  await routeMentionWriteOutput({
+    workspaceDir: params.workspace.dir,
+    workspaceToken: params.workspaceToken,
+    octokit: params.octokit,
+    mention: params.mention,
+    forkContext: params.forkContext,
+    gistPublisher: params.gistPublisher,
+    writeKeyword: writeContext.writeIntent.keyword ?? "",
+    writeBranchName: writeContext.writeBranchName,
+    writeOutputKey: writeContext.writeOutputKey,
+    writeRequest: writeContext.writeIntent.request,
+    triggerCommentUrl: writeContext.triggerCommentUrl,
+    deliveryId: params.deliveryId,
+    installationId: params.installationId,
+    cloneRef: params.cloneRef,
+    allowPaths: params.writeConfig.allowPaths,
+    denyPaths: params.writeConfig.denyPaths,
+    secretScanEnabled: params.writeConfig.secretScan.enabled,
+    retryCommand: writeContext.retryCommand,
+    isIssueThreadComment: writeContext.isIssueThreadComment,
+    botHandles: [params.appSlug, "claude", "kodai"],
+    logger: params.logger,
+    postMentionReply: params.postMentionReply,
+    maybeReplyWritePermissionFailure: params.maybeReplyWritePermissionFailure,
+    recordWriteRateLimitSuccess: (owner, repo) => params.writeRateLimit.recordSuccess(owner, repo),
+  });
+
+  return true;
+}
 
 export async function routeMentionWriteOutput(params: {
   workspaceDir: string;

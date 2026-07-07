@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "../lib/result.ts";
-import { routeMentionWriteOutput } from "./mention-write-output-routing.ts";
+import { routeMentionWriteOutput, routeMentionWriteOutputIfEnabled } from "./mention-write-output-routing.ts";
 import type { MentionEvent } from "./mention-types.ts";
 
 type RouteMentionWriteOutputParams = Parameters<typeof routeMentionWriteOutput>[0];
@@ -176,5 +176,64 @@ describe("routeMentionWriteOutput", () => {
 
     expect(result).toEqual({ ok: true, value: { status: "handled" } });
     expect(botPrCalls).toBe(1);
+  });
+});
+
+describe("routeMentionWriteOutputIfEnabled", () => {
+  test("returns false without routing when write output is not publishable", async () => {
+    const routed = await routeMentionWriteOutputIfEnabled({
+      workspace: {
+        dir: "/tmp/kodiai-workspace",
+        token: "workspace-token",
+        cleanup: async () => undefined,
+      },
+      workspaceToken: "workspace-token",
+      octokit: {
+        rest: {
+          pulls: {
+            list: async () => ({ data: [] }),
+          },
+        },
+      },
+      mention: createMention(),
+      forkContext: undefined,
+      gistPublisher: undefined,
+      writeContext: {
+        writeEnabled: false,
+        writeIntent: { writeIntent: false, keyword: undefined, request: "plan the fix" },
+        writeBranchName: undefined,
+        writeOutputKey: undefined,
+        triggerCommentUrl: "https://github.com/acme/widget/pull/42#issuecomment-1001",
+        retryCommand: "@kodiai plan the fix",
+        isIssueThreadComment: false,
+      },
+      cloneRef: "main",
+      writeConfig: {
+        allowPaths: [],
+        denyPaths: [],
+        secretScan: { enabled: true },
+      },
+      deliveryId: "delivery-1",
+      installationId: 123,
+      appSlug: "kodiai",
+      logger: {
+        warn: () => undefined,
+        info: () => undefined,
+        error: () => undefined,
+        debug: () => undefined,
+      } as never,
+      postMentionReply: async () => {
+        throw new Error("should not post");
+      },
+      maybeReplyWritePermissionFailure: async () => false,
+      writeRateLimit: {
+        check: () => ({ allowed: true }),
+        recordSuccess: () => {
+          throw new Error("should not record");
+        },
+      },
+    });
+
+    expect(routed).toBe(false);
   });
 });
