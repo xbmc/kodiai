@@ -425,10 +425,12 @@ describe("review handler structure", () => {
   test("keeps no-review skip acknowledgment publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
+    expect(source).not.toContain("/\\[no-review\\]/i.test(pr.title)");
+    expect(source).not.toContain("gate: \"keyword-skip\"");
     expect(source).not.toContain("Review skipped per `[no-review]` in PR title.");
-    expect(source).not.toContain("Failed to post [no-review] acknowledgment");
+    expect(source).not.toContain("Failed to publish no-review skip acknowledgment");
     expect(source).toContain("./review-no-review-skip.ts");
-    expect(source).toContain("postNoReviewSkipAcknowledgment");
+    expect(source).toContain("evaluateNoReviewSkipGate");
   });
 
   test("keeps review cost warning publication out of the monster handler", () => {

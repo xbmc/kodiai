@@ -181,7 +181,7 @@ import {
   publishReviewHandlerFailureError,
 } from "./review-error-publication.ts";
 import { createReviewWorkRuntime } from "./review-work-runtime.ts";
-import { postNoReviewSkipAcknowledgment } from "./review-no-review-skip.ts";
+import { evaluateNoReviewSkipGate } from "./review-no-review-skip.ts";
 import { maybePostReviewCostWarning } from "./review-cost-warning.ts";
 import { publishBoundedFirstPassReview } from "./review-partial-publication.ts";
 import { buildReviewRetryCustomInstructions } from "./review-retry-instructions.ts";
@@ -467,28 +467,17 @@ export function createReviewHandler(deps: {
       logger.info({ ...baseLog, isDraft: true }, "Reviewing draft PR with draft tone");
     }
 
-    if (/\[no-review\]/i.test(pr.title)) {
-      logger.info(
-        { ...baseLog, gate: "keyword-skip", gateResult: "skipped" },
-        "Review skipped via [no-review] keyword in PR title",
-      );
-      try {
-        const skipOctokit = await githubApp.getInstallationOctokit(event.installationId);
-        await postNoReviewSkipAcknowledgment({
-          octokit: skipOctokit,
-          owner: payload.repository.owner.login,
-          repo: payload.repository.name,
-          prNumber: pr.number,
-          botHandles: [githubApp.getAppSlug(), "claude"],
-        });
-      } catch (commentErr) {
-        logger.warn(
-          { ...baseLog, err: commentErr },
-          "Failed to publish no-review skip acknowledgment (non-fatal)",
-        );
-      }
-      return;
-    }
+    const noReviewSkipGate = await evaluateNoReviewSkipGate({
+      prTitle: pr.title,
+      owner: payload.repository.owner.login,
+      repo: payload.repository.name,
+      prNumber: pr.number,
+      baseLog,
+      botHandles: [githubApp.getAppSlug(), "claude"],
+      getOctokit: () => githubApp.getInstallationOctokit(event.installationId),
+      logger,
+    });
+    if (noReviewSkipGate.action === "skip") return;
 
     if (action === "review_requested") {
       const reviewRequestedGate = evaluateReviewRequestedGate({
