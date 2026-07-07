@@ -4,6 +4,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildReviewOutputKey } from "../src/review-orchestration/review-idempotency.ts";
 import type { M048S01Report } from "./verify-m048-s01.ts";
+import {
+  evaluateM048S03,
+  main,
+  parseVerifyM048S03Args,
+  renderM048S03Report,
+} from "./verify-m048-s03.ts";
 
 function makeS01Report(params?: {
   reviewOutputKey?: string;
@@ -87,14 +93,8 @@ function makeS01Report(params?: {
   };
 }
 
-async function loadModule() {
-  return await import("./verify-m048-s03.ts");
-}
-
 describe("verify-m048-s03", () => {
-  test("parseVerifyM048S03Args parses the optional synchronize review key and json flag", async () => {
-    const { parseVerifyM048S03Args } = await loadModule();
-
+  test("parseVerifyM048S03Args parses the optional synchronize review key and json flag", () => {
     const result = parseVerifyM048S03Args([
       "--review-output-key",
       "rok-sync",
@@ -106,8 +106,6 @@ describe("verify-m048-s03", () => {
   });
 
   test("evaluateM048S03 passes the checked-in synchronize preflight, timeout-surface fixtures, and bounded-disclosure fixtures without live evidence", async () => {
-    const { evaluateM048S03 } = await loadModule();
-
     const report = await evaluateM048S03({
       workspaceDir: process.cwd(),
       generatedAt: "2026-04-13T05:10:00.000Z",
@@ -152,7 +150,6 @@ describe("verify-m048-s03", () => {
   });
 
   test("evaluateM048S03 fails loudly when synchronize intent is mis-shaped and effective config stays disabled", async () => {
-    const { evaluateM048S03 } = await loadModule();
     const dir = await mkdtemp(join(tmpdir(), "kodiai-m048-s03-"));
 
     try {
@@ -174,8 +171,6 @@ describe("verify-m048-s03", () => {
   });
 
   test("evaluateM048S03 returns a named timeout-surface failure when timeout-proof fixtures drift", async () => {
-    const { evaluateM048S03 } = await loadModule();
-
     const report = await evaluateM048S03({
       workspaceDir: process.cwd(),
       generatedAt: "2026-04-13T05:10:00.000Z",
@@ -204,8 +199,6 @@ describe("verify-m048-s03", () => {
   });
 
   test("evaluateM048S03 returns a named bounded-disclosure failure when fixture proof drifts", async () => {
-    const { evaluateM048S03 } = await loadModule();
-
     const report = await evaluateM048S03({
       workspaceDir: process.cwd(),
       generatedAt: "2026-04-13T05:10:00.000Z",
@@ -234,7 +227,6 @@ describe("verify-m048-s03", () => {
   });
 
   test("evaluateM048S03 accepts synchronize reviewOutputKey values and reuses the S01 phase-evidence surface", async () => {
-    const { evaluateM048S03 } = await loadModule();
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "xbmc",
@@ -271,7 +263,6 @@ describe("verify-m048-s03", () => {
   });
 
   test("renderM048S03Report preserves the reused S01 outcome summary verbatim", async () => {
-    const { evaluateM048S03, renderM048S03Report } = await loadModule();
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "xbmc",
@@ -303,7 +294,6 @@ describe("verify-m048-s03", () => {
   });
 
   test("main exits zero when --review-output-key is present without a value so local proof stays cheap", async () => {
-    const { main } = await loadModule();
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
 
@@ -356,7 +346,6 @@ describe("verify-m048-s03", () => {
   });
 
   test("main rejects non-synchronize reviewOutputKey values before live evidence lookup", async () => {
-    const { main } = await loadModule();
     const stdoutChunks: string[] = [];
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
