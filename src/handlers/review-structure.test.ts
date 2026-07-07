@@ -457,6 +457,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-details-timeout-publication.ts");
   });
 
+  test("keeps retry Review Details publication orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("retry canonical Review Details merge");
+    expect(source).not.toContain("Failed to update retry canonical review surface with Review Details");
+    expect(source).not.toContain("retry degraded Review Details fallback comment");
+    expect(source).toContain("publishRetryReviewDetailsMerge");
+    expect(source).toContain("./review-details-retry-publication.ts");
+  });
+
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 

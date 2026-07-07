@@ -253,6 +253,7 @@ import { publishMovedToDetailsReviewDetailsMerge } from "./review-details-moved-
 import { publishStandaloneReviewDetailsFallback } from "./review-details-standalone-fallback.ts";
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
+import { publishRetryReviewDetailsMerge } from "./review-details-retry-publication.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -2858,90 +2859,30 @@ export function createReviewHandler(deps: {
                         )) {
                           setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
 
-                          let retryMergeProjectionStatus: ContinuationFamilyProjectionStatus = "canonical";
-                          let retryMergeLogMessage = commentIdToUpdate
-                            ? "Retry complete -- updated partial review comment with merged results"
-                            : "Retry complete -- published final review comment with merged results";
+                          const retryReviewDetailsPublication = await publishRetryReviewDetailsMerge({
+                            octokit: retryOctokit,
+                            owner: apiOwner,
+                            repo: apiRepo,
+                            prNumber: pr.number,
+                            attemptId: retryReviewWorkAttempt.attemptId,
+                            deliveryId: retryDeliveryId,
+                            reviewOutputKey,
+                            retryReviewOutputKey,
+                            commentIdToUpdate,
+                            mergeBody: mergeContext.body,
+                            reviewDetailsFirstPass: mergeContext.reviewDetailsFirstPass,
+                            botHandles: [githubApp.getAppSlug(), "claude"],
+                            authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+                            reviewBoundedness,
+                            baseLog,
+                            logger,
+                            canPublishReviewWorkOutput,
+                            renderReviewDetailsBody,
+                            settleRetryWithoutCanonicalUpdate,
+                          });
 
-                          try {
-                            const mergedBodyWithDetails = await upsertCanonicalReviewSurface({
-                              octokit: retryOctokit,
-                              owner: apiOwner,
-                              repo: apiRepo,
-                              prNumber: pr.number,
-                              reviewOutputKey,
-                              preferredKind: "issue_comment",
-                              canonicalSurface: commentIdToUpdate
-                                ? {
-                                    kind: "issue_comment",
-                                    commentId: commentIdToUpdate,
-                                    body: mergeContext.body,
-                                  }
-                                : undefined,
-                              summaryBody: mergeContext.body,
-                              reviewDetailsBlock: renderReviewDetailsBody({
-                                reviewFirstPass: mergeContext.reviewDetailsFirstPass,
-                              }),
-                              botHandles: [githubApp.getAppSlug(), "claude"],
-                              requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                              reviewBoundedness,
-                              recheckCanPublish: () =>
-                                canPublishReviewWorkOutput(
-                                  retryReviewWorkAttempt.attemptId,
-                                  "retry canonical Review Details merge",
-                                  retryDeliveryId,
-                                ),
-                            });
-
-                            if (!mergedBodyWithDetails) {
-                              await settleRetryWithoutCanonicalUpdate({
-                                attemptId: retryReviewWorkAttempt.attemptId,
-                                reviewOutputKey: retryReviewOutputKey,
-                                deliveryId: retryDeliveryId,
-                                reason: "publish-superseded",
-                                logMessage: "Retry settlement skipped because publish rights were superseded",
-                              });
-                              return;
-                            }
-                          } catch (reviewDetailsErr) {
-                            logger.warn(
-                              {
-                                ...baseLog,
-                                gate: "review-details-output",
-                                gateResult: "degraded-fallback",
-                                reviewOutputKey,
-                                err: reviewDetailsErr,
-                              },
-                              "Failed to update retry canonical review surface with Review Details; using degraded fallback comment",
-                            );
-
-                            retryMergeProjectionStatus = "degraded";
-                            retryMergeLogMessage = commentIdToUpdate
-                              ? "Retry complete -- updated partial review comment with merged results; Review Details published via degraded fallback comment"
-                              : "Retry complete -- published final review comment with merged results; Review Details published via degraded fallback comment";
-
-                            await publishDegradedReviewDetailsFallbackFailOpen({
-                              octokit: retryOctokit,
-                              owner: apiOwner,
-                              repo: apiRepo,
-                              prNumber: pr.number,
-                              reviewOutputKey,
-                              renderBody: () =>
-                                renderReviewDetailsBody({
-                                  reviewFirstPass: mergeContext.reviewDetailsFirstPass,
-                                }),
-                              botHandles: [githubApp.getAppSlug(), "claude"],
-                              publishReason: "retry degraded Review Details fallback comment",
-                              failureMessage: "Failed to publish degraded Review Details fallback comment after retry merge",
-                              baseLog,
-                              logger,
-                              canPublishVisibleOutput: (reason) =>
-                                canPublishReviewWorkOutput(
-                                  retryReviewWorkAttempt.attemptId,
-                                  reason,
-                                  retryDeliveryId,
-                                ),
-                            });
+                          if (retryReviewDetailsPublication.status === "settled-without-canonical-update") {
+                            return;
                           }
 
                           logger.info(
@@ -2952,16 +2893,16 @@ export function createReviewHandler(deps: {
                               retryFilesReviewed: mergeContext.retryFilesReviewed,
                               partialCommentId,
                               settlementReason: settlementDecision.reason,
-                              projectionStatus: retryMergeProjectionStatus,
+                              projectionStatus: retryReviewDetailsPublication.projectionStatus,
                             },
-                            retryMergeLogMessage,
+                            retryReviewDetailsPublication.logMessage,
                           );
 
                           await persistContinuationFamilyState({
                             authoritativeAttemptId: retryReviewWorkAttempt.attemptId,
                             authoritativeOutcome: "merged",
                             finalStopReason: "merged-continuation-results",
-                            projectionStatus: retryMergeProjectionStatus,
+                            projectionStatus: retryReviewDetailsPublication.projectionStatus,
                             reviewOutputKey: retryReviewOutputKey,
                           });
 
