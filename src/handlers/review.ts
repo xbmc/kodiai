@@ -27,7 +27,6 @@ import { type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
-import { buildPrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
@@ -35,7 +34,6 @@ import { buildReviewPromptDetails } from "../execution/review-prompt.ts";
 import { buildPromptSectionRecord, type PromptBuildResult } from "../execution/prompt-section-metrics.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
 import { formatErrorComment } from "../lib/errors.ts";
-import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { estimateTimeoutRisk } from "../lib/timeout-estimator.ts";
 import {
   settleReviewContinuation,
@@ -215,6 +213,7 @@ import {
 } from "./review-incremental-diff.ts";
 import { evaluateReviewSkipPathsGate } from "./review-skip-paths-gate.ts";
 import { resolveReviewShadowSpecialistContext } from "./review-shadow-specialist.ts";
+import { resolveReviewDiffContext } from "./review-diff-context.ts";
 import { resolveReviewPriorFindingContext } from "./review-prior-finding-context.ts";
 import { resolveReviewRepoDoctrineContext } from "./review-repo-doctrine-context.ts";
 import { resolveReviewPathInstructions } from "./review-path-instructions.ts";
@@ -750,27 +749,24 @@ export function createReviewHandler(deps: {
           logger,
         });
 
-        // Build changed files and diff context, handling shallow-history merge-base gaps.
         retrievalPhaseStartedAt = Date.now();
-        const diffContext = await diffContextCollector({
+        const {
+          diffContext,
+          diffContentForValidation,
+          prDiffCommentabilityIndex,
+          allChangedFiles,
+        } = await resolveReviewDiffContext({
+          diffContextCollector,
           workspaceDir: workspace.dir,
           baseRef: pr.base.ref,
-          maxFilesForFullDiff: 200,
+          token: workspace.token,
+          octokit: idempotencyOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
           logger,
           baseLog,
-          token: workspace.token,
-          fallbackDiffProvider: async () => await fetchAllPullRequestFiles({
-            octokit: idempotencyOctokit,
-            owner: apiOwner,
-            repo: apiRepo,
-            pullNumber: pr.number,
-          }),
         });
-        const diffContentForValidation = diffContext.diffContent ?? "";
-        const prDiffCommentabilityIndex = diffContentForValidation
-          ? buildPrDiffCommentabilityIndex(diffContentForValidation)
-          : undefined;
-        const allChangedFiles = diffContext.changedFiles;
 
         const dependsFlow = await resolveReviewDependsFlow({
           prTitle: pr.title,

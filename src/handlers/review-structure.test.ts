@@ -827,6 +827,17 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-incremental-diff.ts");
   });
 
+  test("keeps review diff context collection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Build changed files and diff context, handling shallow-history merge-base gaps.");
+    expect(source).not.toContain("const diffContext = await diffContextCollector({");
+    expect(source).not.toContain("fallbackDiffProvider: async () => await fetchAllPullRequestFiles({");
+    expect(source).not.toContain("buildPrDiffCommentabilityIndex(diffContentForValidation)");
+    expect(source).toContain("resolveReviewDiffContext");
+    expect(source).toContain("./review-diff-context.ts");
+  });
+
   test("keeps incremental review file filtering out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
