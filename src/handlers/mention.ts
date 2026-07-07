@@ -35,8 +35,7 @@ import {
   buildMentionPostExecutorPublicationAdapters,
   publishMentionPostExecutorOutputs,
 } from "./mention-post-executor-publication.ts";
-import { FORMATTER_REVIEW_OUTPUT_ACTION } from "./mention-formatter-review-output-action.ts";
-
+import { FORMATTER_REVIEW_OUTPUT_ACTION, resolveMentionAddonReviewDispatcher } from "./mention-handler-policies.ts";
 
 /**
  * Create the mention handler and register it with the event router.
@@ -61,10 +60,11 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
     reviewWorkCoordinator: injectedReviewWorkCoordinator,
     mentionDerivedContextCacheOptions,
     formatterSuggestionSubflow = runFormatterSuggestionSubflow,
-    addonReviewDispatcher = (addonEvent: WebhookEvent) => eventRouter.dispatch(addonEvent),
+    addonReviewDispatcher: injectedAddonReviewDispatcher,
     addonRepos = [],
     logger,
   } = deps;
+  const addonReviewDispatcher = resolveMentionAddonReviewDispatcher({ eventRouter, addonReviewDispatcher: injectedAddonReviewDispatcher });
 
   const {
     guardrailAuditStore,

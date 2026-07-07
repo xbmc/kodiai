@@ -21,13 +21,24 @@ describe("mention handler structure", () => {
 
   test("keeps formatter review-output action policy out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
-    const actionSource = readFileSync(new URL("./mention-formatter-review-output-action.ts", import.meta.url), "utf8");
+    const policySource = readFileSync(new URL("./mention-handler-policies.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const FORMATTER_REVIEW_OUTPUT_ACTION");
     expect(source).toContain("FORMATTER_REVIEW_OUTPUT_ACTION");
-    expect(source).toContain("./mention-formatter-review-output-action.ts");
-    expect(actionSource).toContain("export const FORMATTER_REVIEW_OUTPUT_ACTION");
-    expect(actionSource).toContain("mention-format-suggestions");
+    expect(source).toContain("./mention-handler-policies.ts");
+    expect(policySource).toContain("export const FORMATTER_REVIEW_OUTPUT_ACTION");
+    expect(policySource).toContain("mention-format-suggestions");
+  });
+
+  test("keeps addon review dispatcher fallback policy out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+    const policySource = readFileSync(new URL("./mention-handler-policies.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("addonReviewDispatcher = (addonEvent");
+    expect(source).toContain("resolveMentionAddonReviewDispatcher");
+    expect(source).toContain("./mention-handler-policies.ts");
+    expect(policySource).toContain("export function resolveMentionAddonReviewDispatcher");
+    expect(policySource).toContain("eventRouter.dispatch(addonEvent)");
   });
 
   test("keeps GitHub mention publication helpers out of the monster handler", () => {
