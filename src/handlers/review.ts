@@ -121,7 +121,6 @@ import {
 import {
   recordReviewPostExecutionSideEffects,
 } from "./review-post-execution-side-effects.ts";
-import { recordReviewTimeoutResilienceTelemetry } from "./review-timeout-resilience-telemetry.ts";
 import { recordReviewPostExecutionTelemetry } from "./review-post-execution-telemetry.ts";
 import { maybePostReviewRequestedEyesReaction } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
@@ -179,9 +178,6 @@ import { resolveReviewTimeoutRetryContext } from "./review-timeout-retry-context
 import { resolveReviewTimeoutPublicationContext } from "./review-timeout-publication-context.ts";
 import { resolveReviewRetryEnqueueContext } from "./review-retry-enqueue-context.ts";
 import { resolveReviewTimeoutContinuationState } from "./review-timeout-continuation-state.ts";
-import {
-  resolvePendingContinuationFamilyState,
-} from "./review-continuation-family-state-projection.ts";
 import { settleRetryContinuationResults } from "./review-retry-continuation-settlement.ts";
 import {
   finalizeRetryJobAttempt,
@@ -206,12 +202,12 @@ import { buildReviewReducerInput } from "./review-reducer-input.ts";
 import { applyReviewPrIntentAreas } from "./review-pr-intent-areas.ts";
 import { resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
-import { logReviewTimeoutRetryEnqueue } from "./review-timeout-retry-enqueue-log.ts";
 import { logReviewTimeoutZeroEvidenceWarning } from "./review-timeout-zero-evidence-log.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 import { logReviewDiffAnalysisCompleted } from "./review-diff-analysis-completion-log.ts";
 import { resolveReviewTimeoutClassificationContext } from "./review-timeout-classification-context.ts";
 import { publishBoundedFirstPassTimeoutOutput } from "./review-bounded-first-pass-timeout-publication.ts";
+import { recordReviewTimeoutRetryPreEnqueueSideEffects } from "./review-timeout-retry-pre-enqueue.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1671,7 +1667,7 @@ export function createReviewHandler(deps: {
                 phase: "claimed",
               });
 
-              const retryResilienceTelemetry = await recordReviewTimeoutResilienceTelemetry({
+              const retryPreEnqueueSideEffects = await recordReviewTimeoutRetryPreEnqueueSideEffects({
                 telemetryEnabled: config.telemetry.enabled,
                 telemetryStore,
                 logger,
@@ -1683,55 +1679,24 @@ export function createReviewHandler(deps: {
                 reviewOutputKey,
                 executionConclusion,
                 hadInlineOutput: hasPublishedInlines,
-                checkpointFilesReviewed: timeoutReviewedFiles.length,
-                checkpointFilesInspected: timeoutInspectedFiles.length,
+                checkpointFilesReviewed: timeoutReviewedFiles,
+                checkpointFilesInspected: timeoutInspectedFiles,
                 checkpointFindingCount: timeoutFindingCount,
+                checkpointSummaryDraft: summaryDraft,
                 checkpointTotalFiles: timeoutTotalFiles,
                 partialCommentId,
                 recentTimeouts,
                 chronicTimeout: isChronicTimeout,
-                retry: {
-                  enqueued: true,
-                  filesCount: retryFiles.length,
-                  scopeRatio: retryScopeRatio,
-                  timeoutSeconds: retryTimeout,
-                  riskLevel: retryTimeoutEstimate.riskLevel,
-                  checkpointEnabled: retryCheckpointEnabled,
-                },
+                retryEnqueueContext,
                 timeoutClassificationTelemetry,
+                timeoutFirstPass,
+                knowledgeStore,
+                retryAttemptId: retryReviewWorkAttempt.attemptId,
+                persistContinuationFamilyState,
               });
-              if (retryResilienceTelemetry.projectionDegraded) {
+              if (retryPreEnqueueSideEffects.continuationProjectionDegraded) {
                 continuationProjectionDegraded = true;
               }
-
-              logReviewTimeoutRetryEnqueue({
-                logger,
-                deliveryId: event.id,
-                prNumber: pr.number,
-                retryFiles: retryFiles.length,
-                scopeRatio: retryScopeRatio,
-                retryTimeout,
-                retryRiskLevel: retryTimeoutEstimate.riskLevel,
-              });
-
-              if (timeoutFirstPass?.zeroEvidenceFailure && knowledgeStore?.saveCheckpoint) {
-                await knowledgeStore.saveCheckpoint({
-                  reviewOutputKey,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  prNumber: pr.number,
-                  filesReviewed: timeoutReviewedFiles,
-                  filesInspected: timeoutInspectedFiles,
-                  findingCount: timeoutFindingCount,
-                  summaryDraft,
-                  totalFiles: timeoutTotalFiles,
-                  partialCommentId,
-                });
-              }
-
-              await persistContinuationFamilyState(resolvePendingContinuationFamilyState({
-                attemptId: retryReviewWorkAttempt.attemptId,
-                reviewOutputKey: retryReviewOutputKey,
-              }));
 
               // Fire-and-forget enqueue -- do not await the retry result.
               // Claim before queueing so the retry is visible in family diagnostics

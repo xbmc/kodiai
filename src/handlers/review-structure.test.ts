@@ -249,6 +249,10 @@ describe("review handler structure", () => {
 
   test("keeps retry continuation-family state projections out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preEnqueueSource = readFileSync(
+      new URL("./review-timeout-retry-pre-enqueue.ts", import.meta.url),
+      "utf8",
+    );
     const retrySettlementSource = readFileSync(new URL("./review-retry-settlement.ts", import.meta.url), "utf8");
     const retryMergeSource = readFileSync(new URL("./review-retry-merge-publication.ts", import.meta.url), "utf8");
 
@@ -258,8 +262,9 @@ describe("review handler structure", () => {
     expect(source).not.toContain("finalStopReason: \"awaiting-continuation\"");
     expect(source).not.toContain("finalStopReason: \"settled-without-update\"");
     expect(source).not.toContain("finalStopReason: \"merged-continuation-results\"");
-    expect(source).toContain("resolvePendingContinuationFamilyState");
-    expect(source).toContain("./review-continuation-family-state-projection.ts");
+    expect(source).toContain("recordReviewTimeoutRetryPreEnqueueSideEffects");
+    expect(preEnqueueSource).toContain("resolvePendingContinuationFamilyState");
+    expect(preEnqueueSource).toContain("./review-continuation-family-state-projection.ts");
     expect(retrySettlementSource).toContain("resolveQuietSettledContinuationFamilyState");
     expect(retryMergeSource).toContain("resolveMergedContinuationFamilyState");
   });
@@ -320,11 +325,16 @@ describe("review handler structure", () => {
 
   test("keeps review resilience telemetry persistence out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preEnqueueSource = readFileSync(
+      new URL("./review-timeout-retry-pre-enqueue.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("await telemetryStore.recordResilienceEvent?.({");
     expect(source).not.toMatch(/recordReviewResilienceEventFailOpen\(\{[\s\S]{0,200}entry:\s*\{/);
-    expect(source).toContain("recordReviewTimeoutResilienceTelemetry");
-    expect(source).toContain("./review-timeout-resilience-telemetry.ts");
+    expect(source).toContain("recordReviewTimeoutRetryPreEnqueueSideEffects");
+    expect(preEnqueueSource).toContain("recordReviewTimeoutResilienceTelemetry");
+    expect(preEnqueueSource).toContain("./review-timeout-resilience-telemetry.ts");
   });
 
   test("keeps timeout resilience telemetry entry assembly out of the monster handler", () => {
@@ -336,7 +346,8 @@ describe("review handler structure", () => {
 
     expect(source).not.toContain("buildReviewTimeoutResilienceTelemetryEntry({");
     expect(source).not.toContain("recordReviewResilienceEventFailOpen({");
-    expect(source).toContain("recordReviewTimeoutResilienceTelemetry");
+    expect(source).toContain("recordReviewTimeoutRetryPreEnqueueSideEffects");
+    expect(timeoutTelemetrySource).toContain("recordReviewTimeoutResilienceTelemetry");
     expect(timeoutTelemetrySource).toContain("buildReviewTimeoutResilienceTelemetryEntry({");
     expect(timeoutTelemetrySource).toContain("recordReviewResilienceEventFailOpen({");
   });
@@ -836,12 +847,34 @@ describe("review handler structure", () => {
   test("keeps timeout retry enqueue logging out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const evidenceSource = readFileSync(new URL("./review-timeout-retry-enqueue-log.ts", import.meta.url), "utf8");
+    const preEnqueueSource = readFileSync(
+      new URL("./review-timeout-retry-pre-enqueue.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("Enqueueing retry with reduced scope");
-    expect(source).toContain("logReviewTimeoutRetryEnqueue");
-    expect(source).toContain("./review-timeout-retry-enqueue-log.ts");
+    expect(source).toContain("recordReviewTimeoutRetryPreEnqueueSideEffects");
+    expect(preEnqueueSource).toContain("logReviewTimeoutRetryEnqueue");
+    expect(preEnqueueSource).toContain("./review-timeout-retry-enqueue-log.ts");
     expect(evidenceSource).toContain("Enqueueing retry with reduced scope");
     expect(evidenceSource).toContain("retryRiskLevel");
+  });
+
+  test("keeps timeout retry pre-enqueue side effects out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preEnqueueSource = readFileSync(
+      new URL("./review-timeout-retry-pre-enqueue.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("const retryResilienceTelemetry = await recordReviewTimeoutResilienceTelemetry({");
+    expect(source).not.toContain("await persistContinuationFamilyState(resolvePendingContinuationFamilyState({");
+    expect(source).not.toContain("if (timeoutFirstPass?.zeroEvidenceFailure && knowledgeStore?.saveCheckpoint)");
+    expect(source).toContain("recordReviewTimeoutRetryPreEnqueueSideEffects");
+    expect(source).toContain("./review-timeout-retry-pre-enqueue.ts");
+    expect(preEnqueueSource).toContain("recordReviewTimeoutResilienceTelemetry");
+    expect(preEnqueueSource).toContain("logReviewTimeoutRetryEnqueue");
+    expect(preEnqueueSource).toContain("resolvePendingContinuationFamilyState");
   });
 
   test("keeps zero-evidence timeout warning logging out of the monster handler", () => {
