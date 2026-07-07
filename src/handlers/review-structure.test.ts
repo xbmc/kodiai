@@ -413,31 +413,34 @@ describe("review handler structure", () => {
 
   test("keeps published-output Review Details merge orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const firstPassSource = readFileSync(new URL("./review-details-first-pass-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("if (result.published) {\n              if (canPublishVisibleOutput(\"canonical Review Details merge\"))");
     expect(source).not.toContain("Failed to update canonical review surface with Review Details; using degraded fallback comment");
     expect(source).not.toContain("Failed to refresh finalized canonical Review Details surface");
-    expect(source).toContain("publishPublishedReviewDetailsMerge");
-    expect(source).toContain("./review-details-published-merge.ts");
+    expect(firstPassSource).toContain("publishPublishedReviewDetailsMerge");
+    expect(firstPassSource).toContain("./review-details-published-merge.ts");
   });
 
   test("keeps moved-to-details Review Details merge orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const firstPassSource = readFileSync(new URL("./review-details-first-pass-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("canonical Review Details moved-to-details preservation");
     expect(source).not.toContain("Failed to publish canonical Review Details for moved-to-details candidates; using degraded fallback comment");
     expect(source).not.toContain("Failed to refresh finalized moved-to-details Review Details surface");
-    expect(source).toContain("publishMovedToDetailsReviewDetailsMerge");
-    expect(source).toContain("./review-details-moved-to-details-merge.ts");
+    expect(firstPassSource).toContain("publishMovedToDetailsReviewDetailsMerge");
+    expect(firstPassSource).toContain("./review-details-moved-to-details-merge.ts");
   });
 
   test("keeps standalone degraded Review Details fallback orchestration out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const firstPassSource = readFileSync(new URL("./review-details-first-pass-publication.ts", import.meta.url), "utf8");
 
     expect(source).not.toContain("const reviewDetailsCommentId = await upsertDegradedReviewDetailsFallbackComment({");
     expect(source).not.toContain("await updateFinalizedReviewDetailsComment({");
-    expect(source).toContain("publishStandaloneReviewDetailsFallback");
-    expect(source).toContain("./review-details-standalone-fallback.ts");
+    expect(firstPassSource).toContain("publishStandaloneReviewDetailsFallback");
+    expect(firstPassSource).toContain("./review-details-standalone-fallback.ts");
   });
 
   test("keeps fail-open degraded Review Details fallback publication out of the monster handler", () => {
@@ -465,6 +468,16 @@ describe("review handler structure", () => {
     expect(source).not.toContain("retry degraded Review Details fallback comment");
     expect(source).toContain("publishRetryReviewDetailsMerge");
     expect(source).toContain("./review-details-retry-publication.ts");
+  });
+
+  test("keeps first-pass Review Details publication branching out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const hasMovedToDetailsFindings =");
+    expect(source).not.toContain("const approvalWillOwnCanonicalSurface =");
+    expect(source).not.toContain("Failed to publish canonical-or-degraded Review Details output");
+    expect(source).toContain("publishFirstPassReviewDetails");
+    expect(source).toContain("./review-details-first-pass-publication.ts");
   });
 
   test("keeps retry custom instruction assembly out of the monster handler", () => {

@@ -248,12 +248,10 @@ import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.
 import { resolveReviewRetryExecutionOutcome } from "./review-retry-execution-outcome.ts";
 import { resolveReviewContinuationRevisionCounts } from "./review-continuation-revision-counts.ts";
 import { resolveReviewContinuationMergeContext } from "./review-continuation-merge-context.ts";
-import { publishPublishedReviewDetailsMerge } from "./review-details-published-merge.ts";
-import { publishMovedToDetailsReviewDetailsMerge } from "./review-details-moved-to-details-merge.ts";
-import { publishStandaloneReviewDetailsFallback } from "./review-details-standalone-fallback.ts";
 import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishTimeoutReviewDetailsMerge } from "./review-details-timeout-publication.ts";
 import { publishRetryReviewDetailsMerge } from "./review-details-retry-publication.ts";
+import { publishFirstPassReviewDetails } from "./review-details-first-pass-publication.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -1705,101 +1703,36 @@ export function createReviewHandler(deps: {
           getPublicationPhaseStartedAt: () => publicationPhaseStartedAt,
         });
 
-        if (reviewOutputSucceeded) {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review-details-output",
-              gateResult: "attempt",
-              reviewOutputKey,
-              deltaNew: deltaClassification?.counts.new ?? null,
-              deltaResolved: deltaClassification?.counts.resolved ?? null,
-              deltaStillOpen: deltaClassification?.counts.stillOpen ?? null,
-              provenanceCount: retrievalCtx?.findings.length ?? null,
-            },
-            "Attempting canonical Review Details publication",
-          );
-
-          try {
-            const fullDetailsBody = renderReviewDetailsBody();
-            canonicalReviewDetailsBody = fullDetailsBody;
-
-            if (result.published) {
-              await publishPublishedReviewDetailsMerge({
-                octokit: extractionOctokit,
-                owner: apiOwner,
-                repo: apiRepo,
-                prNumber: pr.number,
-                reviewOutputKey,
-                fullDetailsBody,
-                botHandles: [githubApp.getAppSlug(), "claude"],
-                acceptedCanonicalSurface,
-                authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-                reviewBoundedness,
-                baseLog,
-                logger,
-                canPublishVisibleOutput,
-                setReviewWorkPhase,
-                renderReviewDetailsBody,
-                finalizePublicationPhaseTiming,
-                logReviewDetailsPublicationCompleted,
-                logCanonicalReviewDetailsPublicationCompleted,
-              });
-            } else {
-              const hasMovedToDetailsFindings = reviewCandidatePublicationRuntime.counts.candidateMovedToDetails > 0;
-              const approvalWillOwnCanonicalSurface = result.conclusion === "success" && !hasMovedToDetailsFindings;
-
-              if (hasMovedToDetailsFindings) {
-                await publishMovedToDetailsReviewDetailsMerge({
-                  octokit: extractionOctokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  fullDetailsBody,
-                  botHandles: [githubApp.getAppSlug(), "claude"],
-                  acceptedCanonicalSurface,
-                  authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-                  reviewBoundedness,
-                  baseLog,
-                  logger,
-                  canPublishVisibleOutput,
-                  setReviewWorkPhase,
-                  renderReviewDetailsBody,
-                  finalizePublicationPhaseTiming,
-                  logReviewDetailsPublicationCompleted,
-                  logCanonicalReviewDetailsPublicationCompleted,
-                });
-              } else if (!approvalWillOwnCanonicalSurface) {
-                await publishStandaloneReviewDetailsFallback({
-                  octokit: extractionOctokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  fullDetailsBody,
-                  botHandles: [githubApp.getAppSlug(), "claude"],
-                  canPublishVisibleOutput,
-                  setReviewWorkPhase,
-                  renderReviewDetailsBody,
-                  finalizePublicationPhaseTiming,
-                  logReviewDetailsPublicationCompleted,
-                });
-              }
-            }
-          } catch (err) {
-            logger.warn(
-              {
-                ...baseLog,
-                gate: "review-details-output",
-                gateResult: "failed",
-                reviewOutputKey,
-                err,
-              },
-              "Failed to publish canonical-or-degraded Review Details output",
-            );
-          }
-        }
+        const firstPassReviewDetailsPublication = await publishFirstPassReviewDetails({
+          reviewOutputSucceeded,
+          resultPublished: result.published,
+          resultConclusion: result.conclusion,
+          candidateMovedToDetailsCount: reviewCandidatePublicationRuntime.counts.candidateMovedToDetails,
+          octokit: extractionOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          reviewOutputKey,
+          botHandles: [githubApp.getAppSlug(), "claude"],
+          acceptedCanonicalSurface,
+          authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+          reviewBoundedness,
+          baseLog,
+          attemptLogFields: {
+            deltaNew: deltaClassification?.counts.new ?? null,
+            deltaResolved: deltaClassification?.counts.resolved ?? null,
+            deltaStillOpen: deltaClassification?.counts.stillOpen ?? null,
+            provenanceCount: retrievalCtx?.findings.length ?? null,
+          },
+          logger,
+          canPublishVisibleOutput,
+          setReviewWorkPhase,
+          renderReviewDetailsBody,
+          finalizePublicationPhaseTiming,
+          logReviewDetailsPublicationCompleted,
+          logCanonicalReviewDetailsPublicationCompleted,
+        });
+        canonicalReviewDetailsBody = firstPassReviewDetailsPublication.canonicalReviewDetailsBody;
 
         // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
