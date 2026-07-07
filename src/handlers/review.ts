@@ -258,6 +258,7 @@ import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.
 import { resolveReviewWorkCoordinator } from "./review-work-coordinator-fallback.ts";
 import { persistPartialReviewCheckpoint } from "./review-partial-checkpoint.ts";
 import { resolveReviewAuthorPrCountSearchCache } from "./review-author-search-cache.ts";
+import { resolveReviewDraftToneContext } from "./review-draft-tone.ts";
 
 
 type ProcessedFinding = ExtractedFinding & {
@@ -449,13 +450,12 @@ export function createReviewHandler(deps: {
       headSha: pr.head.sha ?? "unknown-head-sha",
     });
 
-    // Draft PR handling: review with softer tone instead of skipping.
-    // When action is "ready_for_review", the PR is no longer a draft — use normal tone
-    // regardless of pr.draft (which may still be truthy in the payload).
-    const isDraft = action === "ready_for_review" ? false : Boolean(pr.draft);
-    if (isDraft) {
-      logger.info({ ...baseLog, isDraft: true }, "Reviewing draft PR with draft tone");
-    }
+    const { isDraft } = resolveReviewDraftToneContext({
+      action,
+      prDraft: Boolean(pr.draft),
+      baseLog,
+      logger,
+    });
 
     const noReviewSkipGate = await evaluateNoReviewSkipGate({
       prTitle: pr.title,

@@ -787,6 +787,15 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-trigger-config-gate.ts");
   });
 
+  test("keeps draft PR tone decision and logging out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("const isDraft = action === \"ready_for_review\" ? false : Boolean(pr.draft);");
+    expect(source).not.toContain("Reviewing draft PR with draft tone");
+    expect(source).toContain("resolveReviewDraftToneContext");
+    expect(source).toContain("./review-draft-tone.ts");
+  });
+
   test("keeps durable run-state idempotency gating out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
