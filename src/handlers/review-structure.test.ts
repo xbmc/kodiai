@@ -411,6 +411,16 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-details-runtime-context.ts");
   });
 
+  test("keeps published-output Review Details merge orchestration out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("if (result.published) {\n              if (canPublishVisibleOutput(\"canonical Review Details merge\"))");
+    expect(source).not.toContain("Failed to update canonical review surface with Review Details; using degraded fallback comment");
+    expect(source).not.toContain("Failed to refresh finalized canonical Review Details surface");
+    expect(source).toContain("publishPublishedReviewDetailsMerge");
+    expect(source).toContain("./review-details-published-merge.ts");
+  });
+
   test("keeps retry custom instruction assembly out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
