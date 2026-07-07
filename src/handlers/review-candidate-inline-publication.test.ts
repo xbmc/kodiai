@@ -8,7 +8,10 @@ import type {
 } from "../execution/mcp/inline-review-publisher.ts";
 import type { createReviewOutputPublicationGate } from "../execution/mcp/review-output-publication-gate.ts";
 import type { PublishableReviewCandidateInlinePayload } from "../review-orchestration/review-candidate-publication-adapter.ts";
-import { publishReviewCandidateInlineComments } from "./review-candidate-inline-publication.ts";
+import {
+  publishReviewCandidateInlineComments,
+  type ReviewCandidateInlinePublicationValue,
+} from "./review-candidate-inline-publication.ts";
 
 function payload(fingerprint: string): PublishableReviewCandidateInlinePayload {
   return {
@@ -51,6 +54,14 @@ function baseParams(overrides: Partial<Parameters<typeof publishReviewCandidateI
   };
 }
 
+function unwrapPublicationValue(result: Awaited<ReturnType<typeof publishReviewCandidateInlineComments>>): ReviewCandidateInlinePublicationValue {
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error("expected candidate inline publication to succeed");
+  }
+  return result.value;
+}
+
 describe("publishReviewCandidateInlineComments", () => {
   test("publishes each payload with a candidate-specific review output key", async () => {
     const publisherOptions: InlineReviewPublisherOptions[] = [];
@@ -77,7 +88,9 @@ describe("publishReviewCandidateInlineComments", () => {
       },
     }));
 
-    expect([...result.results.entries()]).toEqual([
+    const value = unwrapPublicationValue(result);
+
+    expect([...value.results.entries()]).toEqual([
       ["fp-a", expect.objectContaining({ status: "published", commentId: 1 })],
       ["fp-b", expect.objectContaining({ status: "published", commentId: 2 })],
     ]);
@@ -111,7 +124,9 @@ describe("publishReviewCandidateInlineComments", () => {
     }));
 
     expect(publisherCreated).toBe(false);
-    expect([...result.results.entries()]).toEqual([
+    const value = unwrapPublicationValue(result);
+
+    expect([...value.results.entries()]).toEqual([
       ["fp-a", expect.objectContaining({
         status: "blocked",
         reason: "publication-failed",
@@ -122,6 +137,36 @@ describe("publishReviewCandidateInlineComments", () => {
         reason: "publication-failed",
         isError: true,
       })],
+    ]);
+  });
+
+  test("returns a Result error with partial publisher results when a publisher throws", async () => {
+    const result = await publishReviewCandidateInlineComments(baseParams({
+      createPublisher: () => ({
+        async publish(input) {
+          if (input.body === "body fp-b") {
+            throw new Error("publisher boom");
+          }
+          return {
+            status: "published",
+            commentId: 17,
+            content: [{ type: "text", text: "published" }],
+          } satisfies InlineReviewPublicationResult;
+        },
+      }),
+    }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected candidate inline publication to fail");
+    }
+    expect(result.err.error).toBeInstanceOf(Error);
+    if (!(result.err.error instanceof Error)) {
+      throw new Error("expected publisher error to be preserved");
+    }
+    expect(result.err.error.message).toBe("publisher boom");
+    expect([...result.err.results.entries()]).toEqual([
+      ["fp-a", expect.objectContaining({ status: "published", commentId: 17 })],
     ]);
   });
 });

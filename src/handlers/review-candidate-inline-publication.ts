@@ -19,6 +19,7 @@ import {
   buildCandidateReviewOutputKey,
   type PublishableReviewCandidateInlinePayload,
 } from "../review-orchestration/review-candidate-publication-adapter.ts";
+import { err, ok, type Result } from "../lib/result.ts";
 
 type CandidateInlinePublisher = {
   publish(input: PublishInlineReviewCommentInput): Promise<InlineReviewPublicationResult>;
@@ -27,10 +28,19 @@ type CandidateInlinePublisher = {
 type CreateInlineReviewPublisher = (options: InlineReviewPublisherOptions) => CandidateInlinePublisher;
 type CreateReviewOutputPublicationGate = typeof createReviewOutputPublicationGate;
 
-export type ReviewCandidateInlinePublicationResult = {
+export type ReviewCandidateInlinePublicationValue = {
   results: Map<string, InlineReviewPublicationResult>;
   candidateVerificationPublicationEvidence?: CandidateVerificationPublicationEvidenceSummary;
 };
+
+export type ReviewCandidateInlinePublicationError = ReviewCandidateInlinePublicationValue & {
+  error: unknown;
+};
+
+export type ReviewCandidateInlinePublicationResult = Result<
+  ReviewCandidateInlinePublicationValue,
+  ReviewCandidateInlinePublicationError
+>;
 
 export async function publishReviewCandidateInlineComments(params: {
   payloads: PublishableReviewCandidateInlinePayload[];
@@ -56,8 +66,13 @@ export async function publishReviewCandidateInlineComments(params: {
     candidateVerificationPublicationEvidence = summary;
   });
 
+  const publicationValue = (): ReviewCandidateInlinePublicationValue => ({
+    results,
+    ...(candidateVerificationPublicationEvidence ? { candidateVerificationPublicationEvidence } : {}),
+  });
+
   if (params.payloads.length === 0) {
-    return { results };
+    return ok(publicationValue());
   }
 
   if (!params.canPublishVisibleOutput("candidate-approved inline review comments")) {
@@ -69,7 +84,7 @@ export async function publishReviewCandidateInlineComments(params: {
         isError: true,
       });
     }
-    return { results };
+    return ok(publicationValue());
   }
 
   for (const payload of params.payloads) {
@@ -95,9 +110,16 @@ export async function publishReviewCandidateInlineComments(params: {
       }),
       prDiffCommentabilityIndex: params.prDiffCommentabilityIndex,
     });
-    const publishResult = await candidatePublisher.publish(payload.publication);
-    results.set(payload.candidateFingerprint, publishResult);
+    try {
+      const publishResult = await candidatePublisher.publish(payload.publication);
+      results.set(payload.candidateFingerprint, publishResult);
+    } catch (error) {
+      return err({
+        ...publicationValue(),
+        error,
+      });
+    }
   }
 
-  return { results, candidateVerificationPublicationEvidence };
+  return ok(publicationValue());
 }

@@ -86,4 +86,21 @@ describe("publication result structure", () => {
     expect(contextSource).toContain("adaptApprovedCandidatesForInlinePublicationResult");
     expect(contextSource).toContain("if (!publicationAdapterResult.ok)");
   });
+
+  test("keeps review candidate inline publication boundary on shared Result shape", () => {
+    const source = readFileSync(
+      new URL("./review-candidate-inline-publication.ts", import.meta.url),
+      "utf8",
+    );
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("ReviewCandidateInlinePublicationResult = Result<");
+    expect(source).toMatch(/\bok\(/);
+    expect(source).toMatch(/\berr\(/);
+    expect(preparationSource).toContain("if (!candidateInlinePublication.ok)");
+  });
 });

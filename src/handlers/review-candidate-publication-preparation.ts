@@ -192,6 +192,15 @@ export async function resolveReviewCandidatePublicationPreparation(params: {
     candidateVerificationContext: params.candidateVerificationContext,
     prDiffCommentabilityIndex: params.prDiffCommentabilityIndex,
   });
+  const candidateInlinePublicationValue = candidateInlinePublication.ok
+    ? candidateInlinePublication.value
+    : candidateInlinePublication.err;
+  if (!candidateInlinePublication.ok) {
+    params.logger.warn(
+      { ...params.baseLog, err: candidateInlinePublication.err.error },
+      "Candidate inline publication failed; continuing with partial publication evidence",
+    );
+  }
 
   return {
     extractionOctokit,
@@ -205,9 +214,9 @@ export async function resolveReviewCandidatePublicationPreparation(params: {
     directPublicationAttempted: reviewCandidateApprovalContext.directPublicationAttempted,
     reviewCandidateApprovalResult: reviewCandidateApprovalContext.approval,
     reviewCandidatePublicationAdapter,
-    candidatePublisherResults: candidateInlinePublication.results,
+    candidatePublisherResults: candidateInlinePublicationValue.results,
     reviewCandidateVerificationPublicationEvidence:
-      candidateInlinePublication.candidateVerificationPublicationEvidence
+      candidateInlinePublicationValue.candidateVerificationPublicationEvidence
       ?? params.initialCandidateVerificationPublicationEvidence,
   };
 }

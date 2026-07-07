@@ -29,7 +29,7 @@ Evidence:
 | --- | --- | --- |
 | Reduce `review.ts` and `mention.ts` monster handlers | `review.ts` is 1714 lines and `mention.ts` is 525 lines. Both are now orchestration shells with extracted modules guarded by `src/handlers/review-structure.test.ts` and `src/handlers/mention-structure.test.ts`. | Partially satisfied. `review.ts` remains large, but executable structure guards prevent key responsibilities from drifting back into the handler. |
 | Route every outbound body through one publication pipeline | `src/lib/github-publication-architecture.test.ts` scans production TypeScript for direct body-bearing GitHub comment/review writes and direct outgoing sanitizer usage outside the facade. Fresh source scans found no body-bearing direct publication calls outside `src/lib/github-publication.ts`. | Satisfied by current evidence. |
-| Adopt `{ ok, value }` / `{ ok: false, err }` adapter result shape | `src/lib/result.ts` exists and Result is used across publication, handler recovery, validation, timeout, and formatter boundaries. `src/lib/result-architecture.test.ts` covers the architecture expectation. | Partially satisfied. Result boundaries are broad but not universal across every repo module. |
+| Adopt `{ ok, value }` / `{ ok: false, err }` adapter result shape | `src/lib/result.ts` exists and Result is used across publication, handler recovery, validation, timeout, formatter, write-output, candidate publication adapter, and candidate inline publication boundaries. `src/lib/result-architecture.test.ts` and `src/handlers/publication-result-structure.test.ts` cover the architecture expectation. | Partially satisfied. Result boundaries now cover the high-risk adapter/publication surfaces, but they are not universal across every repo module. |
 | Use shared paginated marker-comment helpers | `src/lib/github-issue-comments.ts` now covers issue comments, review comments, pull reviews, and shared scan/list helpers. `src/review-orchestration/review-output-marker-scan.ts` uses those helpers for review-output marker surfaces. | Satisfied by current evidence for marker-comment lookup paths. |
 | Consolidate timeout primitives and AbortSignal plumbing | `src/lib/with-timeout.test.ts` contains production-wide architecture tests for raw timeout primitive usage. Fresh scans found no production `setTimeout`, `Promise.race`, or `new AbortController` timeout usage outside `src/lib/with-timeout.ts`. | Satisfied by current evidence. |
 
@@ -81,6 +81,7 @@ Run these before changing the PR from draft to ready:
 ```sh
 bun test src/lib/github-publication-architecture.test.ts src/lib/with-timeout.test.ts src/lib/result-architecture.test.ts src/lib/github-issue-comments.test.ts
 bun test src/handlers/review-structure.test.ts src/handlers/mention-structure.test.ts
+bun test src/handlers/review-candidate-inline-publication.test.ts src/handlers/publication-result-structure.test.ts src/lib/result-architecture.test.ts
 bun test src/handlers/review-setup-octokit.test.ts src/handlers/mention-setup-octokit.test.ts src/handlers/review-timeout-retry-context.test.ts
 bun test src/execution/mcp/comment-server.test.ts src/execution/mcp/inline-review-server.test.ts src/execution/mcp/issue-comment-server.test.ts src/execution/mcp/review-comment-thread-server.test.ts
 bun test src/slack/slash-command-handler.test.ts
