@@ -5,7 +5,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1585);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1550);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -1887,6 +1887,17 @@ describe("review handler structure", () => {
     expect(source).not.toContain("handleRetryEnqueueFailure({");
     expect(source).toContain("scheduleReviewTimeoutRetryContinuation");
     expect(source).toContain("./review-timeout-retry-scheduling.ts");
+  });
+
+  test("keeps retry job parameter projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const retryJobSource = readFileSync(new URL("./review-timeout-retry-job.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("buildRetryJobParams: (retryAttemptId) => {");
+    expect(source).not.toContain("preparePrompt: {\n                      owner: apiOwner");
+    expect(source).toContain("buildReviewTimeoutRetryJobParams");
+    expect(source).toContain("./review-timeout-retry-job.ts");
+    expect(retryJobSource).toContain("export function buildReviewTimeoutRetryJobParams");
   });
 
   test("keeps retry continuation scheduling orchestration out of the monster handler", () => {
