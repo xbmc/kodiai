@@ -196,6 +196,17 @@ describe("publication result structure", () => {
     expect(contextSource).toMatch(/\bresultErr\(/);
   });
 
+  test("keeps mention post-execution telemetry orchestration on shared Result shape", () => {
+    const source = readFileSync(new URL("./mention-post-execution-telemetry.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("MentionPostExecutionTelemetryResult");
+    expect(source).toContain("Result<MentionPostExecutionTelemetryStatus");
+    expect(source).toContain("): Promise<MentionPostExecutionTelemetryResult> {");
+    expect(source).toMatch(/\bresultOk\(/);
+    expect(source).toMatch(/\bresultErr\(/);
+  });
+
   test("keeps bounded first-pass timeout publication orchestration on shared Result shape", () => {
     const source = readFileSync(
       new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
