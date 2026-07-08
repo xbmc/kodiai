@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ok as resultOk } from "../lib/result.ts";
 import { buildReviewPostExecutionTelemetryPublicationContext, recordReviewPostExecutionTelemetryForInstallation } from "./review-post-execution-telemetry-context.ts";
 
 describe("buildReviewPostExecutionTelemetryPublicationContext", () => {
@@ -38,7 +39,13 @@ describe("recordReviewPostExecutionTelemetryForInstallation", () => {
       sections: [],
     }];
 
-    await recordReviewPostExecutionTelemetryForInstallation({
+    const telemetryResult = resultOk({
+      telemetryRecorded: true,
+      costWarningStatus: "skipped" as const,
+      costWarningPublished: false,
+    });
+
+    const resultForInstallation = await recordReviewPostExecutionTelemetryForInstallation({
       installationId: 123,
       getInstallationOctokit: (async (installationId: number) => {
         installationCalls.push(installationId);
@@ -64,9 +71,11 @@ describe("recordReviewPostExecutionTelemetryForInstallation", () => {
       recordTelemetry: async (params) => {
         recordCalls.push(params);
         await params.getOctokit();
+        return telemetryResult;
       },
     });
 
+    expect(resultForInstallation).toBe(telemetryResult);
     expect(installationCalls).toEqual([123]);
     expect(recordCalls).toEqual([
       expect.objectContaining({
@@ -83,6 +92,48 @@ describe("recordReviewPostExecutionTelemetryForInstallation", () => {
         derivedPromptCacheReason: "cache-hit",
         costWarningUsd: 5,
         botHandles: ["kodiai", "claude"],
+      }),
+    ]);
+  });
+
+  test("returns err when the bound telemetry recorder throws", async () => {
+    const failure = new Error("telemetry exploded");
+    const warnings: unknown[] = [];
+
+    const result = await recordReviewPostExecutionTelemetryForInstallation({
+      installationId: 123,
+      getInstallationOctokit: (async () => ({ marker: "octokit" })) as any,
+      appSlug: "kodiai",
+      telemetryEnabled: true,
+      telemetryStore: {} as any,
+      logger: {
+        warn: (fields: unknown, message?: string) => warnings.push({ fields, message }),
+      },
+      deliveryId: "delivery-1",
+      owner: "xbmc",
+      repo: "kodiai",
+      prNumber: 42,
+      prAuthor: "author",
+      eventAction: "opened",
+      result: {
+        conclusion: "success",
+        published: false,
+        costUsd: 6,
+      } as any,
+      derivedPromptCacheStatus: "hit" as any,
+      costWarningUsd: 5,
+      canPublishVisibleOutput: () => true,
+      setReviewWorkPhase: () => undefined,
+      recordTelemetry: async () => {
+        throw failure;
+      },
+    });
+
+    expect(result).toEqual({ ok: false, err: failure });
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        fields: { err: failure },
+        message: "Review post-execution telemetry failed (non-blocking)",
       }),
     ]);
   });

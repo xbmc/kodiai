@@ -178,6 +178,24 @@ describe("publication result structure", () => {
     expect(source).not.toContain("): Promise<number | undefined> {");
   });
 
+  test("keeps review post-execution telemetry orchestration on shared Result shape", () => {
+    const source = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
+    const contextSource = readFileSync(
+      new URL("./review-post-execution-telemetry-context.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("ReviewPostExecutionTelemetryResult");
+    expect(source).toContain("Result<ReviewPostExecutionTelemetryStatus");
+    expect(source).toContain("): Promise<ReviewPostExecutionTelemetryResult> {");
+    expect(source).toMatch(/\bresultOk\(/);
+    expect(source).toMatch(/\bresultErr\(/);
+    expect(contextSource).toContain("ReviewPostExecutionTelemetryForInstallationResult");
+    expect(contextSource).toContain("): Promise<ReviewPostExecutionTelemetryForInstallationResult> {");
+    expect(contextSource).toMatch(/\bresultErr\(/);
+  });
+
   test("keeps bounded first-pass timeout publication orchestration on shared Result shape", () => {
     const source = readFileSync(
       new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),

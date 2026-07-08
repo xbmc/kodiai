@@ -460,7 +460,7 @@ describe("review handler structure", () => {
     expect(source).toContain("./review-post-execution-telemetry-context.ts");
     expect(adapterSource).toContain("export function buildReviewPostExecutionTelemetryPublicationContext");
     expect(adapterSource).toContain("export async function recordReviewPostExecutionTelemetryForInstallation");
-    expect(adapterSource).toContain("import { recordReviewPostExecutionTelemetry }");
+    expect(adapterSource).toContain("recordReviewPostExecutionTelemetry,");
     expect(adapterSource).toContain("await recordTelemetry({");
   });
 
