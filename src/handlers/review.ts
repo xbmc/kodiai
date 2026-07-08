@@ -13,17 +13,13 @@ import {
   type CanonicalSurfaceKind,
   upsertCanonicalReviewSurface,
 } from "../review-orchestration/review-canonical-surface.ts";
-import {
-  type ExtractedFinding,
-} from "../review-orchestration/review-comment-finding-extraction.ts";
+import { type ExtractedFinding } from "../review-orchestration/review-comment-finding-extraction.ts";
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
 import {
   buildReviewPromptFingerprint,
 } from "../review-orchestration/review-prompt-fingerprint.ts";
 export { buildReviewPromptFingerprint, type ReviewPromptBuildContext, type ReviewPromptFingerprintResult } from "../review-orchestration/review-prompt-fingerprint.ts";
-import {
-  REVIEW_WORKSPACE_FETCH_DEPTH,
-} from "../review-orchestration/review-diff-collection.ts";
+import { REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
 export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
 import {
   buildRepoDoctrineLogFields,
@@ -106,6 +102,7 @@ import { prepareInitialReviewPrompt } from "./review-initial-prompt-preparation.
 import { removeFilteredInlineCommentsForSuccessfulReview } from "./review-filtered-inline-cleanup.ts";
 import { buildReviewDetailsAttemptLogFields } from "./review-details-attempt-log-fields.ts";
 import { registerReviewHandlerEvents } from "./review-event-registration.ts";
+import { buildReviewGithubAppAdapters } from "./review-github-app-adapters.ts";
 
 /**
  * Create the review handler and register it with the event router.
@@ -170,6 +167,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
     reviewPromptDerivedCacheOptions,
     logger,
   });
+  const reviewGithubAppAdapters = buildReviewGithubAppAdapters(githubApp);
 
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as ReviewWebhookPayload;
@@ -244,7 +242,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
       });
       if (runStateGate.action === "skip") return;
 
-      const reviewBotHandles = buildReviewBotHandles(githubApp.getAppSlug());
+      const reviewBotHandles = buildReviewBotHandles(reviewGithubAppAdapters.getAppSlug());
       let workspace: Workspace | undefined;
       try {
         const workspacePhaseHooks = createReviewWorkspacePhaseHooks({
@@ -283,7 +281,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
 
         const reviewIdempotencyContext = await resolveReviewIdempotencyContext({
           installationId: event.installationId,
-          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+          getInstallationOctokit: reviewGithubAppAdapters.getInstallationOctokit,
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
@@ -314,7 +312,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         await publishReviewRequestedEyesReactionFromHandlerDependencies({
           action,
           installationId: event.installationId,
-          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+          getInstallationOctokit: reviewGithubAppAdapters.getInstallationOctokit,
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
@@ -606,7 +604,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
             owner: apiOwner,
             repo: apiRepo,
             prNumber: pr.number,
-            appSlug: githubApp.getAppSlug(),
+            appSlug: reviewGithubAppAdapters.getAppSlug(),
             action: payload.action,
             taskType: reviewRouting.taskType,
             reviewPrompt,
@@ -644,8 +642,8 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         const reviewOutputSucceeded = result.conclusion === "success";
         const candidatePublicationPreparationAdapters = buildReviewCandidatePublicationPreparationAdapters({
           installationId: event.installationId,
-          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
-          appSlug: githubApp.getAppSlug(),
+          getInstallationOctokit: reviewGithubAppAdapters.getInstallationOctokit,
+          appSlug: reviewGithubAppAdapters.getAppSlug(),
         });
         const {
           extractionOctokit,
@@ -875,8 +873,8 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
 
         await recordReviewPostExecutionTelemetryForInstallation({
           installationId: event.installationId,
-          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
-          appSlug: githubApp.getAppSlug(),
+          getInstallationOctokit: reviewGithubAppAdapters.getInstallationOctokit,
+          appSlug: reviewGithubAppAdapters.getAppSlug(),
           telemetryEnabled: config.telemetry.enabled,
           telemetryStore,
           logger,
@@ -1030,10 +1028,10 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
             getPromptCacheErrorCount: getReviewPromptDerivedCacheErrorCount,
             setReviewWorkPhaseForAttempt,
             executor,
-            appSlug: githubApp.getAppSlug(),
+            appSlug: reviewGithubAppAdapters.getAppSlug(),
             reviewMaxTurnsOverride,
             prDiffCommentabilityIndex,
-            getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+            getInstallationOctokit: reviewGithubAppAdapters.getInstallationOctokit,
             settleRetryWithoutCanonicalUpdate,
             canPublishReviewWorkOutput,
           });
@@ -1045,8 +1043,8 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
 
         const fallbackPublicationAdapters = buildReviewFallbackPublicationAdapters({
           installationId: event.installationId,
-          getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
-          appSlug: githubApp.getAppSlug(),
+          getInstallationOctokit: reviewGithubAppAdapters.getInstallationOctokit,
+          appSlug: reviewGithubAppAdapters.getAppSlug(),
           visibleBudgetProjection: visibleBudgetState,
         });
         await publishAndApplyReviewFallbackOutputs(buildReviewFallbackPublicationParams({
@@ -1090,7 +1088,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           logger,
           publishHandlerFailureError: buildReviewHandlerFailurePublicationAdapterFromHandlerDependencies({
             installationId: event.installationId,
-            getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+            getInstallationOctokit: reviewGithubAppAdapters.getInstallationOctokit,
             owner: apiOwner,
             repo: apiRepo,
             prNumber: pr.number,

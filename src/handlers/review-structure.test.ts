@@ -9,7 +9,7 @@ describe("review handler structure", () => {
   test("keeps the review handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(1144);
+    expect(source.split("\n").length).toBeLessThanOrEqual(1142);
   });
 
   test("keeps Review Details body assembly out of the monster handler", () => {
@@ -471,6 +471,20 @@ describe("review handler structure", () => {
     expect(source).not.toContain("botHandles: [githubApp.getAppSlug(), \"claude\"],");
     expect(source).toContain("buildReviewBotHandles");
     expect(executionContextSource).toContain("export function buildReviewBotHandles");
+  });
+
+  test("keeps review GitHub app adapter projection out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("(installationId) => githubApp.getInstallationOctokit(installationId)");
+    expect(source).not.toContain("githubApp.getAppSlug()");
+    expect(source).toContain("buildReviewGithubAppAdapters");
+    expect(source).toContain("./review-github-app-adapters.ts");
+
+    const adaptersSource = readFileSync(new URL("./review-github-app-adapters.ts", import.meta.url), "utf8");
+    expect(adaptersSource).toContain("export function buildReviewGithubAppAdapters");
+    expect(adaptersSource).toContain("getInstallationOctokit");
+    expect(adaptersSource).toContain("getAppSlug");
   });
 
   test("keeps author expertise prompt projection out of the monster handler", () => {
