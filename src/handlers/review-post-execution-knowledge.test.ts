@@ -15,7 +15,7 @@ describe("recordReviewPostExecutionKnowledge", () => {
     }];
     const suppressionMatchCounts = new Map([["ignore-generated", 2]]);
 
-    const reviewId = await recordReviewPostExecutionKnowledge({
+    const result = await recordReviewPostExecutionKnowledge({
       knowledgeStore: { kind: "knowledge" } as any,
       logger: { debug: () => undefined, warn: () => undefined } as any,
       repo: "xbmc/kodiai",
@@ -92,7 +92,7 @@ describe("recordReviewPostExecutionKnowledge", () => {
       },
     });
 
-    expect(reviewId).toBe(987);
+    expect(result).toEqual({ ok: true, value: { reviewId: 987 } });
     expect(persistCalls).toEqual([
       expect.objectContaining({
         repo: "xbmc/kodiai",
@@ -159,4 +159,104 @@ describe("recordReviewPostExecutionKnowledge", () => {
       }),
     ]);
   });
+
+  test("returns a Result error when persistence fails before scheduling side effects", async () => {
+    const sideEffectCalls: unknown[] = [];
+    const err = new Error("database offline");
+
+    const result = await recordReviewPostExecutionKnowledge({
+      ...baseParams(),
+      persistKnowledge: async () => {
+        throw err;
+      },
+      recordSideEffects: async (params) => {
+        sideEffectCalls.push(params);
+      },
+    });
+
+    expect(result).toEqual({ ok: false, err });
+    expect(sideEffectCalls).toEqual([]);
+  });
+
+  test("returns a Result error when post-execution side effects fail", async () => {
+    const err = new Error("side effect failed");
+
+    const result = await recordReviewPostExecutionKnowledge({
+      ...baseParams(),
+      persistKnowledge: async () => 654,
+      recordSideEffects: async () => {
+        throw err;
+      },
+    });
+
+    expect(result).toEqual({ ok: false, err });
+  });
 });
+
+function baseParams(): Parameters<typeof recordReviewPostExecutionKnowledge>[0] {
+  return {
+    knowledgeStore: { kind: "knowledge" } as any,
+    logger: { debug: () => undefined, warn: () => undefined } as any,
+    repo: "xbmc/kodiai",
+    owner: "xbmc",
+    pr: {
+      number: 42,
+      title: "Fix cache reuse",
+      user: { login: "author" },
+      head: { sha: "head-sha" },
+      base: { sha: "base-sha" },
+    },
+    reviewOutputKey: "review-output-key",
+    deliveryId: "delivery-1",
+    filesAnalyzed: 3,
+    linesChanged: 44,
+    findingCounts: { critical: 0, major: 1, medium: 0, minor: 0 },
+    processedFindings: [],
+    suppressionMatchCounts: new Map(),
+    visibleFindingCount: 0,
+    lowConfidenceFindingCount: 0,
+    suppressionsApplied: 0,
+    config: {
+      review: {
+        mode: "enhanced",
+        severity: { minLevel: "medium" },
+        focusAreas: ["correctness"],
+        maxComments: 5,
+        suppressions: [],
+        minConfidence: 0.7,
+        profile: "balanced",
+      },
+      knowledge: {
+        shareGlobal: true,
+        retrieval: {
+          hunkEmbedding: {
+            enabled: true,
+            maxHunksPerPr: 20,
+            minChangedLines: 3,
+            excludePatterns: ["dist/**"],
+          },
+        },
+      },
+      model: "claude-test",
+    } as any,
+    reviewPlanConfigSnapshot: { plan: "snapshot" },
+    reducerResult: {
+      status: "ready",
+      counts: { published: 1 },
+      reason: "ok",
+    } as any,
+    reviewCandidateFindingConfigSnapshot: { finding: "config" },
+    reviewCandidatePublicationRuntime: {
+      safeConfigSnapshot: { publication: "config" },
+    } as any,
+    reviewCandidatePublicationFlow: { flow: "published" },
+    result: {
+      durationMs: 1234,
+      conclusion: "success",
+    } as any,
+    reviewFiles: ["src/app.ts"],
+    changedFiles: ["src/app.ts", "src/helper.ts"],
+    diffContent: "diff --git a/src/app.ts b/src/app.ts",
+    baseLog: { deliveryId: "delivery-1" },
+  };
+}

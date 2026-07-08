@@ -166,6 +166,18 @@ describe("publication result structure", () => {
     expect(source).toContain("fallbackPublication.value");
   });
 
+  test("keeps review post-execution knowledge orchestration on shared Result shape", () => {
+    const source = readFileSync(new URL("./review-post-execution-knowledge.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("ReviewPostExecutionKnowledgeResult");
+    expect(source).toContain("Result<ReviewPostExecutionKnowledgeStatus");
+    expect(source).toContain("): Promise<ReviewPostExecutionKnowledgeResult> {");
+    expect(source).toMatch(/\bresultOk\(/);
+    expect(source).toMatch(/\bresultErr\(/);
+    expect(source).not.toContain("): Promise<number | undefined> {");
+  });
+
   test("keeps bounded first-pass timeout publication orchestration on shared Result shape", () => {
     const source = readFileSync(
       new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
