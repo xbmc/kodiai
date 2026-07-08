@@ -171,15 +171,18 @@ describe("publication result structure", () => {
       new URL("./review-bounded-first-pass-timeout-publication.ts", import.meta.url),
       "utf8",
     );
-    const handlerSource = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const orchestrationSource = readFileSync(
+      new URL("./review-timeout-continuation-orchestration.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).toContain("type Result");
     expect(source).toContain("BoundedFirstPassTimeoutPublicationResult");
     expect(source).toContain("Result<BoundedFirstPassTimeoutPublicationValue");
     expect(source).toMatch(/\bok\(/);
     expect(source).toContain("if (!publication.ok)");
-    expect(handlerSource).toContain("resolveBoundedFirstPassTimeoutPublicationState");
-    expect(handlerSource).toContain("boundedFirstPassPublicationState.partialCommentId");
+    expect(orchestrationSource).toContain("resolveBoundedFirstPassTimeoutPublicationState");
+    expect(orchestrationSource).toContain("boundedFirstPassPublicationState.partialCommentId");
   });
 
   test("keeps timeout Review Details publication on shared Result shape", () => {
