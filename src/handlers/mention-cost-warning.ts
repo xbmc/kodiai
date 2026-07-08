@@ -1,6 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import { createIssueCommentWithPublicationPipeline } from "../lib/github-publication.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, toError, type Result } from "../lib/result.ts";
 
 type CostWarningLogger = {
   warn(fields: Record<string, unknown>, message?: string): void;
@@ -12,7 +12,7 @@ export type MentionCostWarningPublicationStatus =
   | { status: "failed"; published: false };
 
 export type MentionCostWarningPublicationResult =
-  Result<MentionCostWarningPublicationStatus, never>;
+  Result<MentionCostWarningPublicationStatus>;
 
 export function buildMentionCostWarningBody(params: {
   costUsd: number;
@@ -36,19 +36,23 @@ export async function postMentionCostWarning(params: {
   thresholdUsd: number;
   botHandles: string[];
 }): Promise<MentionCostWarningPublicationResult> {
-  const octokit = await params.getOctokit();
-  await createIssueCommentWithPublicationPipeline(octokit, {
-    owner: params.owner,
-    repo: params.repo,
-    issue_number: params.issueNumber,
-    body: buildMentionCostWarningBody({
-      costUsd: params.costUsd,
-      thresholdUsd: params.thresholdUsd,
-    }),
-    botHandles: params.botHandles,
-    preserveKodiaiMarkers: true,
-  });
-  return ok({ status: "published", published: true });
+  try {
+    const octokit = await params.getOctokit();
+    await createIssueCommentWithPublicationPipeline(octokit, {
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.issueNumber,
+      body: buildMentionCostWarningBody({
+        costUsd: params.costUsd,
+        thresholdUsd: params.thresholdUsd,
+      }),
+      botHandles: params.botHandles,
+      preserveKodiaiMarkers: true,
+    });
+    return ok({ status: "published", published: true });
+  } catch (error) {
+    return err(toError(error));
+  }
 }
 
 export async function maybePostMentionCostWarning(params: {
@@ -94,7 +98,7 @@ export async function maybePostMentionCostWarning(params: {
       return ok({ status: "skipped", published: false });
     }
 
-    return await postMentionCostWarning({
+    const publication = await postMentionCostWarning({
       getOctokit: params.getOctokit,
       owner: params.owner,
       repo: params.repo,
@@ -103,6 +107,14 @@ export async function maybePostMentionCostWarning(params: {
       thresholdUsd: params.thresholdUsd,
       botHandles: params.botHandles,
     });
+    if (!publication.ok) {
+      params.logger.warn(
+        { err: publication.err },
+        "Failed to post cost warning comment (non-blocking)",
+      );
+      return ok({ status: "failed", published: false });
+    }
+    return publication;
   } catch (err) {
     params.logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
     return ok({ status: "failed", published: false });

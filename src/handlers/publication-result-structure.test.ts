@@ -472,6 +472,16 @@ describe("publication result structure", () => {
     }
   });
 
+  test("keeps mention cost-warning publisher failures on err Result shape", () => {
+    const source = readFileSync(new URL("./mention-cost-warning.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("postMentionCostWarning");
+    expect(source).toMatch(/\berr\(/);
+    expect(source).toContain("return err(toError(error))");
+    expect(source).toContain("if (!publication.ok)");
+    expect(source).toContain("return ok({ status: \"failed\", published: false })");
+  });
+
   test("keeps disabled write-mode refusal publication on shared Result shape", () => {
     const source = readFileSync(new URL("./mention-write-disabled.ts", import.meta.url), "utf8");
     const prePromptSource = readFileSync(

@@ -51,6 +51,30 @@ describe("mention cost warning", () => {
     });
   });
 
+  test("returns err Result when publication fails", async () => {
+    const failure = new Error("comment failed");
+    const createComment = mock(async () => {
+      throw failure;
+    });
+
+    const result = await postMentionCostWarning({
+      getOctokit: async () => ({
+        rest: { issues: { createComment } },
+      } as any),
+      owner: "xbmc",
+      repo: "kodiai",
+      issueNumber: 42,
+      costUsd: 6.123456,
+      thresholdUsd: 5,
+      botHandles: ["kodiai"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBe(failure);
+    }
+  });
+
   test("returns skipped Result when explicit review publication gate is closed", async () => {
     const createComment = mock(async () => ({ data: { id: 99 } }));
 
@@ -76,5 +100,38 @@ describe("mention cost warning", () => {
       value: { status: "skipped", published: false },
     });
     expect(createComment).not.toHaveBeenCalled();
+  });
+
+  test("returns failed status when optional cost warning publication fails", async () => {
+    const failure = new Error("comment failed");
+    const createComment = mock(async () => {
+      throw failure;
+    });
+    const warn = mock(() => {});
+
+    const result = await maybePostMentionCostWarning({
+      costUsd: 6,
+      thresholdUsd: 5,
+      owner: "xbmc",
+      repo: "kodiai",
+      issueNumber: 42,
+      prNumber: 42,
+      explicitReviewRequest: false,
+      canPublishExplicitReviewOutput: () => true,
+      getOctokit: async () => ({
+        rest: { issues: { createComment } },
+      } as any),
+      botHandles: ["kodiai"],
+      logger: { warn },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: "failed", published: false },
+    });
+    expect(warn).toHaveBeenCalledWith(
+      { err: failure },
+      "Failed to post cost warning comment (non-blocking)",
+    );
   });
 });
