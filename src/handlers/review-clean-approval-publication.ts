@@ -275,7 +275,7 @@ async function mergeCleanReviewDetailsIntoExistingOutput(input: {
     reviewDetailsCommentId !== undefined &&
     params.canPublishVisibleOutput("finalized Review Details timing update")
   ) {
-    await updateFinalizedReviewDetailsComment({
+    const finalizedUpdate = await updateFinalizedReviewDetailsComment({
       octokit: input.octokit,
       owner: params.owner,
       repo: params.repo,
@@ -283,5 +283,8 @@ async function mergeCleanReviewDetailsIntoExistingOutput(input: {
       body: params.canonicalReviewDetailsBody,
       botHandles: input.botHandles,
     });
+    if (!finalizedUpdate.ok) {
+      throw finalizedUpdate.err;
+    }
   }
 }

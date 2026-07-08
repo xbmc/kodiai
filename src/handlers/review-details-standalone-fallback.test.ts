@@ -38,7 +38,10 @@ function makeParams(
       ok: true,
       value: { published: true, commentId: 901 },
     }),
-    updateFinalizedReviewDetailsCommentFn: async () => undefined,
+    updateFinalizedReviewDetailsCommentFn: async () => ({
+      ok: true,
+      value: { commentId: 901 },
+    }),
     ...overrides,
     testState: {
       completedLogs,
@@ -59,6 +62,7 @@ describe("publishStandaloneReviewDetailsFallback", () => {
       },
       updateFinalizedReviewDetailsCommentFn: async (input) => {
         updateCalls.push(input as Record<string, unknown>);
+        return { ok: true, value: { commentId: 901 } };
       },
     });
 
@@ -102,6 +106,7 @@ describe("publishStandaloneReviewDetailsFallback", () => {
       },
       updateFinalizedReviewDetailsCommentFn: async () => {
         updateCalled = true;
+        return { ok: true, value: { commentId: 901 } };
       },
     });
 
@@ -128,6 +133,7 @@ describe("publishStandaloneReviewDetailsFallback", () => {
       }),
       updateFinalizedReviewDetailsCommentFn: async () => {
         updateCalled = true;
+        return { ok: true, value: { commentId: 901 } };
       },
     });
 

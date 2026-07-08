@@ -57,7 +57,7 @@ describe("createReviewDetailsPublicationRuntime", () => {
       },
     } as any;
 
-    await updateFinalizedReviewDetailsComment({
+    const result = await updateFinalizedReviewDetailsComment({
       octokit,
       owner: "xbmc",
       repo: "kodiai",
@@ -66,6 +66,12 @@ describe("createReviewDetailsPublicationRuntime", () => {
       botHandles: ["kodiai", "claude"],
     });
 
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        commentId: 456,
+      },
+    });
     expect(updateComment).toHaveBeenCalledTimes(1);
     expect(updateComment.mock.calls[0]![0]).toMatchObject({
       owner: "xbmc",
@@ -73,6 +79,32 @@ describe("createReviewDetailsPublicationRuntime", () => {
       comment_id: 456,
       body: "Finalized details for claude.",
     });
+  });
+
+  test("returns err Result when finalized Review Details comment update fails", async () => {
+    const failure = new Error("update failed");
+    const updateComment = mock(async () => {
+      throw failure;
+    });
+    const octokit = {
+      rest: {
+        issues: { updateComment },
+      },
+    } as any;
+
+    const result = await updateFinalizedReviewDetailsComment({
+      octokit,
+      owner: "xbmc",
+      repo: "kodiai",
+      commentId: 456,
+      body: "Finalized details",
+      botHandles: ["kodiai"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBe(failure);
+    }
   });
 
   test("renders details, finalizes publication timing, and logs canonical completion", () => {

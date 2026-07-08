@@ -75,7 +75,7 @@ export async function publishStandaloneReviewDetailsFallback(params: {
     reviewDetailsCommentId !== undefined &&
     params.canPublishVisibleOutput("finalized Review Details timing update")
   ) {
-    await updateFinalized({
+    const finalizedUpdate = await updateFinalized({
       octokit: params.octokit,
       owner: params.owner,
       repo: params.repo,
@@ -83,6 +83,9 @@ export async function publishStandaloneReviewDetailsFallback(params: {
       body: params.renderReviewDetailsBody(),
       botHandles: params.botHandles,
     });
+    if (!finalizedUpdate.ok) {
+      throw finalizedUpdate.err;
+    }
   }
   return ok({
     delivery: "degraded-fallback",

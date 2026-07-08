@@ -178,6 +178,27 @@ describe("publication result structure", () => {
     expect(source).not.toContain("): Promise<number | undefined> {");
   });
 
+  test("keeps finalized Review Details comment update adapter on shared Result shape", () => {
+    const source = readFileSync(new URL("./review-details-publication-runtime.ts", import.meta.url), "utf8");
+    const standaloneFallbackSource = readFileSync(
+      new URL("./review-details-standalone-fallback.ts", import.meta.url),
+      "utf8",
+    );
+    const cleanApprovalSource = readFileSync(
+      new URL("./review-clean-approval-publication.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("FinalizedReviewDetailsCommentUpdateResult");
+    expect(source).toContain("Result<FinalizedReviewDetailsCommentUpdateStatus");
+    expect(source).toContain("): Promise<FinalizedReviewDetailsCommentUpdateResult> {");
+    expect(source).toMatch(/\bresultOk\(/);
+    expect(source).toMatch(/\bresultErr\(/);
+    expect(standaloneFallbackSource).toContain("if (!finalizedUpdate.ok)");
+    expect(cleanApprovalSource).toContain("if (!finalizedUpdate.ok)");
+  });
+
   test("keeps review post-execution telemetry orchestration on shared Result shape", () => {
     const source = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
     const contextSource = readFileSync(

@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { ReviewPhaseName, ReviewPhaseTiming } from "../execution/types.ts";
 import type { FilteredFindingRecord } from "../lib/output-filter.ts";
 import { updateIssueCommentWithPublicationPipeline } from "../lib/github-publication.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import type { VisibleBudgetProjection } from "../review-visible-budget/visible-budget-behavior.ts";
 import type {
   CanonicalReviewSurface,
@@ -36,6 +37,13 @@ export type ReviewDetailsPublicationRuntime = {
   ): void;
 };
 
+export type FinalizedReviewDetailsCommentUpdateStatus = {
+  commentId: number;
+};
+
+export type FinalizedReviewDetailsCommentUpdateResult =
+  Result<FinalizedReviewDetailsCommentUpdateStatus>;
+
 export function buildReviewDetailsPublicationRuntimeAdapters(params: {
   visibleBudgetProjection: {
     refresh: () => VisibleBudgetProjection | null;
@@ -60,15 +68,20 @@ export async function updateFinalizedReviewDetailsComment(params: {
   commentId: number;
   body: string;
   botHandles: string[];
-}): Promise<void> {
-  await updateIssueCommentWithPublicationPipeline(params.octokit, {
-    owner: params.owner,
-    repo: params.repo,
-    comment_id: params.commentId,
-    body: params.body,
-    botHandles: params.botHandles,
-    preserveKodiaiMarkers: true,
-  });
+}): Promise<FinalizedReviewDetailsCommentUpdateResult> {
+  try {
+    await updateIssueCommentWithPublicationPipeline(params.octokit, {
+      owner: params.owner,
+      repo: params.repo,
+      comment_id: params.commentId,
+      body: params.body,
+      botHandles: params.botHandles,
+      preserveKodiaiMarkers: true,
+    });
+    return resultOk({ commentId: params.commentId });
+  } catch (err) {
+    return resultErr(toError(err));
+  }
 }
 
 export function createReviewDetailsPublicationRuntime(params: {
