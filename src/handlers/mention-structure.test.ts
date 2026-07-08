@@ -5,7 +5,7 @@ describe("mention handler structure", () => {
   test("keeps the mention handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(490);
+    expect(source.split("\n").length).toBeLessThanOrEqual(488);
   });
 
   test("keeps mention handler dependency contract out of the monster handler", () => {
@@ -17,6 +17,22 @@ describe("mention handler structure", () => {
     expect(source).toContain("import type { MentionHandlerDependencies }");
     expect(source).toContain("./mention-handler-dependencies.ts");
     expect(dependenciesSource).toContain("export type MentionHandlerDependencies");
+  });
+
+  test("keeps mention event registration out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("eventRouter.register(\"issue_comment.created\"");
+    expect(source).not.toContain("eventRouter.register(\"pull_request_review_comment.created\"");
+    expect(source).not.toContain("eventRouter.register(\"pull_request_review.submitted\"");
+    expect(source).toContain("registerMentionHandlerEvents(eventRouter, handleMention)");
+    expect(source).toContain("./mention-event-registration.ts");
+
+    const registrationSource = readFileSync(new URL("./mention-event-registration.ts", import.meta.url), "utf8");
+    expect(registrationSource).toContain("export function registerMentionHandlerEvents");
+    expect(registrationSource).toContain("issue_comment.created");
+    expect(registrationSource).toContain("pull_request_review_comment.created");
+    expect(registrationSource).toContain("pull_request_review.submitted");
   });
 
   test("keeps formatter review-output action policy out of the monster handler", () => {

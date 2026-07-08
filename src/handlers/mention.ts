@@ -36,6 +36,7 @@ import {
   publishMentionPostExecutorOutputs,
 } from "./mention-post-executor-publication.ts";
 import { FORMATTER_REVIEW_OUTPUT_ACTION, resolveMentionAddonReviewDispatcher } from "./mention-handler-policies.ts";
+import { registerMentionHandlerEvents } from "./mention-event-registration.ts";
 
 /**
  * Create the mention handler and register it with the event router.
@@ -482,8 +483,5 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
     }
   }
 
-  // Register for all three mention-triggering events
-  eventRouter.register("issue_comment.created", handleMention);
-  eventRouter.register("pull_request_review_comment.created", handleMention);
-  eventRouter.register("pull_request_review.submitted", handleMention);
+  registerMentionHandlerEvents(eventRouter, handleMention);
 }
