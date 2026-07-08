@@ -2,7 +2,11 @@ import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createAddonCheckHandler, ADDON_CHECK_RUNNER_TIME_BUDGET_MS } from "./addon-check.ts";
+import {
+  createAddonCheckHandler,
+  ADDON_CHECK_RUNNER_TIME_BUDGET_MS,
+  upsertAddonCheckComment,
+} from "./addon-check.ts";
 import { buildAddonCheckMarker } from "../lib/addon-check-formatter.ts";
 import type { EventRouter, WebhookEvent, EventHandler } from "../webhook/types.ts";
 import type { Logger } from "pino";
@@ -297,6 +301,69 @@ describe("createAddonCheckHandler", () => {
 
   beforeEach(() => {
     router = createMockEventRouter();
+  });
+
+  it("creates addon-check comment and returns created Result status", async () => {
+    const octokit = createMockOctokitWithIssues([], []);
+
+    const result = await upsertAddonCheckComment({
+      octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
+      owner: "xbmc",
+      repo: "repo-plugins",
+      prNumber: 42,
+      body: "addon check for @claude",
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { action: "created", commentId: 9999 },
+    });
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    expect(octokit._updateCommentMock).not.toHaveBeenCalled();
+  });
+
+  it("updates addon-check comment and returns updated Result status", async () => {
+    const marker = buildAddonCheckMarker("xbmc", "repo-plugins", 42);
+    const octokit = createMockOctokitWithIssues([], [{ id: 777, body: `${marker}\nold body` }]);
+
+    const result = await upsertAddonCheckComment({
+      octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
+      owner: "xbmc",
+      repo: "repo-plugins",
+      prNumber: 42,
+      body: "updated addon check",
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { action: "updated", commentId: 777 },
+    });
+    expect(octokit._updateCommentMock).toHaveBeenCalledTimes(1);
+    expect(octokit._createCommentMock).not.toHaveBeenCalled();
+  });
+
+  it("returns err Result when addon-check comment publication fails", async () => {
+    const failure = new Error("create failed");
+    const octokit = createMockOctokitWithIssues([], []);
+    octokit.rest.issues.createComment = mock(async () => {
+      throw failure;
+    }) as any;
+
+    const result = await upsertAddonCheckComment({
+      octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
+      owner: "xbmc",
+      repo: "repo-plugins",
+      prNumber: 42,
+      body: "addon check",
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBe(failure);
+    }
   });
 
   // ── Registration ──────────────────────────────────────────────────────

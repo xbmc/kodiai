@@ -46,6 +46,7 @@ import {
   createIssueCommentWithPublicationPipeline,
   updateIssueCommentWithPublicationPipeline,
 } from "../lib/github-publication.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 
 // Re-exported so tests can reference the type without importing from runner directly.
 export type { AddonFinding };
@@ -53,8 +54,14 @@ export type { AddonFinding };
 type RunSubprocess = Parameters<typeof runAddonChecker>[0]["__runSubprocessForTests"];
 type FetchAndCheckout = typeof fetchAndCheckoutPullRequestHeadRef;
 
+export type AddonCheckCommentUpsertStatus =
+  | { action: "created"; commentId: number }
+  | { action: "updated"; commentId: number };
+
+export type AddonCheckCommentUpsertResult = Result<AddonCheckCommentUpsertStatus>;
+
 /** Posts or updates the addon-check PR comment (idempotent). */
-async function upsertAddonCheckComment(params: {
+export async function upsertAddonCheckComment(params: {
   octokit: {
     rest: {
       issues: {
@@ -70,13 +77,13 @@ async function upsertAddonCheckComment(params: {
           repo: string;
           issue_number: number;
           body: string;
-        }) => Promise<unknown>;
+        }) => Promise<{ data: { id: number } }>;
         updateComment: (args: {
           owner: string;
           repo: string;
           comment_id: number;
           body: string;
-        }) => Promise<unknown>;
+        }) => Promise<{ data: { id: number } }>;
       };
     };
   };
@@ -85,28 +92,31 @@ async function upsertAddonCheckComment(params: {
   prNumber: number;
   body: string;
   botHandles: string[];
-}): Promise<void> {
+}): Promise<AddonCheckCommentUpsertResult> {
   const { octokit, owner, repo, prNumber, body, botHandles } = params;
   const marker = buildAddonCheckMarker(owner, repo, prNumber);
 
-  const existing = await findIssueCommentByMarkerPaged(octokit, {
-    owner,
-    repo,
-    issueNumber: prNumber,
-    marker,
-  });
-
-  if (existing) {
-    await updateIssueCommentWithPublicationPipeline(octokit as never, {
+  try {
+    const existing = await findIssueCommentByMarkerPaged(octokit, {
       owner,
       repo,
-      comment_id: existing.id,
-      body,
-      botHandles,
-      preserveKodiaiMarkers: true,
+      issueNumber: prNumber,
+      marker,
     });
-  } else {
-    await createIssueCommentWithPublicationPipeline(octokit as never, {
+
+    if (existing) {
+      const updated = await updateIssueCommentWithPublicationPipeline(octokit as never, {
+        owner,
+        repo,
+        comment_id: existing.id,
+        body,
+        botHandles,
+        preserveKodiaiMarkers: true,
+      });
+      return resultOk({ action: "updated", commentId: updated.data.id });
+    }
+
+    const created = await createIssueCommentWithPublicationPipeline(octokit as never, {
       owner,
       repo,
       issue_number: prNumber,
@@ -114,6 +124,9 @@ async function upsertAddonCheckComment(params: {
       botHandles,
       preserveKodiaiMarkers: true,
     });
+    return resultOk({ action: "created", commentId: created.data.id });
+  } catch (err) {
+    return resultErr(toError(err));
   }
 }
 
@@ -387,7 +400,7 @@ export function createAddonCheckHandler(deps: {
               const appSlug = typeof githubApp.getAppSlug === "function"
                 ? githubApp.getAppSlug()
                 : "kodiai";
-              await upsertAddonCheckComment({
+              const commentUpsert = await upsertAddonCheckComment({
                 octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
                 owner,
                 repo: repoName,
@@ -395,6 +408,9 @@ export function createAddonCheckHandler(deps: {
                 body,
                 botHandles: [appSlug, "claude"],
               });
+              if (!commentUpsert.ok) {
+                throw commentUpsert.err;
+              }
             }
           } finally {
             await workspace?.cleanup();

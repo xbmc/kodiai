@@ -211,6 +211,18 @@ describe("publication result structure", () => {
     expect(source).toContain("if (!acknowledgment.ok)");
   });
 
+  test("keeps addon-check comment upsert publication on shared Result shape", () => {
+    const source = readFileSync(new URL("./addon-check.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("AddonCheckCommentUpsertResult");
+    expect(source).toContain("Result<AddonCheckCommentUpsertStatus");
+    expect(source).toContain("): Promise<AddonCheckCommentUpsertResult> {");
+    expect(source).toMatch(/\bresultOk\(/);
+    expect(source).toMatch(/\bresultErr\(/);
+    expect(source).toContain("if (!commentUpsert.ok)");
+  });
+
   test("keeps review post-execution telemetry orchestration on shared Result shape", () => {
     const source = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
     const contextSource = readFileSync(
