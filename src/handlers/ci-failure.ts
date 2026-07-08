@@ -19,6 +19,7 @@ import {
   createIssueCommentWithPublicationPipeline,
   updateIssueCommentWithPublicationPipeline,
 } from "../lib/github-publication.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 
 const BASE_CHECK_FETCH_CONCURRENCY = 2;
 
@@ -270,7 +271,7 @@ export function createCIFailureHandler(deps: {
               ? githubApp.getAppSlug()
               : "kodiai";
             // Upsert CI comment: find existing by marker, update or create
-            await upsertCIComment(octokit, {
+            const ciCommentUpsert = await upsertCIComment(octokit, {
               owner,
               repo: repoName,
               prNumber,
@@ -280,6 +281,9 @@ export function createCIFailureHandler(deps: {
               logger,
               deliveryId: event.id,
             });
+            if (!ciCommentUpsert.ok) {
+              throw ciCommentUpsert.err;
+            }
           }
         } catch (err) {
           logger.warn(
@@ -307,7 +311,13 @@ export function createCIFailureHandler(deps: {
  * Find an existing CI analysis comment by marker and update it,
  * or create a new one if not found.
  */
-async function upsertCIComment(
+export type CICommentUpsertStatus =
+  | { action: "created"; commentId: number }
+  | { action: "updated"; commentId: number };
+
+export type CICommentUpsertResult = Result<CICommentUpsertStatus>;
+
+export async function upsertCIComment(
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>,
   params: {
     owner: string;
@@ -319,7 +329,7 @@ async function upsertCIComment(
     logger: Logger;
     deliveryId: string;
   },
-): Promise<void> {
+): Promise<CICommentUpsertResult> {
   const { owner, repo, prNumber, marker, body, botHandles, logger, deliveryId } = params;
 
   // Scan existing comments for the marker
@@ -341,21 +351,24 @@ async function upsertCIComment(
     );
   }
 
-  if (existingCommentId !== null) {
-    await updateIssueCommentWithPublicationPipeline(octokit, {
-      owner,
-      repo,
-      comment_id: existingCommentId,
-      body,
-      botHandles,
-      preserveKodiaiMarkers: true,
-    });
-    logger.debug(
-      { deliveryId, prNumber, commentId: existingCommentId },
-      "Updated existing CI analysis comment",
-    );
-  } else {
-    await createIssueCommentWithPublicationPipeline(octokit, {
+  try {
+    if (existingCommentId !== null) {
+      const updated = await updateIssueCommentWithPublicationPipeline(octokit, {
+        owner,
+        repo,
+        comment_id: existingCommentId,
+        body,
+        botHandles,
+        preserveKodiaiMarkers: true,
+      });
+      logger.debug(
+        { deliveryId, prNumber, commentId: existingCommentId },
+        "Updated existing CI analysis comment",
+      );
+      return resultOk({ action: "updated", commentId: updated.data.id });
+    }
+
+    const created = await createIssueCommentWithPublicationPipeline(octokit, {
       owner,
       repo,
       issue_number: prNumber,
@@ -367,5 +380,8 @@ async function upsertCIComment(
       { deliveryId, prNumber },
       "Created new CI analysis comment",
     );
+    return resultOk({ action: "created", commentId: created.data.id });
+  } catch (err) {
+    return resultErr(toError(err));
   }
 }

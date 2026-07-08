@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { CheckSuiteCompletedEvent } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
-import { createCIFailureHandler } from "./ci-failure.ts";
+import { createCIFailureHandler, upsertCIComment } from "./ci-failure.ts";
 import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
 import { buildCIAnalysisMarker } from "../lib/ci-failure-formatter.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -257,6 +257,77 @@ describe("createCIFailureHandler", () => {
 
   beforeEach(() => {
     fixture = clonePayload();
+  });
+
+  it("creates CI analysis comment and returns created Result status", async () => {
+    const harness = createHarness();
+
+    const result = await upsertCIComment(harness.octokit as never, {
+      owner: "octo-org",
+      repo: "widget",
+      prNumber: 17,
+      marker: buildCIAnalysisMarker("octo-org", "widget", 17),
+      body: "CI analysis for @claude",
+      botHandles: ["kodiai", "claude"],
+      logger: createSharedLogger().logger,
+      deliveryId: "delivery-1",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { action: "created", commentId: 999 },
+    });
+    expect(harness.octokit.rest.issues.createComment).toHaveBeenCalledTimes(1);
+    expect(harness.octokit.rest.issues.updateComment).not.toHaveBeenCalled();
+  });
+
+  it("updates CI analysis comment and returns updated Result status", async () => {
+    const marker = buildCIAnalysisMarker("octo-org", "widget", 17);
+    const harness = createHarness({
+      commentsByPage: [[{ id: 123, body: `${marker}\nold analysis` }]],
+    });
+
+    const result = await upsertCIComment(harness.octokit as never, {
+      owner: "octo-org",
+      repo: "widget",
+      prNumber: 17,
+      marker,
+      body: "updated CI analysis",
+      botHandles: ["kodiai", "claude"],
+      logger: createSharedLogger().logger,
+      deliveryId: "delivery-1",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { action: "updated", commentId: 999 },
+    });
+    expect(harness.octokit.rest.issues.updateComment).toHaveBeenCalledTimes(1);
+    expect(harness.octokit.rest.issues.createComment).not.toHaveBeenCalled();
+  });
+
+  it("returns err Result when CI analysis comment publication fails", async () => {
+    const failure = new Error("create failed");
+    const harness = createHarness();
+    harness.octokit.rest.issues.createComment = mock(async () => {
+      throw failure;
+    }) as never;
+
+    const result = await upsertCIComment(harness.octokit as never, {
+      owner: "octo-org",
+      repo: "widget",
+      prNumber: 17,
+      marker: buildCIAnalysisMarker("octo-org", "widget", 17),
+      body: "CI analysis",
+      botHandles: ["kodiai", "claude"],
+      logger: createSharedLogger().logger,
+      deliveryId: "delivery-1",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBe(failure);
+    }
   });
 
   it("registers the check_suite.completed handler", () => {
