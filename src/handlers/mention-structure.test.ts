@@ -490,6 +490,19 @@ describe("mention handler structure", () => {
     expect(gateSource).toContain("./mention-request-context.ts");
   });
 
+  test("keeps mention request preparation GitHub adapters out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("getPullRequest: (args) => octokit.rest.pulls.get(args)");
+    expect(source).toContain("buildMentionRequestPreparationGithubAdapters");
+    expect(source).toContain("./mention-request-preparation-adapters.ts");
+
+    const adaptersSource = readFileSync(new URL("./mention-request-preparation-adapters.ts", import.meta.url), "utf8");
+    expect(adaptersSource).toContain("export function buildMentionRequestPreparationGithubAdapters");
+    expect(adaptersSource).toContain("getPullRequest");
+    expect(adaptersSource).toContain("octokit.rest.pulls.get(args)");
+  });
+
   test("keeps mention config and request skip gating out of the monster handler", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const gateSource = readFileSync(new URL("./mention-config-request-gate.ts", import.meta.url), "utf8");

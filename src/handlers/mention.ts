@@ -37,6 +37,7 @@ import {
 import { FORMATTER_REVIEW_OUTPUT_ACTION, resolveMentionAddonReviewDispatcher } from "./mention-handler-policies.ts";
 import { registerMentionHandlerEvents } from "./mention-event-registration.ts";
 import { buildMentionPromptRuntimeGithubAdapters } from "./mention-prompt-runtime-adapters.ts";
+import { buildMentionRequestPreparationGithubAdapters } from "./mention-request-preparation-adapters.ts";
 
 /**
  * Create the mention handler and register it with the event router.
@@ -82,8 +83,6 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
     mentionDerivedContextCacheOptions,
     logger,
   });
-
-
 
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
@@ -183,13 +182,14 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
 
         const findingLookup = createMentionFindingLookup(deps.knowledgeStore);
 
+        const mentionRequestPreparationGithubAdapters = buildMentionRequestPreparationGithubAdapters(octokit);
         const mentionRequestPreparation = await prepareMentionRequestExecutionContext({
           event,
           appSlug,
           mention,
           config,
           addonRepos,
-          getPullRequest: (args) => octokit.rest.pulls.get(args),
+          ...mentionRequestPreparationGithubAdapters,
           dispatchAddonReview: addonReviewDispatcher,
           logger,
         });
