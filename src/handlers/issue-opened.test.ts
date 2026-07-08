@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "bun:test";
-import { createIssueOpenedHandler } from "./issue-opened.ts";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { createIssueOpenedHandler, postIssueTriageComment } from "./issue-opened.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import {
   createIssueTriageStateStoreHarness,
@@ -19,6 +19,66 @@ describe("createIssueOpenedHandler", () => {
 
   beforeEach(() => {
     router = createMockEventRouter();
+  });
+
+  it("posts issue triage comment through publication pipeline and returns comment id", async () => {
+    const createComment = mock(async (params: unknown) => ({ data: { id: 123, params } }));
+    const octokit = {
+      rest: {
+        issues: {
+          createComment,
+        },
+      },
+    } as any;
+
+    const result = await postIssueTriageComment({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      issueNumber: 100,
+      body: "Possible duplicate for @claude.",
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { commentId: 123 },
+    });
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(createComment.mock.calls[0]![0]).toMatchObject({
+      owner: "owner",
+      repo: "repo",
+      issue_number: 100,
+      body: "Possible duplicate for claude.",
+    });
+  });
+
+  it("returns err Result when issue triage comment publication fails", async () => {
+    const failure = new Error("comment failed");
+    const createComment = mock(async () => {
+      throw failure;
+    });
+    const octokit = {
+      rest: {
+        issues: {
+          createComment,
+        },
+      },
+    } as any;
+
+    const result = await postIssueTriageComment({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      issueNumber: 100,
+      body: "Possible duplicate",
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBe(failure);
+    }
   });
 
   it("registers on issues.opened event", () => {

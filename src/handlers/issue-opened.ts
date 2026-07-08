@@ -33,6 +33,37 @@ import {
 import type { WorkspaceManager } from "../jobs/types.ts";
 import { findIssueCommentByMarkerPaged } from "../lib/github-issue-comments.ts";
 import { createIssueCommentWithPublicationPipeline } from "../lib/github-publication.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
+
+export type IssueTriageCommentPublicationStatus = {
+  commentId: number;
+};
+
+export type IssueTriageCommentPublicationResult =
+  Result<IssueTriageCommentPublicationStatus>;
+
+export async function postIssueTriageComment(params: {
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  body: string;
+  botHandles: string[];
+}): Promise<IssueTriageCommentPublicationResult> {
+  try {
+    const comment = await createIssueCommentWithPublicationPipeline(params.octokit, {
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.issueNumber,
+      body: params.body,
+      botHandles: params.botHandles,
+      preserveKodiaiMarkers: true,
+    });
+    return resultOk({ commentId: comment.data.id });
+  } catch (err) {
+    return resultErr(toError(err));
+  }
+}
 
 export function createIssueOpenedHandler(deps: {
   eventRouter: EventRouter;
@@ -239,22 +270,25 @@ export function createIssueOpenedHandler(deps: {
       const appSlug = typeof githubApp.getAppSlug === "function" ? githubApp.getAppSlug() : "kodiai";
 
       // 9. Post comment
-      const commentResponse = await createIssueCommentWithPublicationPipeline(octokit, {
+      const triageCommentPublication = await postIssueTriageComment({
+        octokit,
         owner,
         repo: repoName,
-        issue_number: issueNumber,
+        issueNumber,
         body: commentBody,
         botHandles: [appSlug, "claude"],
-        preserveKodiaiMarkers: true,
       });
+      if (!triageCommentPublication.ok) {
+        throw triageCommentPublication.err;
+      }
 
       // 9b. Store the comment GitHub ID for future reaction tracking (REACT-01)
       try {
         await triageClaim.storeCommentId({
-          commentGithubId: commentResponse.data.id,
+          commentGithubId: triageCommentPublication.value.commentId,
         });
       } catch (err) {
-        handlerLogger.warn({ err, commentGithubId: commentResponse.data.id }, "Failed to store comment GitHub ID (non-fatal)");
+        handlerLogger.warn({ err, commentGithubId: triageCommentPublication.value.commentId }, "Failed to store comment GitHub ID (non-fatal)");
       }
 
       // 10. Apply label (fail-open)

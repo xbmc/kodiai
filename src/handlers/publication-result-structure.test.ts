@@ -235,6 +235,18 @@ describe("publication result structure", () => {
     expect(source).toContain("if (!ciCommentUpsert.ok)");
   });
 
+  test("keeps issue triage comment publication on shared Result shape", () => {
+    const source = readFileSync(new URL("./issue-opened.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("IssueTriageCommentPublicationResult");
+    expect(source).toContain("Result<IssueTriageCommentPublicationStatus");
+    expect(source).toContain("): Promise<IssueTriageCommentPublicationResult> {");
+    expect(source).toMatch(/\bresultOk\(/);
+    expect(source).toMatch(/\bresultErr\(/);
+    expect(source).toContain("if (!triageCommentPublication.ok)");
+  });
+
   test("keeps review post-execution telemetry orchestration on shared Result shape", () => {
     const source = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
     const contextSource = readFileSync(
