@@ -38,7 +38,7 @@ describe("no-review skip acknowledgment", () => {
       },
     } as any;
 
-    await postNoReviewSkipAcknowledgment({
+    const result = await postNoReviewSkipAcknowledgment({
       octokit,
       owner: "xbmc",
       repo: "kodiai",
@@ -46,6 +46,10 @@ describe("no-review skip acknowledgment", () => {
       botHandles: ["kodiai", "claude"],
     });
 
+    expect(result).toEqual({
+      ok: true,
+      value: { commentId: 123 },
+    });
     expect(createComment).toHaveBeenCalledTimes(1);
     expect(createComment.mock.calls[0]![0]).toMatchObject({
       owner: "xbmc",
@@ -53,6 +57,33 @@ describe("no-review skip acknowledgment", () => {
       issue_number: 42,
       body: "Review skipped per `[no-review]` in PR title.",
     });
+  });
+
+  test("returns err Result when acknowledgment publication fails", async () => {
+    const failure = new Error("comment failed");
+    const createComment = mock(async () => {
+      throw failure;
+    });
+    const octokit = {
+      rest: {
+        issues: {
+          createComment,
+        },
+      },
+    } as any;
+
+    const result = await postNoReviewSkipAcknowledgment({
+      octokit,
+      owner: "xbmc",
+      repo: "kodiai",
+      prNumber: 42,
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBe(failure);
+    }
   });
 
   test("continues when the PR title does not request a no-review skip", async () => {

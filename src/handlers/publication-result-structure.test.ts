@@ -199,6 +199,18 @@ describe("publication result structure", () => {
     expect(cleanApprovalSource).toContain("if (!finalizedUpdate.ok)");
   });
 
+  test("keeps no-review skip acknowledgment publication on shared Result shape", () => {
+    const source = readFileSync(new URL("./review-no-review-skip.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("NoReviewSkipAcknowledgmentPublicationResult");
+    expect(source).toContain("Result<NoReviewSkipAcknowledgmentPublicationStatus");
+    expect(source).toContain("): Promise<NoReviewSkipAcknowledgmentPublicationResult> {");
+    expect(source).toMatch(/\bresultOk\(/);
+    expect(source).toMatch(/\bresultErr\(/);
+    expect(source).toContain("if (!acknowledgment.ok)");
+  });
+
   test("keeps review post-execution telemetry orchestration on shared Result shape", () => {
     const source = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
     const contextSource = readFileSync(
