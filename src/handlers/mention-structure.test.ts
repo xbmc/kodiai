@@ -5,7 +5,7 @@ describe("mention handler structure", () => {
   test("keeps the mention handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(488);
+    expect(source.split("\n").length).toBeLessThanOrEqual(480);
   });
 
   test("keeps mention handler dependency contract out of the monster handler", () => {
@@ -284,6 +284,20 @@ describe("mention handler structure", () => {
     expect(promptPreparationSource).toContain("buildMentionRetrievalContextForPrompt({");
     expect(promptPreparationSource).toContain("buildMentionAgentInstructions({");
     expect(promptPreparationSource).toContain("resolveMentionPrDiffContext({");
+  });
+
+  test("keeps mention prompt runtime GitHub adapters out of the monster handler", () => {
+    const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("fetchAllPullRequestFiles");
+    expect(source).not.toContain("getPullRequest: async (args) =>");
+    expect(source).not.toContain("fetchPullRequestFiles: async (args) => await");
+    expect(source).toContain("buildMentionPromptRuntimeGithubAdapters");
+    expect(source).toContain("./mention-prompt-runtime-adapters.ts");
+
+    const adaptersSource = readFileSync(new URL("./mention-prompt-runtime-adapters.ts", import.meta.url), "utf8");
+    expect(adaptersSource).toContain("export function buildMentionPromptRuntimeGithubAdapters");
+    expect(adaptersSource).toContain("fetchAllPullRequestFiles");
   });
 
   test("keeps formatter visible diagnostic option binding out of the monster handler", () => {

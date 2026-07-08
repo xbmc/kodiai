@@ -1,6 +1,5 @@
 import type { WebhookEvent } from "../webhook/types.ts";
 import type { Workspace } from "../jobs/types.ts";
-import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { resolveMentionClonePlan } from "./mention-clone-plan.ts";
 import {
   runFormatterSuggestionSubflow,
@@ -37,6 +36,7 @@ import {
 } from "./mention-post-executor-publication.ts";
 import { FORMATTER_REVIEW_OUTPUT_ACTION, resolveMentionAddonReviewDispatcher } from "./mention-handler-policies.ts";
 import { registerMentionHandlerEvents } from "./mention-event-registration.ts";
+import { buildMentionPromptRuntimeGithubAdapters } from "./mention-prompt-runtime-adapters.ts";
 
 /**
  * Create the mention handler and register it with the event router.
@@ -317,6 +317,7 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
         });
 
         setReviewWorkPhase("prompt-build");
+        const mentionPromptRuntimeGithubAdapters = buildMentionPromptRuntimeGithubAdapters(octokit);
         const mentionPromptRuntime = await resolveMentionPromptRuntimeContext({
           explicitReviewRequest,
           mention,
@@ -330,16 +331,7 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
           unifiedResults: unifiedResultsForPrompt,
           contextWindow: contextWindowForPrompt,
           logger,
-          getPullRequest: async (args) => {
-            const { data } = await octokit.rest.pulls.get(args);
-            return data;
-          },
-          fetchPullRequestFiles: async (args) => await fetchAllPullRequestFiles({
-            octokit,
-            owner: args.owner,
-            repo: args.repo,
-            pullNumber: args.pullNumber,
-          }),
+          ...mentionPromptRuntimeGithubAdapters,
           mentionContext,
           mentionContextSectionMetrics,
           userQuestion: writeIntent.request,
