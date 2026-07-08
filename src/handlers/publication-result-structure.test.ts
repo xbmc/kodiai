@@ -247,6 +247,18 @@ describe("publication result structure", () => {
     expect(source).toContain("if (!triageCommentPublication.ok)");
   });
 
+  test("keeps troubleshooting comment publication on shared Result shape", () => {
+    const source = readFileSync(new URL("./troubleshooting-agent.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("type Result");
+    expect(source).toContain("TroubleshootingCommentPublicationResult");
+    expect(source).toContain("Result<TroubleshootingCommentPublicationStatus");
+    expect(source).toContain("): Promise<TroubleshootingCommentPublicationResult> {");
+    expect(source).toMatch(/\bresultOk\(/);
+    expect(source).toMatch(/\bresultErr\(/);
+    expect(source).toContain("if (!troubleshootingCommentPublication.ok)");
+  });
+
   test("keeps review post-execution telemetry orchestration on shared Result shape", () => {
     const source = readFileSync(new URL("./review-post-execution-telemetry.ts", import.meta.url), "utf8");
     const contextSource = readFileSync(

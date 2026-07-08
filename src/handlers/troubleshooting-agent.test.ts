@@ -1,8 +1,9 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import {
   buildTroubleshootingSynthesisPrompt,
   formatTroubleshootingComment,
   hasTroubleshootMarkerInIssueComments,
+  postTroubleshootingComment,
   prepareTroubleshootingCommentForPublication,
 } from "./troubleshooting-agent.ts";
 import type { TroubleshootingResult } from "../knowledge/troubleshooting-retrieval.ts";
@@ -195,6 +196,67 @@ describe("prepareTroubleshootingCommentForPublication", () => {
     expect(prepared.blocked).toBe(true);
     expect(prepared.matchedPattern).toBe("github-token");
     expect(prepared.body).toContain("<!-- kodiai:troubleshoot:owner/repo:1:comment-99 -->");
+  });
+});
+
+describe("postTroubleshootingComment", () => {
+  it("posts through the publication pipeline and returns comment id", async () => {
+    const createComment = mock(async (params: unknown) => ({ data: { id: 321, params } }));
+    const octokit = {
+      rest: {
+        issues: {
+          createComment,
+        },
+      },
+    } as any;
+
+    const result = await postTroubleshootingComment({
+      octokit,
+      owner: "owner",
+      repo: "repo",
+      issueNumber: 77,
+      body: "Troubleshooting guidance for @kodiai.\n\n<!-- kodiai:troubleshoot:owner/repo:77:comment-1 -->",
+      botHandles: ["kodiai"],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { commentId: 321 },
+    });
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(createComment.mock.calls[0]![0]).toMatchObject({
+      owner: "owner",
+      repo: "repo",
+      issue_number: 77,
+      body: "Troubleshooting guidance for kodiai.\n\n<!-- kodiai:troubleshoot:owner/repo:77:comment-1 -->",
+    });
+  });
+
+  it("returns err Result when troubleshooting publication fails", async () => {
+    const failure = new Error("comment failed");
+    const createComment = mock(async () => {
+      throw failure;
+    });
+
+    const result = await postTroubleshootingComment({
+      octokit: {
+        rest: {
+          issues: {
+            createComment,
+          },
+        },
+      } as any,
+      owner: "owner",
+      repo: "repo",
+      issueNumber: 77,
+      body: "Troubleshooting guidance",
+      botHandles: ["kodiai"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBe(failure);
+    }
   });
 });
 

@@ -35,11 +35,42 @@ import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { findIssueCommentByMarkerPaged } from "../lib/github-issue-comments.ts";
 import { createIssueCommentWithPublicationPipeline, prepareGitHubPublication } from "../lib/github-publication.ts";
+import { err as resultErr, ok as resultOk, toError, type Result } from "../lib/result.ts";
 import type { OutgoingPublicationResult } from "../lib/sanitizer.ts";
 import { buildEpistemicBoundarySection } from "../execution/review-prompt.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { troubleshootAdapter } from "../lib/guardrail/adapters/troubleshoot-adapter.ts";
+
+export type TroubleshootingCommentPublicationStatus = {
+  commentId: number;
+};
+
+export type TroubleshootingCommentPublicationResult =
+  Result<TroubleshootingCommentPublicationStatus>;
+
+export async function postTroubleshootingComment(params: {
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  body: string;
+  botHandles: string[];
+}): Promise<TroubleshootingCommentPublicationResult> {
+  try {
+    const comment = await createIssueCommentWithPublicationPipeline(params.octokit, {
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.issueNumber,
+      body: params.body,
+      botHandles: params.botHandles,
+      preserveKodiaiMarkers: true,
+    });
+    return resultOk({ commentId: comment.data.id });
+  } catch (err) {
+    return resultErr(toError(err));
+  }
+}
 
 export function createTroubleshootingHandler(deps: {
   eventRouter: EventRouter;
@@ -249,14 +280,17 @@ export function createTroubleshootingHandler(deps: {
         }
 
         // 15. Post comment
-        await createIssueCommentWithPublicationPipeline(octokit, {
+        const troubleshootingCommentPublication = await postTroubleshootingComment({
+          octokit,
           owner,
           repo: repoName,
-          issue_number: issue.number,
+          issueNumber: issue.number,
           body: preparedBody.body,
           botHandles: [appSlug],
-          preserveKodiaiMarkers: true,
         });
+        if (!troubleshootingCommentPublication.ok) {
+          throw troubleshootingCommentPublication.err;
+        }
 
         // 16. Log success
         handlerLogger.info(
