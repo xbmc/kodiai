@@ -87,6 +87,7 @@ import {
 import {
   writeReviewLearningMemory,
 } from "./review-learning-memory.ts";
+import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
 import {
   formatReviewDetailsSummary,
   classifyRetryFailure,
@@ -1226,12 +1227,13 @@ export function createReviewHandler(deps: {
           }
         }
 
-        // Check skipAuthors
-        if (config.review.skipAuthors.includes(pr.user.login)) {
-          logger.info(
-            { prNumber: pr.number, author: pr.user.login },
-            "PR author in skipAuthors, skipping review",
-          );
+        const skipAuthorGate = evaluateReviewSkipAuthorGate({
+          prNumber: pr.number,
+          authorLogin: pr.user.login,
+          skipAuthors: config.review.skipAuthors,
+          logger,
+        });
+        if (skipAuthorGate.action === "skip") {
           return;
         }
 
