@@ -90,6 +90,12 @@ const SUPPRESSION_LOG_BATCH_RECORDSET = buildJsonbRecordsetSource(BATCH_ROWS, [
   ["finding_ids", "text"],
 ]);
 
+function normalizeFindingConfidence(confidence: unknown): number {
+  const numeric = typeof confidence === "number" ? confidence : Number(confidence);
+  if (!Number.isFinite(numeric)) return 50;
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
 async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]): Promise<void> {
   await executeJsonbRecordBatches(
     findings,
@@ -101,7 +107,7 @@ async function _insertFindingBatches(sqlClient: Sql, findings: FindingRecord[]):
       end_line: finding.endLine ?? null,
       severity: finding.severity,
       category: finding.category,
-      confidence: finding.confidence,
+      confidence: normalizeFindingConfidence(finding.confidence),
       title: finding.title,
       suppressed: finding.suppressed,
       suppression_pattern: finding.suppressionPattern ?? null,

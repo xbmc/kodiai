@@ -81,4 +81,9 @@ describe("deploy.sh", () => {
     expect(deployScript).not.toContain("MCP_TOKEN_REGISTRY_BACKEND");
     expect(deployScript).toContain("ACA_MAX_REPLICAS > 1 is not supported");
   });
+
+  test("defaults the orchestrator to measured cost-conscious Container Apps resources", () => {
+    expect(deployScript).toContain("ACA_CPU=${ACA_CPU:-1.75}");
+    expect(deployScript).toContain("ACA_MEMORY=${ACA_MEMORY:-3.5Gi}");
+  });
 });

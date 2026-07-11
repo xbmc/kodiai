@@ -96,25 +96,38 @@ const jobQueue = createJobQueue(logger, { requestTracker });
 const reviewWorkCoordinator = createReviewWorkCoordinator();
 const workspaceManager = createWorkspaceManager(githubApp, logger);
 
+function resolveAzureFilesWorkspaceStaleThresholdMs(): number {
+  const parsed = Number.parseInt(
+    process.env.AZURE_FILES_WORKSPACE_STALE_MS ?? String(AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS),
+    10,
+  );
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS;
+}
+
+function scheduleAzureFilesWorkspaceCleanup(): void {
+  void cleanupStaleAzureFilesWorkspaceDirs({
+    mountBase: process.env.AZURE_FILES_WORKSPACE_MOUNT ?? "/mnt/kodiai-workspaces",
+    staleThresholdMs: resolveAzureFilesWorkspaceStaleThresholdMs(),
+    logger,
+  })
+    .then((staleCount) => {
+      if (staleCount > 0) {
+        logger.info({ staleCount }, "Cleaned up stale Azure Files workspaces");
+      }
+    })
+    .catch((err) => {
+      logger.warn({ err }, "Azure Files workspace cleanup failed (non-fatal)");
+    });
+}
+
 // Defense-in-depth: clean up any stale workspaces from previous runs
 const staleCount = await workspaceManager.cleanupStale();
 if (staleCount > 0) {
   logger.info({ staleCount }, "Cleaned up stale workspaces from previous run");
 }
-const azureFilesStaleThresholdMs = Number.parseInt(
-  process.env.AZURE_FILES_WORKSPACE_STALE_MS ?? String(AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS),
-  10,
-);
-const azureFilesStaleCount = await cleanupStaleAzureFilesWorkspaceDirs({
-  mountBase: process.env.AZURE_FILES_WORKSPACE_MOUNT ?? "/mnt/kodiai-workspaces",
-  staleThresholdMs: Number.isFinite(azureFilesStaleThresholdMs) && azureFilesStaleThresholdMs > 0
-    ? azureFilesStaleThresholdMs
-    : AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS,
-  logger,
-});
-if (azureFilesStaleCount > 0) {
-  logger.info({ staleCount: azureFilesStaleCount }, "Cleaned up stale Azure Files workspaces");
-}
+scheduleAzureFilesWorkspaceCleanup();
 
 // PostgreSQL connection (all stores share single connection pool)
 const { sql, close: closeDb } = createDbClient({ logger });

@@ -1,6 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import { createIssueCommentWithPublicationPipeline } from "../lib/github-publication.ts";
-import { ok, type Result } from "../lib/result.ts";
+import { err, ok, toError, type Result } from "../lib/result.ts";
 
 type CostWarningLogger = {
   warn(fields: Record<string, unknown>, message?: string): void;
@@ -12,7 +12,7 @@ export type ReviewCostWarningPublicationStatus =
   | { status: "failed"; published: false };
 
 export type ReviewCostWarningPublicationResult =
-  Result<ReviewCostWarningPublicationStatus, never>;
+  Result<ReviewCostWarningPublicationStatus>;
 
 export function buildReviewCostWarningBody(params: {
   costUsd: number;
@@ -25,6 +25,34 @@ export function buildReviewCostWarningBody(params: {
 > telemetry:
 >   costWarningUsd: 5.0  # or 0 to disable
 > \`\`\``;
+}
+
+export async function postReviewCostWarning(params: {
+  getOctokit: () => Promise<Octokit>;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  costUsd: number;
+  thresholdUsd: number;
+  botHandles: string[];
+}): Promise<ReviewCostWarningPublicationResult> {
+  try {
+    const octokit = await params.getOctokit();
+    await createIssueCommentWithPublicationPipeline(octokit, {
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.prNumber,
+      body: buildReviewCostWarningBody({
+        costUsd: params.costUsd,
+        thresholdUsd: params.thresholdUsd,
+      }),
+      botHandles: params.botHandles,
+      preserveKodiaiMarkers: true,
+    });
+    return ok({ status: "published", published: true });
+  } catch (error) {
+    return err(toError(error));
+  }
 }
 
 export async function maybePostReviewCostWarning(params: {
@@ -63,19 +91,23 @@ export async function maybePostReviewCostWarning(params: {
     }
 
     params.setReviewWorkPhase("publish");
-    const octokit = await params.getOctokit();
-    await createIssueCommentWithPublicationPipeline(octokit, {
+    const publication = await postReviewCostWarning({
+      getOctokit: params.getOctokit,
       owner: params.owner,
       repo: params.repo,
-      issue_number: params.prNumber,
-      body: buildReviewCostWarningBody({
-        costUsd: params.costUsd,
-        thresholdUsd: params.thresholdUsd,
-      }),
+      prNumber: params.prNumber,
+      costUsd: params.costUsd,
+      thresholdUsd: params.thresholdUsd,
       botHandles: params.botHandles,
-      preserveKodiaiMarkers: true,
     });
-    return ok({ status: "published", published: true });
+    if (!publication.ok) {
+      params.logger.warn(
+        { err: publication.err },
+        "Failed to publish review cost warning comment (non-blocking)",
+      );
+      return ok({ status: "failed", published: false });
+    }
+    return publication;
   } catch (err) {
     params.logger.warn({ err }, "Failed to publish review cost warning comment (non-blocking)");
     return ok({ status: "failed", published: false });

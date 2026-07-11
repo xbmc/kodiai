@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import {
   buildReviewCostWarningBody,
   maybePostReviewCostWarning,
+  postReviewCostWarning,
 } from "./review-cost-warning.ts";
 
 describe("review cost warning", () => {
@@ -53,6 +54,30 @@ describe("review cost warning", () => {
     });
   });
 
+  test("returns err Result when publication fails", async () => {
+    const failure = new Error("comment failed");
+    const createComment = mock(async () => {
+      throw failure;
+    });
+
+    const result = await postReviewCostWarning({
+      getOctokit: async () => ({
+        rest: { issues: { createComment } },
+      } as any),
+      owner: "xbmc",
+      repo: "kodiai",
+      prNumber: 42,
+      costUsd: 6.123456,
+      thresholdUsd: 5,
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.err).toBe(failure);
+    }
+  });
+
   test("does not publish when the visible-output gate is closed", async () => {
     const createComment = mock(async () => ({ data: { id: 99 } }));
 
@@ -76,5 +101,37 @@ describe("review cost warning", () => {
       value: { status: "skipped", published: false },
     });
     expect(createComment).not.toHaveBeenCalled();
+  });
+
+  test("returns failed status when optional review cost warning publication fails", async () => {
+    const failure = new Error("comment failed");
+    const createComment = mock(async () => {
+      throw failure;
+    });
+    const warn = mock(() => {});
+
+    const result = await maybePostReviewCostWarning({
+      costUsd: 6,
+      thresholdUsd: 5,
+      owner: "xbmc",
+      repo: "kodiai",
+      prNumber: 42,
+      getOctokit: async () => ({
+        rest: { issues: { createComment } },
+      } as any),
+      canPublishVisibleOutput: () => true,
+      setReviewWorkPhase: () => {},
+      botHandles: ["kodiai", "claude"],
+      logger: { warn },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: "failed", published: false },
+    });
+    expect(warn).toHaveBeenCalledWith(
+      { err: failure },
+      "Failed to publish review cost warning comment (non-blocking)",
+    );
   });
 });

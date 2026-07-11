@@ -113,13 +113,14 @@ fi
 # event loop that also serves the internal MCP callback server hit by agent jobs.
 # Under-provisioning starves the loop during review-time CPU bursts, which makes
 # in-flight MCP calls sit idle until the ACA ingress 240s stream_idle_timeout
-# resets them (504). 2 vCPU / 4Gi gives ample headroom on a single replica.
-# NOTE: ACA requires valid cpu/memory pairings (e.g. 1.0/2Gi, 2.0/4Gi). Keep
+# resets them (504). The 1.75 vCPU / 3.5Gi default is based on observed
+# 30-day utilization while preserving headroom above memory peaks.
+# NOTE: ACA requires valid cpu/memory pairings (e.g. 1.0/2Gi, 1.75/3.5Gi). Keep
 # ACA_MAX_REPLICAS=1 unless the MCP token registry is moved to shared durable
 # storage — agent MCP callbacks must reach a replica that can validate and
 # reconstruct the job token's server factories.
-ACA_CPU=${ACA_CPU:-2.0}
-ACA_MEMORY=${ACA_MEMORY:-4.0Gi}
+ACA_CPU=${ACA_CPU:-1.75}
+ACA_MEMORY=${ACA_MEMORY:-3.5Gi}
 if ! [[ "$ACA_CPU" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
   echo "ERROR: ACA_CPU must be a number (cores), e.g. 2.0." >&2
   exit 1

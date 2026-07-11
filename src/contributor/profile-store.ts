@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { buildJsonbRecordsetSource, executeJsonbRecordBatches } from "../db/jsonb-batch.ts";
 import { withTransientDbRetry } from "../db/transient-retry.ts";
 import { CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER } from "./profile-trust.ts";
 import type {
@@ -51,6 +52,51 @@ function mapExpertiseRow(row: Record<string, unknown>): ContributorExpertise {
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
+}
+
+const EXPERTISE_BATCH_RECORDSET = buildJsonbRecordsetSource("batch", [
+  ["profile_id", "bigint"],
+  ["dimension", "text"],
+  ["topic", "text"],
+  ["score", "real"],
+  ["raw_signals", "integer"],
+  ["last_active", "timestamptz"],
+]);
+
+async function insertExpertiseBatch(sql: Sql, entries: ContributorExpertiseUpsert[]): Promise<void> {
+  await executeJsonbRecordBatches(
+    entries,
+    1000,
+    (entry) => ({
+      profile_id: entry.profileId,
+      dimension: entry.dimension,
+      topic: entry.topic,
+      score: entry.score,
+      raw_signals: entry.rawSignals,
+      last_active: entry.lastActive,
+    }),
+    async (batch) => {
+      await sql.unsafe(
+        `
+          INSERT INTO contributor_expertise (profile_id, dimension, topic, score, raw_signals, last_active)
+          SELECT
+            batch.profile_id,
+            batch.dimension,
+            batch.topic,
+            batch.score,
+            batch.raw_signals,
+            batch.last_active
+          FROM ${EXPERTISE_BATCH_RECORDSET}
+          ON CONFLICT (profile_id, dimension, topic) DO UPDATE SET
+            score = EXCLUDED.score,
+            raw_signals = EXCLUDED.raw_signals,
+            last_active = EXCLUDED.last_active,
+            updated_at = now()
+        `,
+        [batch.json],
+      );
+    },
+  );
 }
 
 export function createContributorProfileStore(opts: {
@@ -197,29 +243,7 @@ export function createContributorProfileStore(opts: {
       if (entries.length === 0) return;
 
       await writeWithRetry(
-        () => sql`
-          INSERT INTO contributor_expertise (profile_id, dimension, topic, score, raw_signals, last_active)
-          SELECT
-            batch.profile_id,
-            batch.dimension,
-            batch.topic,
-            batch.score,
-            batch.raw_signals,
-            batch.last_active
-          FROM unnest(
-            ${entries.map((entry) => entry.profileId)}::bigint[],
-            ${entries.map((entry) => entry.dimension)}::text[],
-            ${entries.map((entry) => entry.topic)}::text[],
-            ${entries.map((entry) => entry.score)}::double precision[],
-            ${entries.map((entry) => entry.rawSignals)}::integer[],
-            ${entries.map((entry) => entry.lastActive)}::timestamptz[]
-          ) AS batch(profile_id, dimension, topic, score, raw_signals, last_active)
-          ON CONFLICT (profile_id, dimension, topic) DO UPDATE SET
-            score = EXCLUDED.score,
-            raw_signals = EXCLUDED.raw_signals,
-            last_active = EXCLUDED.last_active,
-            updated_at = now()
-        `,
+        () => insertExpertiseBatch(sql, entries),
         {
           profileId: entries[0]!.profileId,
           count: entries.length,

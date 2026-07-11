@@ -36,6 +36,19 @@ export type ReviewFallbackExecutionErrorContext = {
   complexityInfo: string;
 };
 
+function resolveExecutionErrorFallbackContext(params: {
+  executionErrorContext?: ReviewFallbackExecutionErrorContext;
+  turnBudgetExhausted: boolean;
+}): ReviewFallbackExecutionErrorContext | undefined {
+  if (params.executionErrorContext) return params.executionErrorContext;
+  if (!params.turnBudgetExhausted) return undefined;
+  return {
+    category: "timeout",
+    timeoutDuration: 0,
+    complexityInfo: "Review stopped after reaching its turn budget.",
+  };
+}
+
 export type ReviewFallbackPublicationStateTarget = {
   reviewOutputPublished: boolean;
   reviewPublishResolution: string;
@@ -167,8 +180,10 @@ export async function publishReviewFallbackOutputs(params: {
 }): Promise<ReviewFallbackPublicationResult> {
   const patch: ReviewFallbackPublicationStatePatch = {};
 
+  const executionErrorContext = resolveExecutionErrorFallbackContext(params);
+
   if (
-    params.executionErrorContext
+    executionErrorContext
     && params.result.conclusion !== "success"
     && !params.publishedPartialReview
     && !params.deferredPublicOutputForContinuation
@@ -183,10 +198,14 @@ export async function publishReviewFallbackOutputs(params: {
         prNumber: params.prNumber,
         exhaustedTurnBudget: params.turnBudgetExhausted,
         retryScheduled: params.fallbackRetryState?.startsWith("scheduled") === true,
-        category: params.executionErrorContext.category,
-        errorMessage: params.result.errorMessage,
-        totalTimeoutSeconds: params.executionErrorContext.timeoutDuration,
-        complexityInfo: params.executionErrorContext.complexityInfo,
+        category: executionErrorContext.category,
+        errorMessage: params.result.errorMessage ?? (
+          params.turnBudgetExhausted
+            ? "Review stopped after reaching its turn budget."
+            : undefined
+        ),
+        totalTimeoutSeconds: executionErrorContext.timeoutDuration,
+        complexityInfo: executionErrorContext.complexityInfo,
         timeoutEstimate: params.appliedTimeoutBudget,
         logger: params.logger,
         canPublishVisibleOutput: params.canPublishVisibleOutput,

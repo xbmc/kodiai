@@ -29,6 +29,25 @@ function createRetryOnceSql() {
   return { sql, calls };
 }
 
+function createUnsafeSql() {
+  const calls: Array<{ query: string; values: unknown[] }> = [];
+  const unsafeCalls: Array<{ query: string; values: unknown[] }> = [];
+  const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    calls.push({ query: strings.join("?"), values });
+    return Promise.resolve(Object.assign([], { count: 1 }));
+  }) as unknown as import("../db/client.ts").Sql & {
+    calls: typeof calls;
+    unsafeCalls: typeof unsafeCalls;
+  };
+  sql.unsafe = (async (query: string, values: unknown[]) => {
+    unsafeCalls.push({ query, values });
+    return [];
+  }) as unknown as import("../db/client.ts").Sql["unsafe"];
+  sql.calls = calls;
+  sql.unsafeCalls = unsafeCalls;
+  return sql;
+}
+
 describe("createContributorProfileStore transient retries", () => {
   test("upsertExpertise retries transient connection-ended writes", async () => {
     const { sql, calls } = createRetryOnceSql();
@@ -61,5 +80,30 @@ describe("createContributorProfileStore transient retries", () => {
 
     expect(calls).toHaveLength(2);
     expect(calls[0]!.query).toContain("contributor_profiles");
+  });
+
+  test("upsertExpertiseMany batches dates through jsonb recordset instead of timestamptz array casts", async () => {
+    const sql = createUnsafeSql();
+    const store = createContributorProfileStore({
+      sql,
+      logger: createMockLogger(),
+    });
+
+    await store.upsertExpertiseMany([
+      {
+        profileId: 123,
+        dimension: "language",
+        topic: "typescript",
+        score: 0.75,
+        rawSignals: 4,
+        lastActive: new Date("2026-01-01T00:00:00Z"),
+      },
+    ]);
+
+    expect(sql.calls).toHaveLength(0);
+    expect(sql.unsafeCalls).toHaveLength(1);
+    expect(sql.unsafeCalls[0]!.query).toContain("jsonb_to_recordset");
+    expect(sql.unsafeCalls[0]!.query).toContain("last_active timestamptz");
+    expect(sql.unsafeCalls[0]!.query).not.toContain("::timestamptz[]");
   });
 });

@@ -141,6 +141,20 @@ describe("KnowledgeStore batch SQL", () => {
     expect((mockSql.unsafeCalls[1]!.values[0] as Array<{ comment_id: unknown }>)[0]!.comment_id).toBe(githubCommentId);
   });
 
+  test("recordFindings defaults missing confidence before inserting non-null column", async () => {
+    const mockSql = createMockSql();
+    const batchStore = createKnowledgeStore({ sql: mockSql, logger: mockLogger });
+
+    await batchStore.recordFindings([
+      {
+        ...makeFinding(0),
+        confidence: undefined,
+      } as unknown as Parameters<KnowledgeStore["recordFindings"]>[0][number],
+    ]);
+
+    expect((mockSql.unsafeCalls[0]!.values[0] as Array<{ confidence: unknown }>)[0]!.confidence).toBe(50);
+  });
+
   test("recordSuppressionLog batches rows and skips empty input", async () => {
     const mockSql = createMockSql();
     const batchStore = createKnowledgeStore({ sql: mockSql, logger: mockLogger });

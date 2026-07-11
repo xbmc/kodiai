@@ -47,4 +47,23 @@ describe("evaluateReviewSkipAuthorGate", () => {
       },
     ]);
   });
+
+  test("skips Weblate PRs without requiring repo skipAuthors config", () => {
+    const { logger, entries } = makeLogger();
+
+    const decision = evaluateReviewSkipAuthorGate({
+      prNumber: 42,
+      authorLogin: "weblate",
+      skipAuthors: [],
+      logger,
+    });
+
+    expect(decision).toEqual({ action: "skip" });
+    expect(entries).toEqual([
+      {
+        data: { prNumber: 42, author: "weblate", skipReason: "weblate-author" },
+        message: "PR author is Weblate, skipping review",
+      },
+    ]);
+  });
 });

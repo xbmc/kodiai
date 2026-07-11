@@ -206,6 +206,56 @@ describe("publishReviewFallbackOutputs", () => {
     expect(publishFailureFallback).not.toHaveBeenCalled();
   });
 
+  test("publishes turn-limit fallback even when no execution error context is available", async () => {
+    const publishExecutionErrorFallback = mock(async () =>
+      ({
+        ok: true as const,
+        value: {
+          published: true as const,
+          resolution: "turn-limit-fallback" as const,
+          fallbackDelivery: "turn-limit-comment-created",
+        },
+      })
+    );
+    const publishFailureFallback = mock(async () =>
+      ({
+        ok: true as const,
+        value: {
+          published: true as const,
+          resolution: "failure-fallback" as const,
+          fallbackDelivery: "error-comment-created",
+        },
+      })
+    );
+
+    await expect(publishReviewFallbackOutputs(baseParams({
+      result: {
+        conclusion: "failure",
+        published: false,
+        errorMessage: undefined,
+      },
+      executionErrorContext: undefined,
+      turnBudgetExhausted: true,
+      publishExecutionErrorFallback,
+      publishFailureFallback,
+    }))).resolves.toEqual({
+      ok: true,
+      value: {
+        reviewOutputPublished: true,
+        reviewPublishResolution: "turn-limit-fallback",
+        reviewPublishFallbackDelivery: "turn-limit-comment-created",
+      } satisfies ReviewFallbackPublicationStatePatch,
+    });
+    expect(publishExecutionErrorFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exhaustedTurnBudget: true,
+        category: "timeout",
+        errorMessage: "Review stopped after reaching its turn budget.",
+      }),
+    );
+    expect(publishFailureFallback).not.toHaveBeenCalled();
+  });
+
   test("maps clean review publication into a state patch only when it published", async () => {
     await expect(publishReviewFallbackOutputs(baseParams({
       result: {
