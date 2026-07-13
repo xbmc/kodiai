@@ -3,10 +3,7 @@ import type { Workspace } from "../jobs/types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import type { DeltaClassification } from "../lib/delta-classifier.ts";
 import { formatErrorComment } from "../lib/errors.ts";
-import {
-  formatTimeoutErrorDetail,
-  recordReviewExecutorPhaseTimings,
-} from "../review-orchestration/review-phase-timing.ts";
+import { formatTimeoutErrorDetail, recordReviewExecutorPhaseTimings } from "../review-orchestration/review-phase-timing.ts";
 export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
 import {
   type CanonicalReviewSurface,
@@ -15,18 +12,12 @@ import {
 } from "../review-orchestration/review-canonical-surface.ts";
 import { type ExtractedFinding } from "../review-orchestration/review-comment-finding-extraction.ts";
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
-import {
-  buildReviewPromptFingerprint,
-} from "../review-orchestration/review-prompt-fingerprint.ts";
+import { buildReviewPromptFingerprint } from "../review-orchestration/review-prompt-fingerprint.ts";
 export { buildReviewPromptFingerprint, type ReviewPromptBuildContext, type ReviewPromptFingerprintResult } from "../review-orchestration/review-prompt-fingerprint.ts";
 import { REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
 export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
-import {
-  buildRepoDoctrineLogFields,
-} from "../review-orchestration/review-plan-doctrine-log.ts";
-import {
-  toProductionLogBudgetReasoning,
-} from "../review-audit/production-log-projection.ts";
+import { buildRepoDoctrineLogFields } from "../review-orchestration/review-plan-doctrine-log.ts";
+import { toProductionLogBudgetReasoning } from "../review-audit/production-log-projection.ts";
 import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
 import { type ShadowSpecialistReviewDetailsProjection } from "../specialists/shadow-specialist-review-details.ts";
@@ -41,17 +32,13 @@ import { resolveReviewRetrievalPromptContext } from "./review-retrieval-context.
 import { resolveReviewDependencyBumpFlowContext } from "./review-dependency-bump-flow.ts";
 import { recordReviewPostExecutionKnowledge } from "./review-post-execution-knowledge.ts";
 import { recordReviewPostExecutionTelemetryForInstallation } from "./review-post-execution-telemetry-context.ts";
-import {
-  publishReviewRequestedEyesReactionFromHandlerDependencies,
-} from "./review-reactions.ts";
+import { publishReviewRequestedEyesReactionFromHandlerDependencies } from "./review-reactions.ts";
 import { resolveReviewPrIntent } from "./review-pr-intent.ts";
 import { resolveReviewAuthorContext } from "./review-author-context.ts";
 import { evaluateReviewTriggerConfigGate } from "./review-trigger-config-gate.ts";
 import { evaluateReviewRunStateGate } from "./review-run-state-gate.ts";
 import { evaluateReviewSkipAuthorGate } from "./review-skip-author-gate.ts";
-import {
-  resolveReviewIncrementalDiff,
-} from "./review-incremental-diff.ts";
+import { resolveReviewIncrementalDiff } from "./review-incremental-diff.ts";
 import { resolveReviewFileSelectionContext } from "./review-file-selection-context.ts";
 import { resolveReviewDiffContext } from "./review-diff-context.ts";
 import { dispatchInitialReviewExecution } from "./review-execution-dispatch.ts";
@@ -82,18 +69,10 @@ import { resolveReviewHandlerDependencies, type ReviewHandlerDependencies } from
 import { cleanupReviewExecutionResources } from "./review-execution-cleanup.ts";
 import { prepareReviewWorkspace } from "./review-workspace-preparation.ts";
 import { createReviewWorkspacePhaseHooks } from "./review-workspace-phase-hooks.ts";
-import {
-  resolveReviewEventRuntime,
-  type ReviewWebhookPayload,
-} from "./review-event-runtime.ts";
+import { resolveReviewEventRuntime, type ReviewWebhookPayload } from "./review-event-runtime.ts";
 import { createReviewJobRuntime } from "./review-job-runtime.ts";
-import {
-  buildReviewJobQueueContext,
-} from "./review-job-context.ts";
-import {
-  buildReviewDeltaPriorFindingLookup,
-  resolveReviewDeltaClassification,
-} from "./review-delta-classification.ts";
+import { buildReviewJobQueueContext } from "./review-job-context.ts";
+import { buildReviewDeltaPriorFindingLookup, resolveReviewDeltaClassification } from "./review-delta-classification.ts";
 import { logPublishedReviewOutputEvidence } from "./review-published-output-evidence.ts";
 import { logReviewEnqueueCompleted } from "./review-enqueue-completion-log.ts";
 import { resolveReviewChangedFileContext } from "./review-changed-file-context.ts";
@@ -103,6 +82,7 @@ import { removeFilteredInlineCommentsForSuccessfulReview } from "./review-filter
 import { buildReviewDetailsAttemptLogFields } from "./review-details-attempt-log-fields.ts";
 import { registerReviewHandlerEvents } from "./review-event-registration.ts";
 import { buildReviewGithubAppAdapters } from "./review-github-app-adapters.ts";
+import { publishBlockedReviewFindingsNoticeForRuntime } from "./review-blocked-findings-notice.ts";
 
 /**
  * Create the review handler and register it with the event router.
@@ -841,10 +821,13 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           filteredFindings: filterResult.filtered,
           reviewPhaseTimings,
         });
+        const handlerPublishedReviewOutput = result.published === true
+          || reviewCandidatePublicationRuntime.counts.candidatePublished > 0
+          || reviewCandidatePublicationRuntime.counts.directPublished > 0;
 
         const firstPassReviewDetailsPublication = await publishFirstPassReviewDetails({
           reviewOutputSucceeded,
-          resultPublished: result.published,
+          resultPublished: handlerPublishedReviewOutput,
           resultConclusion: result.conclusion,
           candidateMovedToDetailsCount: reviewCandidatePublicationRuntime.counts.candidateMovedToDetails,
           octokit: extractionOctokit,
@@ -870,6 +853,17 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           logCanonicalReviewDetailsPublicationCompleted,
         });
         canonicalReviewDetailsBody = resolveFirstPassReviewDetailsPublicationBody(firstPassReviewDetailsPublication);
+        const blockedFindingsNoticePublication = await publishBlockedReviewFindingsNoticeForRuntime({
+          octokit: extractionOctokit, owner: apiOwner, repo: apiRepo, prNumber: pr.number, reviewOutputKey,
+          reviewDetailsBlock: canonicalReviewDetailsBody, candidatePublicationRuntime: reviewCandidatePublicationRuntime,
+          findingLifecycle: reviewFindingLifecycleResult.projection, processedFindingCount: processedFindings.length,
+          handlerPublishedReviewOutput, botHandles: reviewBotHandles, logger, canPublishVisibleOutput, setReviewWorkPhase,
+        });
+        let suppressCleanApprovalReason = blockedFindingsNoticePublication.suppressCleanApprovalReason;
+        if (blockedFindingsNoticePublication.published) {
+          publicationState.reviewOutputPublished = true;
+          publicationState.reviewPublishResolution = blockedFindingsNoticePublication.reviewPublishResolution;
+        }
 
         await recordReviewPostExecutionTelemetryForInstallation({
           installationId: event.installationId,
@@ -1051,6 +1045,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           publicationState,
           executionResult: result,
           executionErrorContext,
+          suppressCleanApprovalReason,
           publishedPartialReview,
           deferredPublicOutputForContinuation,
           turnBudgetExhausted,

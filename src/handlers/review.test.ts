@@ -17965,6 +17965,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(recordFindingEntries).toHaveLength(0);
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
+    expect(updatedSummaryBody).toContain("Decision: NOT APPROVED");
+    expect(updatedSummaryBody).not.toContain("Decision: APPROVE");
+    expect(updatedSummaryBody).toContain("Kodiai found 1 unpublished finding that requires human review.");
     expect(detailsBlock).toContain("Review candidate publication: mode=blocked");
     expect(detailsBlock).toContain("approved=1");
     expect(detailsBlock).toContain("publishable=0");

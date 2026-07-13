@@ -77,6 +77,7 @@ export function buildReviewFallbackPublicationParams(params: {
   publicationState: ReviewFallbackPublicationStateTarget;
   executionResult: Pick<ExecutionResult, "conclusion" | "published" | "errorMessage">;
   executionErrorContext?: ReviewFallbackExecutionErrorContext;
+  suppressCleanApprovalReason?: string;
   publishedPartialReview: boolean;
   deferredPublicOutputForContinuation: boolean;
   turnBudgetExhausted: boolean;
@@ -114,6 +115,7 @@ export function buildReviewFallbackPublicationParams(params: {
       errorMessage: params.executionResult.errorMessage,
     },
     executionErrorContext: params.executionErrorContext,
+    suppressCleanApprovalReason: params.suppressCleanApprovalReason,
     publishedPartialReview: params.publishedPartialReview,
     deferredPublicOutputForContinuation: params.deferredPublicOutputForContinuation,
     turnBudgetExhausted: params.turnBudgetExhausted,
@@ -147,6 +149,7 @@ export function buildReviewFallbackPublicationParams(params: {
 export async function publishReviewFallbackOutputs(params: {
   result: Pick<ExecutionResult, "conclusion" | "published" | "errorMessage">;
   executionErrorContext?: ReviewFallbackExecutionErrorContext;
+  suppressCleanApprovalReason?: string;
   publishedPartialReview: boolean;
   deferredPublicOutputForContinuation: boolean;
   turnBudgetExhausted: boolean;
@@ -247,7 +250,19 @@ export async function publishReviewFallbackOutputs(params: {
     }
   }
 
-  if (params.result.conclusion === "success") {
+  if (params.result.conclusion === "success" && params.suppressCleanApprovalReason) {
+    params.logger.info(
+      {
+        prNumber: params.prNumber,
+        gate: "auto-approve",
+        gateResult: "skipped",
+        skipReason: params.suppressCleanApprovalReason,
+      },
+      "Skipping clean review approval because review findings were not clean",
+    );
+  }
+
+  if (params.result.conclusion === "success" && !params.suppressCleanApprovalReason) {
     const publishCleanApproval = params.publishCleanReviewApproval ?? publishCleanReviewApproval;
     const cleanReviewPublication: CleanReviewPublicationStatus = await publishCleanApproval({
       resultPublished: params.result.published ?? false,
