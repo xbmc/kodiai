@@ -255,7 +255,7 @@ export function buildMentionPromptDetails(params: {
     );
   }
   lines.push("");
-  lines.push("Your response should be: Concise by default, direct, context-aware, and formatted in GitHub-flavored markdown.");
+  lines.push("Your response should be: Accuracy over brevity for review/approval decisions; direct, context-aware, and formatted in GitHub-flavored markdown.");
   lines.push("- Do not add stock recap sections unless explicitly requested.");
   lines.push(
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",
@@ -292,7 +292,9 @@ export function buildMentionPromptDetails(params: {
     "    ",
     "    </details>",
     "    ```",
-    "  - Provide 1-3 bullets with short factual evidence derived from already-available counts/confidence summaries.",
+    "  - Do not cap evidence at 3 bullets. Include every material fact needed to support the decision.",
+    "  - For architectural, threading, lifecycle, resource-management, security, or test-coverage risk, trace the relevant flow before approving.",
+    "  - Approval evidence must be factual and grounded in inspected code, changed-file coverage, test status, or bounded Review Details.",
     "  - Do NOT add extra headings, paragraphs, HTML comments, or markers; the server adds the review-output marker.",
     "  - If NOT APPROVED, keep using the wrapped decision format below and include only Decision + Issues (no extra explanation paragraphs):",
     "    ```",

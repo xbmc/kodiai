@@ -236,9 +236,9 @@ describe("review output artifact helpers", () => {
     } satisfies Partial<ReviewOutputArtifactCollectionError>);
   });
 
-  test("validateCollapsedApproveReviewBody accepts the shipped visible APPROVE grammar with 1-3 bullets", () => {
+  test("validateCollapsedApproveReviewBody accepts the shipped visible APPROVE grammar without a three-bullet cap", () => {
     const oneBulletKey = makeReviewOutputKey({ deliveryId: "delivery-one" });
-    const threeBulletKey = makeReviewOutputKey({ deliveryId: "delivery-three" });
+    const fiveBulletKey = makeReviewOutputKey({ deliveryId: "delivery-five" });
 
     const oneBullet = validateCollapsedApproveReviewBody({
       reviewOutputKey: oneBulletKey,
@@ -247,14 +247,16 @@ describe("review output artifact helpers", () => {
         evidence: ["Reviewed the touched files and found no actionable issues."],
       }),
     });
-    const threeBullets = validateCollapsedApproveReviewBody({
-      reviewOutputKey: threeBulletKey,
+    const fiveBullets = validateCollapsedApproveReviewBody({
+      reviewOutputKey: fiveBulletKey,
       body: buildApprovedReviewBody({
-        reviewOutputKey: threeBulletKey,
+        reviewOutputKey: fiveBulletKey,
         evidence: [
           "Reviewed the touched files and found no actionable issues.",
           "The approval body matches the visible GitHub contract.",
           "No visible approval body drift is present.",
+          "Threading and lifecycle paths were traced where relevant.",
+          "Resource cleanup and test coverage evidence were retained.",
         ],
       }),
     });
@@ -264,13 +266,13 @@ describe("review output artifact helpers", () => {
     expect(oneBullet.hasExactMarker).toBe(true);
     expect(oneBullet.hasDetailsWrapper).toBe(false);
 
-    expect(threeBullets.valid).toBe(true);
-    expect(threeBullets.evidenceBulletCount).toBe(3);
-    expect(threeBullets.hasOnlyEvidenceBullets).toBe(true);
-    expect(threeBullets.issues).toEqual([]);
+    expect(fiveBullets.valid).toBe(true);
+    expect(fiveBullets.evidenceBulletCount).toBe(5);
+    expect(fiveBullets.hasOnlyEvidenceBullets).toBe(true);
+    expect(fiveBullets.issues).toEqual([]);
   });
 
-  test("validateCollapsedApproveReviewBody rejects missing Evidence bullets, overflow bullets, and legacy collapsed response wrappers", () => {
+  test("validateCollapsedApproveReviewBody rejects missing Evidence bullets and legacy collapsed response wrappers", () => {
     const reviewOutputKey = makeReviewOutputKey();
 
     const zeroBullets = validateCollapsedApproveReviewBody({
@@ -280,21 +282,6 @@ describe("review output artifact helpers", () => {
         "Issues: none",
         "",
         "Evidence:",
-        "",
-        buildReviewOutputMarker(reviewOutputKey),
-      ].join("\n"),
-    });
-    const fourBullets = validateCollapsedApproveReviewBody({
-      reviewOutputKey,
-      body: [
-        "Decision: APPROVE",
-        "Issues: none",
-        "",
-        "Evidence:",
-        "- Evidence line one.",
-        "- Evidence line two.",
-        "- Evidence line three.",
-        "- Evidence line four.",
         "",
         buildReviewOutputMarker(reviewOutputKey),
       ].join("\n"),
@@ -321,11 +308,7 @@ describe("review output artifact helpers", () => {
 
     expect(zeroBullets.valid).toBe(false);
     expect(zeroBullets.evidenceBulletCount).toBe(0);
-    expect(zeroBullets.issues).toContain("Approval body must include 1-3 evidence bullets.");
-
-    expect(fourBullets.valid).toBe(false);
-    expect(fourBullets.evidenceBulletCount).toBe(4);
-    expect(fourBullets.issues).toContain("Approval body must include 1-3 evidence bullets.");
+    expect(zeroBullets.issues).toContain("Approval body must include at least one evidence bullet.");
 
     expect(legacyCollapsed.valid).toBe(false);
     expect(legacyCollapsed.hasDetailsWrapper).toBe(true);

@@ -131,7 +131,6 @@ export function createCommentServer(
 
     const evidenceLines = content.slice(3);
     return evidenceLines.length >= 1
-      && evidenceLines.length <= 3
       && evidenceLines.every((line) => line.startsWith("- "));
   }
 
@@ -169,14 +168,14 @@ export function createCommentServer(
         const trimmed = line.trim();
         if (!trimmed.startsWith("- ")) {
           throw new Error(
-            "Invalid kodiai response: APPROVE must contain only Decision: APPROVE, Issues: none, Evidence:, and 1-3 bullet lines",
+            "Invalid kodiai response: APPROVE must contain only Decision: APPROVE, Issues: none, Evidence:, and evidence bullet lines",
           );
         }
         evidenceLines.push(trimmed);
       }
 
-      if (evidenceLines.length < 1 || evidenceLines.length > 3) {
-        throw new Error("Invalid kodiai response: APPROVE must include 1-3 evidence bullets");
+      if (evidenceLines.length < 1) {
+        throw new Error("Invalid kodiai response: APPROVE must include at least one evidence bullet");
       }
 
       const collapsedBody = wrapInDetails(

@@ -189,7 +189,7 @@ describe("review idempotency helpers", () => {
     expect(result).toBe(reviewOutputKey);
   });
 
-  test("buildApprovedReviewBody emits visible response first with bounded evidence bullets and marker continuity", () => {
+  test("buildApprovedReviewBody emits visible response first with complete evidence bullets and marker continuity", () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "acme",
@@ -207,7 +207,7 @@ describe("review idempotency helpers", () => {
         "  Reviewed 12 changed files across 3 directories.  ",
         "Dependency bumps are limited to patch releases.",
         "   ",
-        "This overflow evidence must not be emitted.",
+        "This fourth evidence bullet must be emitted.",
       ],
       approvalConfidence: "  :green_circle: **Merge Confidence: High** — Safe to merge.  ",
     });
@@ -218,13 +218,14 @@ describe("review idempotency helpers", () => {
     expect(result).toContain("Issues: none");
     expect(result).toContain("Evidence:");
     expect(result).toContain(marker);
-    expect(result).not.toContain("This overflow evidence must not be emitted.");
+    expect(result).toContain("This fourth evidence bullet must be emitted.");
     expect(result).toContain("- Reviewed 12 changed files across 3 directories.");
     expect(result).toContain("- Dependency bumps are limited to patch releases.");
     expect(result).toContain("- :green_circle: **Merge Confidence: High** — Safe to merge.");
     expect(extractEvidenceBullets(result)).toEqual([
       "- Reviewed 12 changed files across 3 directories.",
       "- Dependency bumps are limited to patch releases.",
+      "- This fourth evidence bullet must be emitted.",
       "- :green_circle: **Merge Confidence: High** — Safe to merge.",
     ]);
     expect(extractReviewOutputKey(result)).toBe(reviewOutputKey);
@@ -292,7 +293,7 @@ describe("review idempotency helpers", () => {
     expect(extractReviewOutputKey(result)).toBe(reviewOutputKey);
   });
 
-  test("buildApprovedReviewBody preserves exactly three normalized evidence bullets without approval confidence", () => {
+  test("buildApprovedReviewBody preserves all normalized evidence bullets without truncating at three", () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "acme",
@@ -309,6 +310,8 @@ describe("review idempotency helpers", () => {
         "  Reviewed only source files.  ",
         "No runtime config changes detected.",
         "Tests relevant to touched files are already green.",
+        "Threading and lifecycle paths were traced across the changed files.",
+        "Resource cleanup paths were checked for the new architecture.",
       ],
     });
 
@@ -316,6 +319,8 @@ describe("review idempotency helpers", () => {
       "- Reviewed only source files.",
       "- No runtime config changes detected.",
       "- Tests relevant to touched files are already green.",
+      "- Threading and lifecycle paths were traced across the changed files.",
+      "- Resource cleanup paths were checked for the new architecture.",
     ]);
     expect(result).toContain(buildReviewOutputMarker(reviewOutputKey));
     expect(result).not.toContain("<details>");

@@ -2287,6 +2287,8 @@ describe("depBumpContext", () => {
     const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
     expect(prompt).toContain("Dependency Bump Context");
     expect(prompt).toContain("minor/patch dependency update");
+    expect(prompt).toContain("Prioritize accuracy over brevity");
+    expect(prompt).not.toContain("Keep review concise");
     expect(prompt).not.toContain("MAJOR version bump");
   });
 

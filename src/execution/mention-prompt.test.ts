@@ -109,7 +109,7 @@ describe("buildMentionPrompt", () => {
     expect(result.sections[0]?.estimatedTokens).toBe(Math.ceil(result.text.length / 4));
   });
 
-  test("includes conciseness guidance and shared collapsed APPROVE grammar instructions", () => {
+  test("includes accuracy-first shared collapsed APPROVE grammar instructions", () => {
     const prompt = buildMentionPrompt({
       mention: baseMention(),
       mentionContext: "",
@@ -122,7 +122,7 @@ describe("buildMentionPrompt", () => {
       prompt.indexOf("- If the user is asking for a plan"),
     );
 
-    expect(prompt).toContain("Concise by default");
+    expect(prompt).toContain("Accuracy over brevity");
     expect(prompt).toContain("Post one final response");
     expect(prompt).toContain("Prefix first line with: 'Plan only:'");
     expect(prompt).toContain("Do NOT claim any edits were made");
@@ -134,7 +134,8 @@ describe("buildMentionPrompt", () => {
     expect(approvalSection).toContain("Issues: none");
     expect(approvalSection).toContain("Evidence:");
     expect(approvalSection).toContain("- <factual evidence>");
-    expect(approvalSection).toContain("1-3 bullets");
+    expect(approvalSection).toContain("Do not cap evidence at 3 bullets");
+    expect(approvalSection).toContain("Include every material fact needed");
     expect(approvalSection).toContain("<summary>kodiai response</summary>");
     expect(approvalSection).not.toContain("Do NOT wrap APPROVE responses in `<details>`");
     expect(approvalSection).not.toContain("Decision: APPROVE | NOT APPROVED");

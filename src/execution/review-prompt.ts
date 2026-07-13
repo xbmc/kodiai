@@ -1618,7 +1618,7 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
       "- Verify lockfile changes are consistent with the manifest change",
       "- Check for unexpected additions to the dependency tree",
       "- Check for import changes in consuming code visible in the diff",
-      "- Keep review concise — base findings on diff contents only",
+      "- Prioritize accuracy over brevity; base findings on diff contents and cite all material evidence needed for the decision",
     );
   }
 

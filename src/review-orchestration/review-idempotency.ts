@@ -63,7 +63,6 @@ export type ParsedReviewOutputKey = {
 const KEY_PREFIX = "kodiai-review-output";
 const KEY_VERSION = "v1";
 const REVIEW_OUTPUT_MARKER_REGEX = /<!--\s*kodiai:(?:review-output-key|review-details):([^>]+?)\s*-->/i;
-const MAX_APPROVAL_EVIDENCE_LINES = 3;
 const DEFAULT_APPROVAL_EVIDENCE = "No actionable issues were identified in the reviewed changes.";
 
 const DEFAULT_PER_PAGE = 100;
@@ -87,8 +86,7 @@ function buildApprovedReviewEvidence(params: {
     .map((line) => normalizeApprovalEvidenceLine(line))
     .filter((line): line is string => Boolean(line));
   const approvalConfidence = normalizeApprovalEvidenceLine(params.approvalConfidence);
-  const evidenceLimit = approvalConfidence ? MAX_APPROVAL_EVIDENCE_LINES - 1 : MAX_APPROVAL_EVIDENCE_LINES;
-  const evidence = normalizedEvidence.slice(0, evidenceLimit);
+  const evidence = [...normalizedEvidence];
 
   if (approvalConfidence) {
     evidence.push(approvalConfidence);

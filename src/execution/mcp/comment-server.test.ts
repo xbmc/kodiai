@@ -347,7 +347,7 @@ describe("createCommentServer", () => {
     expect(createReviewCalled).toBe(false);
   });
 
-  test("shared clean approval with three evidence bullets still promotes to APPROVE", async () => {
+  test("shared clean approval with more than three evidence bullets still promotes to APPROVE", async () => {
     let createReviewBody: string | undefined;
     let createCommentCalled = false;
 
@@ -386,12 +386,16 @@ describe("createCommentServer", () => {
         "Reviewed 7 changed files with no actionable issues.",
         "Repository inspection covered all modified paths.",
         "Approval confidence: high for this isolated refactor.",
+        "Threading and lifecycle paths were inspected where relevant.",
+        "Resource cleanup and test coverage evidence were retained.",
       ]),
     });
 
     expect(result.isError).toBeUndefined();
     expect(createCommentCalled).toBe(false);
     expect(createReviewBody).toContain("Approval confidence: high for this isolated refactor.");
+    expect(createReviewBody).toContain("Threading and lifecycle paths were inspected where relevant.");
+    expect(createReviewBody).toContain("Resource cleanup and test coverage evidence were retained.");
   });
 
   test.each([
@@ -403,17 +407,7 @@ describe("createCommentServer", () => {
     {
       name: "zero evidence bullets",
       body: ["Decision: APPROVE", "Issues: none", "", "Evidence:"].join("\n"),
-      expectedMessage: "1-3 evidence bullets",
-    },
-    {
-      name: "more than three evidence bullets",
-      body: buildSharedApprovalBody([
-        "Evidence line one.",
-        "Evidence line two.",
-        "Evidence line three.",
-        "Evidence line four.",
-      ]),
-      expectedMessage: "1-3 evidence bullets",
+      expectedMessage: "at least one evidence bullet",
     },
     {
       name: "wrapped approval body missing Evidence header",

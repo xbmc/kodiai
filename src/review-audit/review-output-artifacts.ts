@@ -392,10 +392,10 @@ export function validateCollapsedApproveReviewBody(params: {
     issues.push("Approval body must include 'Evidence:'.");
   }
   if (!hasOnlyEvidenceBullets) {
-    issues.push("Approval body must contain only Decision: APPROVE, Issues: none, Evidence:, and 1-3 bullet lines.");
+    issues.push("Approval body must contain only Decision: APPROVE, Issues: none, Evidence:, and evidence bullet lines.");
   }
-  if (evidenceBulletCount < 1 || evidenceBulletCount > 3) {
-    issues.push("Approval body must include 1-3 evidence bullets.");
+  if (evidenceBulletCount < 1) {
+    issues.push("Approval body must include at least one evidence bullet.");
   }
   if (!hasExactMarker) {
     issues.push("Approval body must include the exact review-output marker for the requested reviewOutputKey.");
