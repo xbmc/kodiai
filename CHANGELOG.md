@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.48 (2026-07-13)
+
+Review-publication correctness hotfix for blocked findings and approval evidence completeness, deployed to Azure Container Apps after live `xbmc/xbmc` review failures.
+
+### Changed
+
+- Clean approval now treats handler-level candidate/direct publication as review output, not only the executor's `published` flag.
+- Approval evidence is no longer capped at three bullets; approval bodies preserve every supplied evidence line plus merge-confidence evidence.
+- Mention-review instructions now prioritize accuracy over brevity for review/approval decisions and require tracing architectural, threading, lifecycle, resource-management, security, and test-coverage flows before approving.
+- Dependency-bump review guidance now says to prioritize accuracy over brevity instead of keeping reviews concise.
+
+### Fixed
+
+- Blocked candidate findings can no longer collapse into `Decision: APPROVE, 0 findings`. When findings exist but publication is blocked or withheld, Kodiai publishes a bounded `Decision: NOT APPROVED` notice with severity counts and Review Details diagnostics.
+- MCP clean-approval publication no longer rejects valid approval bodies with more than three evidence bullets.
+- Review-output artifact validation no longer classifies four-or-more evidence bullets as visible-body drift.
+
+### Verification
+
+- `bunx tsc --noEmit` passed.
+- ESLint passed on changed review-publication and prompt files.
+- Focused review-publication suites passed with `392 pass`, `0 fail`.
+- `bun run test:unit` passed with `6749 pass`, `0 fail`.
+- Deployed revision `ca-kodiai--deploy-957d2337a61c-20260713-095549` passed `/healthz` and `/readiness`.
+- Deployed revision `ca-kodiai--deploy-656c76dcade2-20260713-103748` passed `/healthz` and `/readiness`.
+
 ## v0.47 (2026-07-04)
 
 Addon repository review routing, generated-rule persistence fixes, and deployment artifact hardening for the live GitHub integration path.
