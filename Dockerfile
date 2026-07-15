@@ -25,6 +25,7 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy compiled application
 COPY package.json bun.lock tsconfig.json ./
 COPY --from=deps /app/dist ./dist
+RUN chmod -R a+rX /app/dist/migrations
 
 # DATABASE_URL is provided via Azure Container Apps secrets at runtime
 ENV DATABASE_URL=""
