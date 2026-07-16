@@ -310,6 +310,62 @@ describe("launchAcaJob", () => {
     }
   });
 
+  test("logs ACA job launch shape without raw image references or response bodies", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
+    const originalIdentityHeader = process.env["IDENTITY_HEADER"];
+    const logger = makeLogger();
+
+    process.env["IDENTITY_ENDPOINT"] = "https://identity.example/token";
+    process.env["IDENTITY_HEADER"] = "identity-header";
+
+    globalThis.fetch = (async (input) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.startsWith("https://identity.example/token")) {
+        return jsonResponse({ access_token: "test-access-token" });
+      }
+      return jsonResponse({ name: "caj-kodiai-agent-abc123" });
+    }) as typeof fetch;
+
+    try {
+      await launchAcaJob({
+        resourceGroup: "rg-kodiai",
+        jobName: "caj-kodiai-agent",
+        spec: buildAcaJobSpec({
+          jobName: "caj-kodiai-agent",
+          image: "kodiairegistry.azurecr.io/kodiai-agent:latest",
+          workspaceDir: "/mnt/kodiai-workspaces/test-job",
+          mcpBearerToken: "test-token",
+          mcpBaseUrl: "http://ca-kodiai",
+        }),
+        logger: logger as unknown as Logger,
+      });
+
+      const infoPayloads = logger.info.mock.calls.map((call) => call[0]);
+      const serialized = JSON.stringify(infoPayloads);
+      expect(serialized).not.toContain("kodiairegistry.azurecr.io");
+      expect(serialized).not.toContain("kodiai-agent:latest");
+      expect(serialized).not.toContain("specImage");
+      expect(serialized).not.toContain("bodyImages");
+      expect(infoPayloads).toContainEqual(expect.objectContaining({
+        bodyContainerImagesPresent: [true],
+        bodyContainerCount: 1,
+      }));
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalIdentityEndpoint === undefined) {
+        delete process.env["IDENTITY_ENDPOINT"];
+      } else {
+        process.env["IDENTITY_ENDPOINT"] = originalIdentityEndpoint;
+      }
+      if (originalIdentityHeader === undefined) {
+        delete process.env["IDENTITY_HEADER"];
+      } else {
+        process.env["IDENTITY_HEADER"] = originalIdentityHeader;
+      }
+    }
+  });
+
   test("passes abort signals to managed identity and job start fetches", async () => {
     const originalFetch = globalThis.fetch;
     const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];

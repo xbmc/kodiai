@@ -30,6 +30,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock tsconfig.json ./
 COPY --from=deps /app/dist ./dist
 
+# Ensure runtime files copied from root-owned build stages are readable by the
+# non-root bun user in Azure Container Apps jobs.
+RUN chmod a+rx /app && \
+    chmod a+r /app/package.json /app/bun.lock /app/tsconfig.json && \
+    chmod -R a+rX /app/dist /app/node_modules
+
 # Run as non-root user (oven/bun images include 'bun' user)
 USER bun
 

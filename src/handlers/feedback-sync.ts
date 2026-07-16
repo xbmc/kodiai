@@ -63,6 +63,10 @@ const REACTION_FETCH_CONCURRENCY = 4;
 const REACTION_FETCH_PER_PAGE = 100;
 const REACTION_FETCH_MAX_PAGES = 10;
 
+function isGitHubReviewCommentId(commentId: number): boolean {
+  return Number.isInteger(commentId) && commentId > 0;
+}
+
 function isRecentEnough(createdAt: string, recentWindowDays: number): boolean {
   const parsed = Date.parse(createdAt);
   if (Number.isNaN(parsed)) return false;
@@ -160,7 +164,9 @@ export function createFeedbackSyncHandler(deps: {
       const octokit = await githubApp.getInstallationOctokit(event.installationId);
       const reactionsByCommentId = new Map<number, ReactionEntry[]>();
 
-      const uniqueCommentIds = [...new Set(candidates.map((candidate) => candidate.commentId))];
+      const uniqueCommentIds = [...new Set(candidates
+        .map((candidate) => candidate.commentId)
+        .filter(isGitHubReviewCommentId))];
       const [repoOwner, repoName] = repo.split("/");
 
       const fetchReactions = async (commentId: number): Promise<{

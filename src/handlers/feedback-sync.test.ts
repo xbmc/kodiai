@@ -454,6 +454,38 @@ describe("createFeedbackSyncHandler", () => {
     expect(maxActiveFetches).toBeLessThanOrEqual(4);
   });
 
+  test("skips synthetic non-GitHub review comment ids before fetching reactions", async () => {
+    const requestedCommentIds: number[] = [];
+    const { handlers, recorded } = createHarness({
+      candidates: [
+        buildCandidate({ findingId: 1, commentId: -900000 }),
+        buildCandidate({ findingId: 2, commentId: -1 }),
+        buildCandidate({ findingId: 3, commentId: 0 }),
+        buildCandidate({ findingId: 4, commentId: 77 }),
+      ],
+      listReactions: async (commentId) => {
+        requestedCommentIds.push(commentId);
+        return [
+          {
+            id: 12_001,
+            content: "+1",
+            user: { login: "alice", type: "User" },
+            created_at: "2026-02-12T01:00:00Z",
+          },
+        ];
+      },
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    await handler!(buildPullRequestOpenedEvent());
+
+    expect(requestedCommentIds).toEqual([77]);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.commentId).toBe(77);
+  });
+
   test("ignores non-PR issue comments and avoids write-mode side effects", async () => {
     let reactionsListCalls = 0;
     const { handlers, recorded } = createHarness({

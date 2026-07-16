@@ -14,4 +14,17 @@ describe("Dockerfile runtime permissions", () => {
     expect(dockerfile).toContain("chmod a+r /app/package.json /app/bun.lock /app/tsconfig.json");
     expect(dockerfile).toContain("chmod -R a+rX /app/dist /app/node_modules");
   });
+
+  test("makes agent runtime files readable before switching to the bun user", () => {
+    const dockerfile = readFileSync(new URL("../Dockerfile.agent", import.meta.url), "utf8");
+    const copyDistIndex = dockerfile.indexOf("COPY --from=deps /app/dist ./dist");
+    const chmodIndex = dockerfile.indexOf("chmod a+rx /app");
+    const userIndex = dockerfile.indexOf("USER bun");
+
+    expect(copyDistIndex).toBeGreaterThanOrEqual(0);
+    expect(chmodIndex).toBeGreaterThan(copyDistIndex);
+    expect(chmodIndex).toBeLessThan(userIndex);
+    expect(dockerfile).toContain("chmod a+r /app/package.json /app/bun.lock /app/tsconfig.json");
+    expect(dockerfile).toContain("chmod -R a+rX /app/dist /app/node_modules");
+  });
 });
