@@ -113,6 +113,141 @@ describe("buildMentionRetrievalContextForPrompt", () => {
     expect(result.wikiKnowledgeForPrompt as unknown[]).toEqual([{ id: 2 }]);
   });
 
+  test("drops file-backed retrieval from paths outside the current PR diff", async () => {
+    const retrieve = mock(async (_input: unknown) => {
+      const baseResult = createFindingResult() as Record<string, unknown>;
+      return {
+        ...baseResult,
+        findings: [
+          {
+            record: {
+              findingText: "Keyboard layout sorting should compare label",
+              severity: "major",
+              category: "correctness",
+              filePath: "xbmc/input/keyboard/KeyboardLayoutManager.cpp",
+              outcome: "accepted",
+            },
+            distance: 0.01,
+            sourceRepo: "xbmc/xbmc",
+          },
+          {
+            record: {
+              findingText: "Remote control key mapping context",
+              severity: "minor",
+              category: "input",
+              filePath: "xbmc/platform/linux/input/LibInputKeyboard.cpp",
+              outcome: "accepted",
+            },
+            distance: 0.02,
+            sourceRepo: "xbmc/xbmc",
+          },
+        ],
+        snippetAnchors: [
+          {
+            path: "xbmc/input/keyboard/KeyboardLayoutManager.cpp",
+            line: 136,
+            snippet: "return (i.value < j.value);",
+          },
+          {
+            path: "xbmc/platform/linux/input/LibInputKeyboard.cpp",
+            line: 523,
+            snippet: "haveEvdevMapping",
+          },
+        ],
+        unifiedResults: [
+          {
+            id: "review:xbmc/xbmc:28529:0",
+            text: "To revert the sorting change, edit xbmc/input/keyboard/KeyboardLayoutManager.cpp:136.",
+            source: "review_comment",
+            sourceLabel: "[review: prior review comment]",
+            sourceUrl: null,
+            vectorDistance: 0.01,
+            rrfScore: 1,
+            createdAt: "2026-07-16T08:35:45Z",
+            metadata: {
+              prNumber: 28529,
+              filePath: "xbmc/input/keyboard/KeyboardLayoutManager.cpp",
+            },
+          },
+          {
+            id: "review:xbmc/xbmc:28497:0",
+            text: "Remote control key mapping context.",
+            source: "review_comment",
+            sourceLabel: "[review: prior review comment]",
+            sourceUrl: null,
+            vectorDistance: 0.02,
+            rrfScore: 0.8,
+            createdAt: "2026-07-16T08:45:04Z",
+            metadata: {
+              prNumber: 28497,
+              filePath: "xbmc/platform/linux/input/LibInputKeyboard.cpp",
+            },
+          },
+        ],
+        contextWindow: [
+          "[review: prior review comment]: To revert the sorting change, edit xbmc/input/keyboard/KeyboardLayoutManager.cpp:136.",
+          "",
+          "[review: prior review comment]: Remote control key mapping context.",
+        ].join("\n"),
+      };
+    });
+    const collectDiffFilePaths = mock(async () => ({
+      exitCode: 0,
+      stdout: [
+        "system/keymaps/keyboard.xml",
+        "xbmc/platform/linux/input/LibInputKeyboard.cpp",
+        "xbmc/input/keyboard/XBMC_keytable.cpp",
+      ].join("\n"),
+      stderr: "",
+      timedOut: false,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    }));
+
+    const result = await buildMentionRetrievalContextForPrompt({
+      retriever: { retrieve } as never,
+      retrievalEnabled: true,
+      topK: 5,
+      telemetryEnabled: false,
+      telemetryStore: {},
+      deliveryId: "delivery-28497",
+      owner: "xbmc",
+      repo: "xbmc",
+      surface: "issue_comment",
+      issueNumber: 28497,
+      prNumber: 28497,
+      baseRef: "master",
+      workspaceDir: "/tmp/work",
+      writeRequest: "how do you repent?",
+      mentionContext: "Conversation mentions a bad review on this PR.",
+      allowHeavyContext: false,
+      allowDiffContext: true,
+      explicitReviewRequest: false,
+      inReplyToId: undefined,
+      includeIssueCorpus: false,
+      logger: createLogger(),
+      collectDiffFilePaths,
+    });
+
+    expect(result.contextWindowForPrompt).not.toContain("KeyboardLayoutManager.cpp");
+    expect(result.contextWindowForPrompt).not.toContain("sorting change");
+    expect(result.unifiedResultsForPrompt).toHaveLength(1);
+    expect(result.unifiedResultsForPrompt[0]?.metadata.filePath).toBe("xbmc/platform/linux/input/LibInputKeyboard.cpp");
+    expect(result.retrievalContext?.findings).toEqual([
+      {
+        findingText: "Remote control key mapping context",
+        severity: "minor",
+        category: "input",
+        path: "xbmc/platform/linux/input/LibInputKeyboard.cpp",
+        line: 523,
+        snippet: "haveEvdevMapping",
+        outcome: "accepted",
+        distance: 0.02,
+        sourceRepo: "xbmc/xbmc",
+      },
+    ]);
+  });
+
   test("logs and returns empty prompt context when retrieval throws", async () => {
     const err = new Error("retrieval failed");
     const logger = createLogger();

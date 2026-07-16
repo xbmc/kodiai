@@ -46,6 +46,67 @@ function emptyMentionRetrievalPromptContext(): MentionRetrievalPromptContext {
   };
 }
 
+function normalizePathForScope(path: string): string {
+  return path.trim().replace(/^\.\/+/, "");
+}
+
+function getChunkFilePath(chunk: UnifiedRetrievalChunk): string | undefined {
+  const filePath = chunk.metadata?.filePath;
+  return typeof filePath === "string" && filePath.trim().length > 0
+    ? normalizePathForScope(filePath)
+    : undefined;
+}
+
+function getChunkPrNumber(chunk: UnifiedRetrievalChunk): number | undefined {
+  const prNumber = chunk.metadata?.prNumber;
+  return typeof prNumber === "number" && Number.isInteger(prNumber) && prNumber > 0
+    ? prNumber
+    : undefined;
+}
+
+function isFileScopedChunk(chunk: UnifiedRetrievalChunk): boolean {
+  return ["code", "canonical_code", "review_comment", "snippet"].includes(chunk.source);
+}
+
+function isChunkAllowedByCurrentPrScope(params: {
+  chunk: UnifiedRetrievalChunk;
+  prNumber: number | undefined;
+  changedPathSet: ReadonlySet<string>;
+  enforceScope: boolean;
+}): boolean {
+  if (!params.enforceScope || !isFileScopedChunk(params.chunk)) {
+    return true;
+  }
+
+  const chunkPrNumber = getChunkPrNumber(params.chunk);
+  if (chunkPrNumber !== undefined && chunkPrNumber === params.prNumber) {
+    return true;
+  }
+
+  const filePath = getChunkFilePath(params.chunk);
+  if (!filePath) {
+    return false;
+  }
+
+  return params.changedPathSet.has(filePath);
+}
+
+function buildMentionContextWindow(chunks: readonly UnifiedRetrievalChunk[], maxChars: number): string | undefined {
+  const parts: string[] = [];
+  let totalChars = 0;
+
+  for (const chunk of chunks) {
+    const entry = `${chunk.sourceLabel}: ${chunk.text}`;
+    if (totalChars + entry.length > maxChars) {
+      break;
+    }
+    parts.push(entry);
+    totalChars += entry.length;
+  }
+
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
+
 function normalizePrLanguage(language: string): string {
   return language.toLowerCase()
     .replace("c++", "cpp")
@@ -93,18 +154,20 @@ export async function buildMentionRetrievalContextForPrompt(params: {
     });
 
     let filePaths: string[] = [];
+    let shouldEnforceCurrentPrScope = false;
     if (
       (params.explicitReviewRequest || params.allowDiffContext) &&
       params.prNumber !== undefined &&
       params.baseRef
     ) {
+      shouldEnforceCurrentPrScope = true;
       const collectDiffFilePaths = params.collectDiffFilePaths ?? collectMentionDiffFilePaths;
       const diffResult = await collectDiffFilePaths({
         workspaceDir: params.workspaceDir,
         baseRef: params.baseRef,
       });
       if (diffResult.exitCode === 0) {
-        filePaths = splitGitLines(diffResult.stdout);
+        filePaths = splitGitLines(diffResult.stdout).map(normalizePathForScope);
       } else {
         params.logger.warn(
           {
@@ -183,9 +246,21 @@ export async function buildMentionRetrievalContextForPrompt(params: {
       return promptContext;
     }
 
-    if (result.unifiedResults.length > 0) {
-      promptContext.unifiedResultsForPrompt = result.unifiedResults;
-      promptContext.contextWindowForPrompt = result.contextWindow;
+    const changedPathSet = new Set(filePaths);
+    const unifiedResultsForPrompt = result.unifiedResults.filter((chunk) =>
+      isChunkAllowedByCurrentPrScope({
+        chunk,
+        prNumber: params.prNumber,
+        changedPathSet,
+        enforceScope: shouldEnforceCurrentPrScope,
+      })
+    );
+
+    if (unifiedResultsForPrompt.length > 0) {
+      promptContext.unifiedResultsForPrompt = unifiedResultsForPrompt;
+      promptContext.contextWindowForPrompt = unifiedResultsForPrompt.length === result.unifiedResults.length
+        ? result.contextWindow
+        : buildMentionContextWindow(unifiedResultsForPrompt, MENTION_RETRIEVAL_MAX_CONTEXT_CHARS);
     }
     if (result.reviewPrecedents.length > 0) {
       promptContext.reviewPrecedentsForPrompt = result.reviewPrecedents;
@@ -193,12 +268,22 @@ export async function buildMentionRetrievalContextForPrompt(params: {
     if (result.wikiKnowledge.length > 0) {
       promptContext.wikiKnowledgeForPrompt = result.wikiKnowledge;
     }
-    if (result.findings.length > 0) {
+    const scopedFindings = result.findings
+      .map((finding, index) => ({ finding, anchor: result.snippetAnchors[index] }))
+      .filter(({ finding, anchor }) => {
+        if (!shouldEnforceCurrentPrScope) {
+          return true;
+        }
+        const anchorPath = anchor?.path ? normalizePathForScope(anchor.path) : undefined;
+        const recordPath = normalizePathForScope(finding.record.filePath);
+        return changedPathSet.has(anchorPath ?? recordPath);
+      });
+
+    if (scopedFindings.length > 0) {
       promptContext.retrievalContext = {
         maxChars: MENTION_RETRIEVAL_MAX_CONTEXT_CHARS,
         maxItems: retrievalTopK,
-        findings: result.findings.slice(0, retrievalTopK).map((finding, index) => {
-          const anchor = result.snippetAnchors[index];
+        findings: scopedFindings.slice(0, retrievalTopK).map(({ finding, anchor }) => {
           return {
             findingText: finding.record.findingText,
             severity: finding.record.severity,
