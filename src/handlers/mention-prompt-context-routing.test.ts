@@ -2,16 +2,30 @@ import { describe, expect, test } from "bun:test";
 import { resolveMentionPromptContextRouting } from "./mention-prompt-context-routing.ts";
 
 describe("resolveMentionPromptContextRouting", () => {
-  test("grounds PR mentions in PR diff context and suppresses issue corpus", () => {
+  test("grounds review-intent PR mentions in PR diff context and suppresses issue corpus", () => {
     const routing = resolveMentionPromptContextRouting({
       isIssueThreadComment: false,
       prNumber: 42,
-      writeRequest: "provide additional details",
+      writeRequest: "please review",
     });
 
     expect(routing).toEqual({
       allowIssueCodePointers: false,
       allowPrDiffContext: true,
+      includeIssueCorpus: false,
+    });
+  });
+
+  test("does not run PR diff context for vague non-technical chatter", () => {
+    const routing = resolveMentionPromptContextRouting({
+      isIssueThreadComment: false,
+      prNumber: 28497,
+      writeRequest: "how do you repent?",
+    });
+
+    expect(routing).toEqual({
+      allowIssueCodePointers: false,
+      allowPrDiffContext: false,
       includeIssueCorpus: false,
     });
   });

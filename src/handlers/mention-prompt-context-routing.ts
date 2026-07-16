@@ -1,4 +1,8 @@
-import { isCodeSeekingMentionRequest } from "./mention-request-classification.ts";
+import {
+  isCodeSeekingMentionRequest,
+  isDiffSeekingMentionRequest,
+  isReviewRequest,
+} from "./mention-request-classification.ts";
 
 export type MentionPromptContextRouting = {
   allowIssueCodePointers: boolean;
@@ -12,11 +16,16 @@ export function resolveMentionPromptContextRouting(params: {
   writeRequest: string;
 }): MentionPromptContextRouting {
   const isPrMention = params.prNumber !== undefined;
+  const isPrContextSeekingRequest = isPrMention && (
+    isReviewRequest(params.writeRequest) ||
+    isCodeSeekingMentionRequest(params.writeRequest) ||
+    isDiffSeekingMentionRequest(params.writeRequest)
+  );
 
   return {
     allowIssueCodePointers:
       params.isIssueThreadComment && isCodeSeekingMentionRequest(params.writeRequest),
-    allowPrDiffContext: isPrMention,
+    allowPrDiffContext: isPrContextSeekingRequest,
     includeIssueCorpus: !isPrMention,
   };
 }
