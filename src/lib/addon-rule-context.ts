@@ -1,66 +1,81 @@
-import { readdir } from "node:fs/promises";
-import { join, normalize } from "node:path";
-import { mapWithConcurrency } from "./concurrency.ts";
+import type { PullRequestFileMetadata } from "./github-pr-files.ts";
 
 export type AddonRuleFileContext = {
   path: string;
-  content?: string;
-  omittedReason?: "missing" | "out-of-scope" | "truncated";
+  status?: string;
+  additions?: number | null;
+  deletions?: number | null;
+  patch?: string;
+  omittedReason?: "out-of-scope" | "patch-unavailable" | "truncated";
 };
 
 export type AddonRuleAddonContext = {
   addonId: string;
   files: AddonRuleFileContext[];
   allChangedPaths: string[];
-  hasLicenseFile: boolean;
 };
 
-export async function collectAddonRuleContext(params: {
-  workspaceDir: string;
-  files: Array<{ filename: string }>;
-  maxFileChars?: number;
-}): Promise<AddonRuleAddonContext[]> {
-  const maxFileChars = params.maxFileChars ?? 40_000;
-  const byAddon = new Map<string, string[]>();
+export function collectAddonRuleContext(params: {
+  files: readonly PullRequestFileMetadata[];
+  maxPatchChars?: number;
+}): AddonRuleAddonContext[] {
+  const maxPatchChars = params.maxPatchChars ?? 40_000;
+  const byAddon = new Map<string, PullRequestFileMetadata[]>();
 
   for (const file of params.files) {
-    const normalized = normalizeGitPath(file.filename);
-    const slash = normalized.indexOf("/");
+    const filename = normalizeGitPath(file.filename);
+    const slash = filename.indexOf("/");
     if (slash <= 0) continue;
-    const addonId = normalized.slice(0, slash);
-    const paths = byAddon.get(addonId) ?? [];
-    paths.push(normalized);
-    byAddon.set(addonId, paths);
+
+    const addonId = filename.slice(0, slash);
+    const files = byAddon.get(addonId) ?? [];
+    files.push({ ...file, filename });
+    byAddon.set(addonId, files);
   }
 
-  const sortedAddonEntries = [...byAddon.entries()].sort(([left], [right]) => left.localeCompare(right));
-  return await mapWithConcurrency(sortedAddonEntries, 8, async ([addonId, allChangedPaths]) => {
-    const uniqueChangedPaths = [...new Set(allChangedPaths)].sort();
-    const [files, hasLicenseFile] = await Promise.all([
-      mapWithConcurrency(
-        uniqueChangedPaths,
-        16,
-        (path) => collectFileContext(params.workspaceDir, path, maxFileChars),
-      ),
-      addonHasLicenseFile(params.workspaceDir, addonId),
-    ]);
-    return {
-      addonId,
-      files,
-      allChangedPaths: uniqueChangedPaths,
-      hasLicenseFile,
-    };
-  });
+  return [...byAddon.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([addonId, files]) => {
+      const uniqueFiles = dedupeAndSortFiles(files);
+      return {
+        addonId,
+        allChangedPaths: uniqueFiles.map((file) => file.filename),
+        files: uniqueFiles.map((file) => toFileContext(file, maxPatchChars)),
+      };
+    });
 }
 
-async function addonHasLicenseFile(workspaceDir: string, addonId: string): Promise<boolean> {
-  try {
-    const addonDir = safeWorkspacePath(workspaceDir, addonId);
-    const entries = await readdir(addonDir, { withFileTypes: true });
-    return entries.some((entry) => entry.isFile() && /^(licen[sc]e|copying)(?:\.[A-Za-z0-9]+)?$/i.test(entry.name));
-  } catch {
-    return false;
+function dedupeAndSortFiles(files: readonly PullRequestFileMetadata[]): PullRequestFileMetadata[] {
+  const byPath = new Map<string, PullRequestFileMetadata>();
+  for (const file of files) byPath.set(file.filename, file);
+  return [...byPath.values()].sort((left, right) => left.filename.localeCompare(right.filename));
+}
+
+function toFileContext(file: PullRequestFileMetadata, maxPatchChars: number): AddonRuleFileContext {
+  const base = {
+    path: file.filename,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+  };
+
+  if (!isContentScoped(file.filename)) {
+    return { ...base, omittedReason: "out-of-scope" };
   }
+
+  if (file.patch == null) {
+    return { ...base, omittedReason: "patch-unavailable" };
+  }
+
+  if (file.patch.length > maxPatchChars) {
+    return {
+      ...base,
+      patch: file.patch.slice(0, maxPatchChars),
+      omittedReason: "truncated",
+    };
+  }
+
+  return { ...base, patch: file.patch };
 }
 
 function normalizeGitPath(path: string): string {
@@ -68,36 +83,8 @@ function normalizeGitPath(path: string): string {
 }
 
 function isContentScoped(path: string): boolean {
-  return path.endsWith("/addon.xml") || path.endsWith(".py") || path.endsWith(".js");
-}
-
-async function collectFileContext(
-  workspaceDir: string,
-  gitPath: string,
-  maxFileChars: number,
-): Promise<AddonRuleFileContext> {
-  if (!isContentScoped(gitPath)) {
-    return { path: gitPath, omittedReason: "out-of-scope" };
-  }
-
-  try {
-    const absolutePath = safeWorkspacePath(workspaceDir, gitPath);
-    const file = Bun.file(absolutePath);
-    const content = await file.slice(0, maxFileChars).text();
-    if (file.size > maxFileChars) {
-      return { path: gitPath, content, omittedReason: "truncated" };
-    }
-    return { path: gitPath, content };
-  } catch {
-    return { path: gitPath, omittedReason: "missing" };
-  }
-}
-
-function safeWorkspacePath(workspaceDir: string, gitPath: string): string {
-  const absolutePath = normalize(join(workspaceDir, gitPath));
-  const workspaceRoot = normalize(workspaceDir);
-  if (absolutePath !== workspaceRoot && !absolutePath.startsWith(`${workspaceRoot}/`)) {
-    throw new Error("addon-rule-context path escaped workspace");
-  }
-  return absolutePath;
+  const normalized = path.toLowerCase();
+  return normalized.endsWith("/addon.xml")
+    || normalized.endsWith(".py")
+    || normalized.endsWith(".js");
 }

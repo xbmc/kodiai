@@ -1,91 +1,110 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { describe, expect, test } from "bun:test";
 import { collectAddonRuleContext } from "./addon-rule-context.ts";
 
-const tempDirs: string[] = [];
-
-async function makeWorkspace(files: Record<string, string>): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "kodiai-addon-rule-context-"));
-  tempDirs.push(dir);
-  for (const [relativePath, content] of Object.entries(files)) {
-    const absolutePath = join(dir, relativePath);
-    await mkdir(join(absolutePath, ".."), { recursive: true });
-    await writeFile(absolutePath, content);
-  }
-  return dir;
-}
-
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
-
 describe("collectAddonRuleContext", () => {
-  test("groups changed files by addon and reads scoped file content", async () => {
-    const workspaceDir = await makeWorkspace({
-      "plugin.video.foo/addon.xml": "<addon id='plugin.video.foo' />",
-      "plugin.video.foo/resources/lib/main.py": "print('hello')",
-      "plugin.video.foo/resources/web/app.js": "console.log('hello')",
-      "plugin.video.foo/resources/settings.xml": "<settings />",
-      "plugin.video.foo/LICENSE.txt": "GPL-2.0-or-later",
-      "README.md": "root readme",
-    });
-
-    const contexts = await collectAddonRuleContext({
-      workspaceDir,
+  test("groups changed files by addon and retains bounded scoped patches", () => {
+    const contexts = collectAddonRuleContext({
       files: [
-        { filename: "plugin.video.foo/addon.xml" },
-        { filename: "plugin.video.foo/resources/lib/main.py" },
-        { filename: "plugin.video.foo/resources/web/app.js" },
-        { filename: "plugin.video.foo/resources/settings.xml" },
-        { filename: "README.md" },
+        {
+          filename: "script.example/addon.xml",
+          status: "modified",
+          additions: 1,
+          deletions: 1,
+          patch: "@@ -1 +1 @@\n-<addon version=\"1.0.0\"/>\n+<addon version=\"2.0.0\"/>",
+        },
+        {
+          filename: "script.example/resources/lib/main.py",
+          status: "modified",
+          additions: 1,
+          deletions: 1,
+          patch: "@@ -1 +1 @@\n-old()\n+new()",
+        },
+        {
+          filename: "script.example/resources/settings.xml",
+          status: "modified",
+          additions: 2,
+          deletions: 0,
+          patch: "@@ -0,0 +1,2 @@\n+not\n+in scope",
+        },
+        { filename: "README.md", status: "modified", patch: "@@ -1 +1 @@" },
       ],
     });
 
     expect(contexts).toHaveLength(1);
-    expect(contexts[0]?.addonId).toBe("plugin.video.foo");
-    expect(contexts[0]?.hasLicenseFile).toBe(true);
-    expect(contexts[0]?.allChangedPaths).toContain("plugin.video.foo/resources/settings.xml");
-    expect(contexts[0]?.allChangedPaths).not.toContain("README.md");
+    expect(contexts[0]?.addonId).toBe("script.example");
+    expect(contexts[0]?.allChangedPaths).toEqual([
+      "script.example/addon.xml",
+      "script.example/resources/lib/main.py",
+      "script.example/resources/settings.xml",
+    ]);
     expect(contexts[0]?.files).toEqual([
-      { path: "plugin.video.foo/addon.xml", content: "<addon id='plugin.video.foo' />" },
-      { path: "plugin.video.foo/resources/lib/main.py", content: "print('hello')" },
-      { path: "plugin.video.foo/resources/settings.xml", omittedReason: "out-of-scope" },
-      { path: "plugin.video.foo/resources/web/app.js", content: "console.log('hello')" },
+      {
+        path: "script.example/addon.xml",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-<addon version=\"1.0.0\"/>\n+<addon version=\"2.0.0\"/>",
+      },
+      {
+        path: "script.example/resources/lib/main.py",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-old()\n+new()",
+      },
+      {
+        path: "script.example/resources/settings.xml",
+        status: "modified",
+        additions: 2,
+        deletions: 0,
+        omittedReason: "out-of-scope",
+      },
     ]);
   });
 
-  test("truncates large scoped file content", async () => {
-    const workspaceDir = await makeWorkspace({
-      "script.module.foo/default.py": "abcdefghij",
-    });
-
-    const contexts = await collectAddonRuleContext({
-      workspaceDir,
-      maxFileChars: 4,
-      files: [{ filename: "script.module.foo/default.py" }],
+  test("marks a missing scoped patch unavailable instead of reading the workspace", () => {
+    const contexts = collectAddonRuleContext({
+      files: [{ filename: "script.example/default.py", status: "modified" }],
     });
 
     expect(contexts[0]?.files[0]).toEqual({
-      path: "script.module.foo/default.py",
-      content: "abcd",
+      path: "script.example/default.py",
+      status: "modified",
+      additions: undefined,
+      deletions: undefined,
+      omittedReason: "patch-unavailable",
+    });
+  });
+
+  test("caps oversized patches and marks them truncated", () => {
+    const contexts = collectAddonRuleContext({
+      maxPatchChars: 4,
+      files: [{
+        filename: "script.example/default.py",
+        status: "modified",
+        patch: "abcdefghij",
+      }],
+    });
+
+    expect(contexts[0]?.files[0]).toEqual({
+      path: "script.example/default.py",
+      status: "modified",
+      additions: undefined,
+      deletions: undefined,
+      patch: "abcd",
       omittedReason: "truncated",
     });
   });
 
-  test("omits missing scoped file content without throwing", async () => {
-    const workspaceDir = await makeWorkspace({});
-
-    const contexts = await collectAddonRuleContext({
-      workspaceDir,
-      files: [{ filename: "plugin.video.missing/addon.xml" }],
+  test("normalizes paths, sorts addons, and ignores root-level files", () => {
+    const contexts = collectAddonRuleContext({
+      files: [
+        { filename: "z.addon\\default.py", status: "added", patch: "+z" },
+        { filename: "/a.addon/addon.xml", status: "added", patch: "+a" },
+        { filename: "README.md", status: "modified", patch: "+root" },
+      ],
     });
 
-    expect(contexts[0]?.files[0]).toEqual({
-      path: "plugin.video.missing/addon.xml",
-      omittedReason: "missing",
-    });
-    expect(contexts[0]?.hasLicenseFile).toBe(false);
+    expect(contexts.map((context) => context.addonId)).toEqual(["a.addon", "z.addon"]);
   });
 });
