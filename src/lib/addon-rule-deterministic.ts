@@ -1,4 +1,4 @@
-import type { AddonRuleAddonContext } from "./addon-rule-context.ts";
+import type { AddonRuleAddonContext, AddonRuleFileContext } from "./addon-rule-context.ts";
 import type { AddonRuleFinding } from "./addon-rule-types.ts";
 
 const DEV_ARTIFACT_PATTERNS = [
@@ -12,71 +12,83 @@ const DEV_ARTIFACT_PATTERNS = [
 ];
 
 const ALLOWED_BINARY_EXTENSIONS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".ico",
-  ".ttf",
-  ".otf",
-  ".woff",
-  ".woff2",
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico",
+  ".ttf", ".otf", ".woff", ".woff2",
 ]);
 
 const FORBIDDEN_BINARY_EXTENSIONS = new Set([
-  ".dll",
-  ".exe",
-  ".dylib",
-  ".so",
-  ".pyd",
-  ".bin",
-  ".dat",
-  ".class",
-  ".jar",
+  ".dll", ".exe", ".dylib", ".so", ".pyd", ".bin", ".dat", ".class", ".jar",
 ]);
 
 const SPDXISH_LICENSE = /^(?:GPL|LGPL|AGPL|MIT|BSD|Apache|MPL|ISC|Unlicense|CC0)(?:[-A-Za-z0-9.]+)?(?:\s+(?:or|and)\s+(?:GPL|LGPL|AGPL|MIT|BSD|Apache|MPL|ISC|Unlicense|CC0)[-A-Za-z0-9.]*)*$/i;
 
-export function runDeterministicAddonRuleChecks(
-  contexts: readonly AddonRuleAddonContext[],
-): AddonRuleFinding[] {
+export function runDeterministicAddonRuleChecks(params: {
+  baseBranch: string;
+  validBranches: readonly string[];
+  contexts: readonly AddonRuleAddonContext[];
+}): AddonRuleFinding[] {
   const findings: AddonRuleFinding[] = [];
+  const validBranch = params.validBranches.includes(params.baseBranch);
 
-  for (const context of contexts) {
-    const changedPaths = context.allChangedPaths;
-    for (const changedPath of changedPaths) {
+  for (const context of params.contexts) {
+    if (!validBranch) {
+      findings.push(error(
+        context.addonId,
+        "target-branch",
+        `Target branch "${params.baseBranch}" is not an allowed Kodi add-on submission branch (minimum: matrix).`,
+      ));
+    }
+
+    for (const changedPath of context.allChangedPaths) {
       if (isDevelopmentArtifact(changedPath)) {
-        findings.push(error(context.addonId, `Addon includes development-only artifact: ${changedPath}.`));
+        findings.push(error(
+          context.addonId,
+          "development-artifact",
+          `Addon includes development-only artifact: ${changedPath}.`,
+          changedPath,
+        ));
       }
       if (isForbiddenBinary(changedPath)) {
-        findings.push(error(context.addonId, `Forbidden binary file extension in addon submission: ${changedPath}.`));
+        findings.push(error(
+          context.addonId,
+          "forbidden-binary",
+          `Forbidden binary file extension in addon submission: ${changedPath}.`,
+          changedPath,
+        ));
       }
       if (isInvalidTranslationPath(changedPath)) {
-        findings.push(error(context.addonId, `Invalid translation directory path: ${changedPath}; expected resources/language/resource.language.<lc_cc>/strings.po.`));
+        findings.push(error(
+          context.addonId,
+          "translation-path",
+          `Invalid translation directory path: ${changedPath}; expected resources/language/resource.language.<lc_cc>/strings.po.`,
+          changedPath,
+        ));
       }
     }
 
-    if (!context.hasLicenseFile) {
-      findings.push(error(context.addonId, "Missing license file in changed addon directory."));
+    const addonXml = context.files.find((file) => file.path.toLowerCase().endsWith("/addon.xml"));
+    if (addonXml?.status === "added" && !context.allChangedPaths.some(isLicensePath)) {
+      findings.push(error(
+        context.addonId,
+        "license-file",
+        "A newly submitted addon must add an open-source license file.",
+      ));
     }
 
-    const addonXml = context.files.find((file) => file.path.endsWith("/addon.xml") && file.content);
-    if (addonXml?.content) {
-      findings.push(...checkAddonXml(context.addonId, addonXml.content));
+    if (addonXml?.patch && addonXml.omittedReason !== "truncated") {
+      findings.push(...checkAddonXmlPatch(context.addonId, addonXml));
     }
   }
 
   return dedupeFindings(findings);
 }
 
-function error(addonId: string, message: string): AddonRuleFinding {
-  return { addonId, level: "ERROR", source: "deterministic", message };
+function error(addonId: string, rule: string, message: string, path?: string): AddonRuleFinding {
+  return { addonId, ...(path ? { path } : {}), rule, level: "ERROR", source: "deterministic", message };
 }
 
-function warn(addonId: string, message: string): AddonRuleFinding {
-  return { addonId, level: "WARN", source: "deterministic", message };
+function warn(addonId: string, rule: string, message: string, path?: string): AddonRuleFinding {
+  return { addonId, ...(path ? { path } : {}), rule, level: "WARN", source: "deterministic", message };
 }
 
 function isDevelopmentArtifact(path: string): boolean {
@@ -90,36 +102,62 @@ function isForbiddenBinary(path: string): boolean {
 }
 
 function isInvalidTranslationPath(path: string): boolean {
-  if (!path.endsWith("/strings.po")) return false;
-  if (!path.includes("/resources/language/")) return false;
+  if (!path.endsWith("/strings.po") || !path.includes("/resources/language/")) return false;
   return !/\/resources\/language\/resource\.language\.[a-z]{2}_[a-z]{2}\/strings\.po$/.test(path);
 }
 
-function checkAddonXml(addonId: string, xml: string): AddonRuleFinding[] {
+function isLicensePath(path: string): boolean {
+  const filename = path.split("/").pop() ?? "";
+  return /^(licen[sc]e|copying)(?:\.[A-Za-z0-9]+)?$/i.test(filename);
+}
+
+function checkAddonXmlPatch(addonId: string, file: AddonRuleFileContext): AddonRuleFinding[] {
+  const addedXml = extractAddedLines(file.patch ?? "");
   const findings: AddonRuleFinding[] = [];
-  if (!hasLocalizedTag(xml, "summary", "en_GB")) {
-    findings.push(error(addonId, "addon.xml is missing an English summary tag with lang=\"en_GB\"."));
-  }
-  if (!hasLocalizedTag(xml, "description", "en_GB")) {
-    findings.push(error(addonId, "addon.xml is missing an English description tag with lang=\"en_GB\"."));
+
+  if (file.status === "added") {
+    if (!hasLocalizedTag(addedXml, "summary", "en_GB")) {
+      findings.push(error(addonId, "manifest-english-summary", "Added addon.xml is missing an English summary tag with lang=\"en_GB\".", file.path));
+    }
+    if (!hasLocalizedTag(addedXml, "description", "en_GB")) {
+      findings.push(error(addonId, "manifest-english-description", "Added addon.xml is missing an English description tag with lang=\"en_GB\".", file.path));
+    }
   }
 
   for (const tag of ["summary", "description", "disclaimer"]) {
     const regex = new RegExp(`<${tag}\\b[^>]*\\blang=["']([^"']+)["']`, "gi");
-    for (const match of xml.matchAll(regex)) {
+    for (const match of addedXml.matchAll(regex)) {
       const lang = match[1] ?? "";
       if (!/^[a-z]{2}_[A-Z]{2}$/.test(lang)) {
-        findings.push(error(addonId, `addon.xml ${tag} language code "${lang}" must use lc_CC format.`));
+        findings.push(error(
+          addonId,
+          "manifest-language-code",
+          `addon.xml ${tag} language code "${lang}" must use lc_CC format.`,
+          file.path,
+        ));
       }
     }
   }
 
-  const license = xml.match(/<license\b[^>]*>([\s\S]*?)<\/license>/i)?.[1]?.trim();
-  if (!license || !SPDXISH_LICENSE.test(license)) {
-    findings.push(warn(addonId, "addon.xml license value does not look like a valid SPDX license identifier."));
+  const license = addedXml.match(/<license\b[^>]*>([\s\S]*?)<\/license>/i)?.[1]?.trim();
+  if (license !== undefined && (!license || !SPDXISH_LICENSE.test(license))) {
+    findings.push(warn(
+      addonId,
+      "manifest-license-spdx",
+      "Changed addon.xml license value does not look like a valid SPDX license identifier.",
+      file.path,
+    ));
   }
 
   return findings;
+}
+
+function extractAddedLines(patch: string): string {
+  return patch
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .map((line) => line.slice(1))
+    .join("\n");
 }
 
 function hasLocalizedTag(xml: string, tag: string, lang: string): boolean {
@@ -133,12 +171,10 @@ function escapeRegex(value: string): string {
 
 function dedupeFindings(findings: readonly AddonRuleFinding[]): AddonRuleFinding[] {
   const seen = new Set<string>();
-  const deduped: AddonRuleFinding[] = [];
-  for (const finding of findings) {
-    const key = `${finding.addonId}|${finding.level}|${finding.message}`;
-    if (seen.has(key)) continue;
+  return findings.filter((finding) => {
+    const key = `${finding.addonId}|${finding.path ?? ""}|${finding.rule}|${finding.level}|${finding.message}`;
+    if (seen.has(key)) return false;
     seen.add(key);
-    deduped.push(finding);
-  }
-  return deduped;
+    return true;
+  });
 }

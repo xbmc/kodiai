@@ -1,5 +1,7 @@
 export type AddonRuleFinding = {
   addonId: string;
+  path?: string;
+  rule: string;
   level: "ERROR" | "WARN";
   source: "deterministic" | "llm";
   message: string;
