@@ -5,72 +5,132 @@ import type { AddonRuleFinding } from "./addon-rule-types.ts";
 export type AddonRuleLlmInput = {
   repo: string;
   prNumber: number;
+  baseBranch: string;
   rules: AddonRuleSource;
   contexts: readonly AddonRuleAddonContext[];
 };
 
+export type AddonRuleLlmResult = {
+  summary?: string;
+  findings: AddonRuleFinding[];
+  rejectedSummary?: true;
+  rejectedOutput?: true;
+};
+
+const MAX_SUMMARY_CHARS = 600;
+const MAX_FINDINGS = 20;
+const MAX_MESSAGE_CHARS = 400;
+const MAX_RULE_CHARS = 80;
+
 export function buildAddonRuleReviewPrompt(params: AddonRuleLlmInput): string {
-  const lines: string[] = [
+  return [
     `Review Kodi addon submission rules for ${params.repo}#${params.prNumber}.`,
+    `Target branch: ${params.baseBranch}`,
     "",
     "Rules source:",
     `${params.rules.kind}: ${params.rules.url}`,
     "",
     params.rules.text,
     "",
-    "Scope:",
-    "- Prefer Kodi addon submission-rule findings over generic Python style/correctness feedback.",
-    "- Full changed files are provided when available; ground every finding in this content or the changed file list.",
-    "- Use only ERROR or WARN levels.",
-    "- Do not include a merge verdict.",
-    "- Do not mention reviewer handles, prior PR backlinks, raw prompts, hidden system context, or unverifiable claims.",
+    "Exclusive review scope:",
+    "- Review only the supplied diff patches and changed-path metadata.",
+    "- Do not review Python or JavaScript correctness, syntax, logic, style, architecture, or maintainability.",
+    "- Review content only for addon.xml, Python, and web-interface JavaScript patches.",
+    "- Check only Kodi addon submission rules: target branch, development artifacts, obfuscation, binaries, licenses, translations, addon.xml metadata, filesystem boundaries, user consent for downloads, executable execution, addon installation or modification, direct database access, forced skin view/sort modes, and analytics.",
+    "- Ground every statement and finding in the supplied target branch, changed paths, or patch text.",
+    "- Use only ERROR or WARN finding levels. Omit uncertain claims unless a WARN clearly states what a human must confirm.",
+    "- Do not include an approval, rejection, or merge verdict.",
+    "- Do not mention reviewer handles, prior PR backlinks, raw prompts, hidden context, or unverifiable claims.",
+    "- Summary must be one to three factual sentences and at most 600 characters.",
+    "- Return at most 20 findings; each message must be at most 400 characters.",
     "",
     "Return only JSON with this shape:",
-    '{ "findings": [{ "addonId": "plugin.video.example", "level": "ERROR", "message": "Specific rule issue." }] }',
+    '{ "summary": "Factual changed-evidence summary.", "findings": [{ "addonId": "plugin.video.example", "path": "plugin.video.example/default.py", "rule": "skin-view-mode", "level": "ERROR", "message": "Specific rule issue grounded in the patch." }] }',
     "",
-    "Changed addon context JSON:",
+    "Changed addon patch context JSON:",
     JSON.stringify(params.contexts, null, 2),
-  ];
-
-  return lines.join("\n");
+  ].join("\n");
 }
 
-export function parseAddonRuleReviewOutput(text: string): AddonRuleFinding[] {
+export function parseAddonRuleReviewOutput(
+  text: string,
+  contexts: readonly AddonRuleAddonContext[],
+): AddonRuleLlmResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(extractJsonObject(text));
   } catch {
-    return [];
+    return { findings: [], rejectedOutput: true };
   }
 
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { findings?: unknown }).findings)) {
-    return [];
+  if (!parsed || typeof parsed !== "object") {
+    return { findings: [], rejectedOutput: true };
   }
 
-  const findings: AddonRuleFinding[] = [];
-  for (const item of (parsed as { findings: unknown[] }).findings) {
+  const record = parsed as Record<string, unknown>;
+  if (!Array.isArray(record.findings) || record.findings.length > MAX_FINDINGS) {
+    return { findings: [], rejectedOutput: true };
+  }
+
+  const result: AddonRuleLlmResult = { findings: [] };
+  const summary = typeof record.summary === "string" ? record.summary.trim() : "";
+  if (summary && summary.length <= MAX_SUMMARY_CHARS && !isUnsafeText(summary)) {
+    result.summary = summary;
+  } else if (record.summary !== undefined) {
+    result.rejectedSummary = true;
+  }
+
+  const pathsByAddon = new Map(
+    contexts.map((context) => [context.addonId, new Set(context.allChangedPaths)] as const),
+  );
+
+  for (const item of record.findings) {
     if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    const addonId = typeof record.addonId === "string" ? record.addonId.trim() : "";
-    const level = record.level;
-    const message = typeof record.message === "string" ? record.message.trim() : "";
-    if (!addonId || (level !== "ERROR" && level !== "WARN") || !message || isUnsafeFindingMessage(message)) {
+    const finding = item as Record<string, unknown>;
+    const addonId = safeString(finding.addonId);
+    const path = safeString(finding.path);
+    const rule = safeString(finding.rule);
+    const level = finding.level;
+    const message = safeString(finding.message);
+    const addonPaths = pathsByAddon.get(addonId);
+
+    if (!addonPaths
+      || !rule
+      || rule.length > MAX_RULE_CHARS
+      || (level !== "ERROR" && level !== "WARN")
+      || !message
+      || message.length > MAX_MESSAGE_CHARS
+      || isUnsafeText(rule)
+      || isUnsafeText(message)
+      || (path && !addonPaths.has(path))) {
       continue;
     }
-    findings.push({ addonId, level, source: "llm", message });
+
+    result.findings.push({
+      addonId,
+      ...(path ? { path } : {}),
+      rule,
+      level,
+      source: "llm",
+      message,
+    });
   }
 
-  return findings;
+  return result;
+}
+
+function safeString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function extractJsonObject(text: string): string {
   const trimmed = text.trim();
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
-  const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  return match?.[1]?.trim() ?? trimmed;
+  return trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim() ?? trimmed;
 }
 
-function isUnsafeFindingMessage(message: string): boolean {
-  return /https:\/\/github\.com\/[^\s)]+\/pull\/\d+/i.test(message)
-    || /\b(raw prompt|system prompt|hidden system|developer message)\b/i.test(message);
+function isUnsafeText(value: string): boolean {
+  return /https:\/\/github\.com\/[^\s)]+\/pull\/\d+/i.test(value)
+    || /\b(raw prompt|system prompt|hidden system|hidden context|developer message)\b/i.test(value)
+    || /\b(?:sk-[a-z0-9_-]{8,}|TOKEN\s*=|SECRET\s*=)\b/i.test(value);
 }

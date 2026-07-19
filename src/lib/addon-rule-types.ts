@@ -7,8 +7,16 @@ export type AddonRuleFinding = {
   message: string;
 };
 
+export type AddonRuleIncompleteReason =
+  | "rules-fallback"
+  | "llm-incomplete"
+  | "patch-unavailable"
+  | "patch-truncated"
+  | "checker-incomplete";
+
 export type AddonRuleReviewComment = {
   rulesSource: { kind: "wiki" | "fallback"; url: string };
+  summary: string;
   findings: AddonRuleFinding[];
-  incompleteReason?: string;
+  incompleteReasons: AddonRuleIncompleteReason[];
 };

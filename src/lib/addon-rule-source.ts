@@ -4,6 +4,8 @@ export const ADDON_RULES_URL = "https://kodi.wiki/view/Add-on_rules";
 
 export const EMBEDDED_ADDON_RULES = [
   "Kodi add-on submission rules fallback:",
+  "- Review only changed paths and diff patches; do not assess Python or JavaScript code quality, correctness, style, or architecture.",
+  "- Submission target branches must be Kodi symbolic version names from matrix onward; master and main are not allowed.",
   "- Addons must not include development-only files such as CI, linter, test runner, or test files.",
   "- Addons must not include obfuscated scripts. Minified JavaScript is allowed only for web-interface addons and still needs security review.",
   "- Binary files are not allowed except images and fonts.",
