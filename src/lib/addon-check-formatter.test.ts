@@ -1,253 +1,142 @@
-import { describe, test, expect } from "bun:test";
-import {
-  buildAddonCheckMarker,
-  formatAddonCheckComment,
-} from "./addon-check-formatter.ts";
-import type { AddonFinding } from "../handlers/addon-check.ts";
-import { classifyAddonCheckOutcome } from "./addon-check-classification.ts";
+import { describe, expect, test } from "bun:test";
+import type { AddonCheckClassificationResult } from "./addon-check-classification.ts";
+import { buildAddonCheckMarker, formatAddonCheckComment } from "./addon-check-formatter.ts";
+
+const marker = "<!-- kodiai:addon-check:xbmc/repo-scripts:2862 -->";
+
+function classification(mode: AddonCheckClassificationResult["mode"]): AddonCheckClassificationResult {
+  return {
+    gate: "addon-check-classification",
+    classification: mode.includes("timeout") ? "actionable-diagnostic" : "expected-bounded-outcome",
+    mode,
+    reasonCodes: mode === "all-timeout" ? ["all-timeout"] : ["completed-clean"],
+    actionableDiagnostic: mode.includes("timeout"),
+    expectedBoundedOutcome: true,
+    counts: {
+      addonCount: 1,
+      completedCount: mode === "all-timeout" ? 0 : 1,
+      timedOutCount: mode === "all-timeout" ? 1 : 0,
+      toolNotFoundCount: 0,
+      findingCount: 0,
+      errorCount: 0,
+      warningCount: 0,
+      timeBudgetMs: 240_000,
+    },
+    redaction: {
+      rawCheckerOutputOmitted: true,
+      workspacePathsOmitted: true,
+      githubPayloadOmitted: true,
+      boundedReasonCodes: true,
+      unsafeInputOmitted: false,
+      rawCanaryDetected: false,
+      addonIdentifiersOmitted: true,
+    },
+  };
+}
 
 describe("buildAddonCheckMarker", () => {
-  test("produces the expected HTML marker format", () => {
-    const marker = buildAddonCheckMarker("xbmc", "repo-plugins", 42);
-    expect(marker).toBe(
-      "<!-- kodiai:addon-check:xbmc/repo-plugins:42 -->",
-    );
-  });
-
-  test("embeds owner, repo, and prNumber correctly", () => {
-    const marker = buildAddonCheckMarker("my-org", "my-repo", 100);
-    expect(marker).toContain("my-org/my-repo:100");
+  test("produces the stable idempotent marker", () => {
+    expect(buildAddonCheckMarker("xbmc", "repo-scripts", 2862)).toBe(marker);
   });
 });
 
 describe("formatAddonCheckComment", () => {
-  const marker = buildAddonCheckMarker("xbmc", "repo-plugins", 1);
-
-  test("marker appears on the first line", () => {
-    const findings: AddonFinding[] = [];
-    const comment = formatAddonCheckComment(findings, marker);
-    const firstLine = comment.split("\n")[0];
-    expect(firstLine).toBe(marker);
-  });
-
-  test("clean pass when findings are empty", () => {
-    const comment = formatAddonCheckComment([], marker);
-    expect(comment).toContain("✅ No issues found by kodi-addon-checker.");
-    expect(comment).not.toContain("| Addon |");
-  });
-
-  test("clean pass when all findings are INFO", () => {
-    const findings: AddonFinding[] = [
-      { level: "INFO", addonId: "plugin.video.foo", message: "some info" },
-      { level: "INFO", addonId: "plugin.video.foo", message: "another info" },
-    ];
-    const comment = formatAddonCheckComment(findings, marker);
-    expect(comment).toContain("✅ No issues found by kodi-addon-checker.");
-    expect(comment).not.toContain("| Addon |");
-  });
-
-  test("renders table with ERROR and WARN, excludes INFO", () => {
-    const findings: AddonFinding[] = [
-      { level: "ERROR", addonId: "plugin.video.foo", message: "missing changelog" },
-      { level: "WARN", addonId: "plugin.video.foo", message: "deprecated api" },
-      { level: "INFO", addonId: "plugin.video.foo", message: "info line" },
-    ];
-    const comment = formatAddonCheckComment(findings, marker);
-    expect(comment).toContain("| Addon | Level | Message |");
-    expect(comment).toContain("| plugin.video.foo | ERROR | missing changelog |");
-    expect(comment).toContain("| plugin.video.foo | WARN | deprecated api |");
-    expect(comment).not.toContain("info line");
-  });
-
-  test("escapes markdown table cells from checker findings", () => {
-    const findings: AddonFinding[] = [
-      { level: "ERROR", addonId: "plugin.video.foo|bar", message: "line one\nline | two" },
-    ];
-    const comment = formatAddonCheckComment(findings, marker);
-
-    expect(comment).toContain("| plugin.video.foo\\|bar | ERROR | line one<br>line \\| two |");
-  });
-
-  test("summary line counts only ERROR and WARN", () => {
-    const findings: AddonFinding[] = [
-      { level: "ERROR", addonId: "plugin.video.foo", message: "err1" },
-      { level: "ERROR", addonId: "plugin.video.bar", message: "err2" },
-      { level: "WARN", addonId: "plugin.video.foo", message: "warn1" },
-      { level: "INFO", addonId: "plugin.video.foo", message: "info1" },
-    ];
-    const comment = formatAddonCheckComment(findings, marker);
-    expect(comment).toContain("_2 error(s), 1 warning(s) found._");
-  });
-
-  test("summary shows zero counts correctly", () => {
-    const findings: AddonFinding[] = [
-      { level: "WARN", addonId: "plugin.video.foo", message: "some warning" },
-    ];
-    const comment = formatAddonCheckComment(findings, marker);
-    expect(comment).toContain("_0 error(s), 1 warning(s) found._");
-  });
-
-  test("includes heading in all cases", () => {
-    expect(formatAddonCheckComment([], marker)).toContain("## Kodiai Addon Check");
-
-    const findings: AddonFinding[] = [
-      { level: "ERROR", addonId: "plugin.video.foo", message: "err" },
-    ];
-    expect(formatAddonCheckComment(findings, marker)).toContain("## Kodiai Addon Check");
-  });
-
-  test("no table rows in clean pass output", () => {
-    const comment = formatAddonCheckComment([], marker);
-    const lines = comment.split("\n");
-    const tableRows = lines.filter((l) => l.startsWith("|"));
-    expect(tableRows.length).toBe(0);
-  });
-
-  test("multiple addons appear as separate table rows", () => {
-    const findings: AddonFinding[] = [
-      { level: "ERROR", addonId: "plugin.video.foo", message: "err in foo" },
-      { level: "WARN", addonId: "plugin.audio.bar", message: "warn in bar" },
-    ];
-    const comment = formatAddonCheckComment(findings, marker);
-    expect(comment).toContain("| plugin.video.foo | ERROR | err in foo |");
-    expect(comment).toContain("| plugin.audio.bar | WARN | warn in bar |");
-  });
-
-  test("all-timeout renders bounded incomplete diagnostic instead of clean pass", () => {
-    const classification = classifyAddonCheckOutcome({
-      addons: [{ timedOut: true }, { timedOut: true }],
-      timeBudgetMs: 1234,
+  test("renders the exact concise clean review", () => {
+    const comment = formatAddonCheckComment([], marker, classification("completed-clean"), {
+      rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
+      summary: "`script.audiooffsetmanager` updates from 1.5.0 to 2.1.0 on the valid `nexus` target branch.",
+      findings: [],
+      incompleteReasons: [],
     });
-    const comment = formatAddonCheckComment([], marker, classification);
 
-    expect(comment).toContain("⚠️ **Addon check incomplete.**");
-    expect(comment).toContain("- Mode: `all-timeout`");
-    expect(comment).toContain("`all-timeout`");
-    expect(comment).toContain("Addons checked: 0/2; timed out: 2; tool unavailable: 0.");
-    expect(comment).toContain("Time budget: 1234ms per addon.");
-    expect(comment).not.toContain("✅ No issues found by kodi-addon-checker.");
-    expect(comment).not.toContain("| Addon |");
+    expect(comment).toBe([
+      marker,
+      "## Kodiai Add-on Review",
+      "",
+      "### Summary",
+      "",
+      "`script.audiooffsetmanager` updates from 1.5.0 to 2.1.0 on the valid `nexus` target branch.",
+      "",
+      "### Findings",
+      "",
+      "No addon-rule violations were found in the reviewed diff.",
+      "",
+      "### Verdict",
+      "",
+      "No addon-rule violations found. Final approval remains with a human reviewer.",
+    ].join("\n"));
   });
 
-  test("partial-timeout with findings renders both diagnostic and findings table", () => {
-    const classification = classifyAddonCheckOutcome({
-      addons: [
-        { completed: true, findingCount: 1, errorCount: 1, warningCount: 0 },
-        { timedOut: true },
-      ],
-      timeBudgetMs: 250,
-    });
-    const findings: AddonFinding[] = [
-      { level: "ERROR", addonId: "plugin.video.foo", message: "missing changelog" },
-    ];
-    const comment = formatAddonCheckComment(findings, marker, classification);
-
-    expect(comment).toContain("- Mode: `partial-timeout`");
-    expect(comment).toContain("`partial-timeout`");
-    expect(comment).toContain("`findings-present`");
-    expect(comment).toContain("| plugin.video.foo | ERROR | missing changelog |");
-    expect(comment).toContain("_1 error(s), 0 warning(s) found._");
-    expect(comment).not.toContain("✅ No issues found by kodi-addon-checker.");
-  });
-
-  test("clean completed classification preserves existing green no-findings message", () => {
-    const classification = classifyAddonCheckOutcome({
-      addons: [{ completed: true, findingCount: 0, errorCount: 0, warningCount: 0 }],
-      timeBudgetMs: 250,
-    });
-    const comment = formatAddonCheckComment([], marker, classification);
-
-    expect(comment).toContain("✅ No issues found by kodi-addon-checker.");
-    expect(comment).not.toContain("Addon check incomplete");
-  });
-
-  test("malformed diagnostic input degrades to generic bounded incomplete diagnostic", () => {
-    const comment = formatAddonCheckComment([], marker, {
-      reasonCodes: ["all-timeout", "secret=/home/user/raw", "all-timeout"],
-      counts: {
-        addonCount: 50_000,
-        completedCount: -1,
-        timedOutCount: 2.8,
-        toolNotFoundCount: Number.POSITIVE_INFINITY,
-        findingCount: 4,
-        errorCount: 0,
-        warningCount: 0,
-        timeBudgetMs: 9_999_999,
+  test("renders concrete finding bullets and an advisory count verdict", () => {
+    const comment = formatAddonCheckComment([
+      {
+        addonId: "plugin.video.example",
+        level: "ERROR",
+        message: "Runs a downloaded executable.",
       },
-    } as never);
-
-    expect(comment).toContain("- Mode: `unknown-malformed-evidence`");
-    expect(comment).toContain("`all-timeout`");
-    expect(comment).toContain("Addons checked: 0/10000; timed out: 2; tool unavailable: 0.");
-    expect(comment).toContain("Time budget: 3600000ms per addon.");
-    expect(comment).not.toContain("secret");
-    expect(comment).not.toContain("/home/user/raw");
-  });
-
-  test("addon-rule review findings render in the same idempotent comment", () => {
-    const comment = formatAddonCheckComment([], marker, undefined, {
+    ], marker, classification("completed-with-findings"), {
       rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
-      findings: [
-        {
-          addonId: "plugin.video.example",
-          level: "ERROR",
-          source: "deterministic",
-          message: "Missing English description in addon.xml.",
-        },
-        {
-          addonId: "plugin.video.example",
-          level: "WARN",
-          source: "llm",
-          message: "Download appears to happen without user confirmation.",
-        },
-      ],
+      summary: "`plugin.video.example` changes download handling on `nexus`.",
+      findings: [{
+        addonId: "plugin.video.example",
+        path: "plugin.video.example/resources/lib/client.py",
+        rule: "download-consent",
+        level: "WARN",
+        source: "llm",
+        message: "The changed download path has no visible user-consent prompt; confirm consent before download.",
+      }],
+      incompleteReasons: [],
     });
 
-    expect(comment.split("\n")[0]).toBe(marker);
-    expect(comment).toContain("## Kodiai Addon Check");
-    expect(comment).toContain("## Kodi Add-on Rule Review");
-    expect(comment).toContain("Rules source: <https://kodi.wiki/view/Add-on_rules>");
-    expect(comment).toContain("| Addon | Level | Source | Message |");
-    expect(comment).toContain("| plugin.video.example | ERROR | deterministic | Missing English description in addon.xml. |");
-    expect(comment).toContain("| plugin.video.example | WARN | llm | Download appears to happen without user confirmation. |");
-    expect(comment).toContain("_1 error(s), 1 warning(s) found by addon-rule review._");
+    expect(comment).toContain("- **ERROR** `plugin.video.example`: Runs a downloaded executable.");
+    expect(comment).toContain("- **WARN** `plugin.video.example/resources/lib/client.py`: The changed download path has no visible user-consent prompt; confirm consent before download.");
+    expect(comment).toContain("Needs human review: 1 error and 1 warning found. Final approval remains with a human reviewer.");
+    expect(comment).not.toContain("| Addon | Level");
+    expect(comment).not.toContain("deterministic");
+    expect(comment).not.toContain("llm");
   });
 
-  test("escapes markdown table cells from addon-rule findings", () => {
-    const comment = formatAddonCheckComment([], marker, undefined, {
+  test("reduces checker timeout diagnostics to one useful caveat", () => {
+    const comment = formatAddonCheckComment([], marker, classification("all-timeout"), {
       rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
-      findings: [
-        {
-          addonId: "plugin.video.foo|bar",
-          level: "WARN",
-          source: "llm",
-          message: "first line\nsecond | line",
-        },
-      ],
-    });
-
-    expect(comment).toContain("| plugin.video.foo\\|bar | WARN | llm | first line<br>second \\| line |");
-  });
-
-  test("addon-rule review renders clean state when no rule findings exist", () => {
-    const comment = formatAddonCheckComment([], marker, undefined, {
-      rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
+      summary: "Reviewed `script.example` on `nexus` using its changed Python patch.",
       findings: [],
+      incompleteReasons: [],
     });
 
-    expect(comment).toContain("## Kodi Add-on Rule Review");
-    expect(comment).toContain("✅ No addon-rule issues found by Kodiai's addon-rule review.");
-    expect(comment).not.toContain("| Addon | Level | Source | Message |");
+    expect(comment).toContain("⚠️ Review incomplete: kodi-addon-checker timed out before checking every changed addon.");
+    expect(comment).toContain("No addon-rule violations found, but the review is incomplete. Final approval remains with a human reviewer.");
+    expect(comment).not.toContain("Mode:");
+    expect(comment).not.toContain("Reason codes:");
+    expect(comment).not.toContain("240000ms");
+    expect(comment).not.toContain("Raw checker output");
   });
 
-  test("addon-rule review shows embedded fallback source and bounded incomplete note", () => {
-    const comment = formatAddonCheckComment([], marker, undefined, {
+  test("renders bounded rule-review incompleteness without internal codes", () => {
+    const comment = formatAddonCheckComment([], marker, classification("completed-clean"), {
       rulesSource: { kind: "fallback", url: "https://kodi.wiki/view/Add-on_rules" },
+      summary: "Reviewed one changed addon on `nexus`.",
       findings: [],
-      incompleteReason: "LLM addon-rule review timed out; deterministic checks still ran.",
+      incompleteReasons: ["rules-fallback", "patch-truncated"],
     });
 
-    expect(comment).toContain("Rules source: embedded fallback based on <https://kodi.wiki/view/Add-on_rules>");
-    expect(comment).toContain("⚠️ LLM addon-rule review timed out; deterministic checks still ran.");
+    expect(comment).toContain("⚠️ Review incomplete: the live rules were unavailable and at least one patch was truncated.");
+    expect(comment).not.toContain("rules-fallback");
+    expect(comment).not.toContain("patch-truncated");
+  });
+
+  test("excludes INFO findings and escapes multiline bullet content", () => {
+    const comment = formatAddonCheckComment([
+      { addonId: "script.`odd`", level: "INFO", message: "not public" },
+      { addonId: "script.`odd`", level: "WARN", message: "first line\nsecond line" },
+    ], marker, classification("completed-with-findings"), {
+      rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
+      summary: "Reviewed script.odd.",
+      findings: [],
+      incompleteReasons: [],
+    });
+
+    expect(comment).not.toContain("not public");
+    expect(comment).toContain("`script.\\`odd\\``: first line second line");
   });
 });
