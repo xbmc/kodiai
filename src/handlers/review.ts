@@ -83,7 +83,7 @@ import { buildReviewDetailsAttemptLogFields } from "./review-details-attempt-log
 import { registerReviewHandlerEvents } from "./review-event-registration.ts";
 import { buildReviewGithubAppAdapters } from "./review-github-app-adapters.ts";
 import { publishBlockedReviewFindingsNoticeForRuntime } from "./review-blocked-findings-notice.ts";
-import { evaluateGenericReviewAddonRepoGate } from "./review-addon-repo-gate.ts";
+import { shouldSkipGenericReviewForAddonRepo } from "./review-addon-repo-gate.ts";
 
 /**
  * Create the review handler and register it with the event router.
@@ -153,22 +153,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
 
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as ReviewWebhookPayload;
-    const addonRepoGate = evaluateGenericReviewAddonRepoGate({
-      repositoryFullName: payload.repository?.full_name,
-      addonRepos,
-    });
-    if (addonRepoGate.action === "skip") {
-      logger.info(
-        {
-          deliveryId: event.id,
-          gate: "generic-review-addon-repo",
-          gateResult: "skipped",
-          skipReason: addonRepoGate.reason,
-        },
-        "Generic review skipped for specialized addon repository",
-      );
-      return;
-    }
+    if (shouldSkipGenericReviewForAddonRepo({ deliveryId: event.id, repositoryFullName: payload.repository?.full_name, addonRepos, logger })) return;
     const reviewEventRuntime = await resolveReviewEventRuntime({
       event,
       payload,

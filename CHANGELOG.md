@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Add-on submissions now receive one concise, diff-grounded Summary/Findings/Verdict review; configured add-on repositories no longer run the generic Python code-quality reviewer.
+
 ## v0.48 (2026-07-13)
 
 Review-publication correctness hotfix for blocked findings and approval evidence completeness, deployed to Azure Container Apps after live `xbmc/xbmc` review failures.
