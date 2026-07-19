@@ -118,6 +118,67 @@ function extractReviewDetailsBlock(body: string): string {
 }
 
 describe("createReviewHandler coordinator wiring", () => {
+  test("skips generic review work for a configured addon repository", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    let queueCalls = 0;
+    let workspaceCalls = 0;
+    let executorCalls = 0;
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => handlers.set(eventKey, handler),
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async () => {
+          queueCalls += 1;
+          throw new Error("generic queue should not run");
+        },
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => {
+          workspaceCalls += 1;
+          throw new Error("generic workspace should not run");
+        },
+        cleanupStale: async () => 0,
+      } as unknown as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => {
+          throw new Error("generic GitHub API should not run");
+        },
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalls += 1;
+          throw new Error("generic executor should not run");
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      addonRepos: ["xbmc/repo-scripts"],
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    await handler!(buildReviewRequestedEvent({
+      action: "opened",
+      repository: {
+        full_name: "xbmc/repo-scripts",
+        name: "repo-scripts",
+        owner: { login: "xbmc" },
+      },
+    }));
+
+    expect(queueCalls).toBe(0);
+    expect(workspaceCalls).toBe(0);
+    expect(executorCalls).toBe(0);
+  });
+
   test("logs when the review handler falls back to a private coordinator", () => {
     const { logger, entries } = createCaptureLogger();
 

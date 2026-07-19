@@ -45,6 +45,8 @@ export type ReviewHandlerDependencies = {
   learningMemoryStore?: LearningMemoryStore;
   embeddingProvider?: EmbeddingProvider;
   retriever?: ReturnType<typeof createRetriever>;
+  /** Configured repositories handled by the specialized Kodi add-on reviewer. */
+  addonRepos?: readonly string[];
   /** Optional injection for deterministic tests. */
   usageAnalyzer?: { analyzePackageUsage: typeof analyzePackageUsage };
   /** Optional injection for deterministic tests. */

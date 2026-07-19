@@ -400,6 +400,7 @@ createReviewHandler({
   learningMemoryStore,
   embeddingProvider,
   retriever,
+  addonRepos: config.addonRepos,
   codeSnippetStore,
   contributorProfileStore,
   slackBotToken: config.slackBotToken,
