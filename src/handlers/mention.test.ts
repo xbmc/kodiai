@@ -7811,6 +7811,8 @@ describe("createMentionHandler review command", () => {
     await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
     const dispatchedAddonEvents: WebhookEvent[] = [];
+    const callOrder: string[] = [];
+    const issueCommentReactionCalls: unknown[] = [];
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
         handlers.set(eventKey, handler);
@@ -7833,7 +7835,11 @@ describe("createMentionHandler review command", () => {
     const octokit = {
       rest: {
         reactions: {
-          createForIssueComment: async () => ({ data: {} }),
+          createForIssueComment: async (params: unknown) => {
+            callOrder.push("eyes");
+            issueCommentReactionCalls.push(params);
+            return { data: {} };
+          },
           createForPullRequestReviewComment: async () => ({ data: {} }),
         },
         pulls: {
@@ -7872,6 +7878,7 @@ describe("createMentionHandler review command", () => {
       telemetryStore: noopTelemetryStore,
       addonRepos: ["acme/repo"],
       addonReviewDispatcher: async (event) => {
+        callOrder.push("dispatch");
         dispatchedAddonEvents.push(event);
       },
       logger,
@@ -7889,6 +7896,13 @@ describe("createMentionHandler review command", () => {
 
     expect(errorCalls).toEqual([]);
     expect(infoCalls.map((entry) => entry.message)).toContain("Explicit review mention routed to addon-rule review");
+    expect(issueCommentReactionCalls).toEqual([{
+      owner: "acme",
+      repo: "repo",
+      comment_id: 779,
+      content: "eyes",
+    }]);
+    expect(callOrder).toEqual(["eyes", "dispatch"]);
     expect(dispatchedAddonEvents).toHaveLength(1);
     expect(dispatchedAddonEvents[0]).toMatchObject({
       name: "addon_rule_review",

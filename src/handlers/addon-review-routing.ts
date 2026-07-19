@@ -25,6 +25,7 @@ export async function routeAddonRuleReviewMention(params: {
     repo: string;
     pull_number: number;
   }) => Promise<{ data: PullRequestIdentity }>;
+  beforeDispatch: () => Promise<void>;
   dispatch: (event: WebhookEvent) => Promise<void>;
   logger: Logger;
 }): Promise<boolean> {
@@ -36,6 +37,7 @@ export async function routeAddonRuleReviewMention(params: {
     repo: params.repo,
     pull_number: params.prNumber,
   });
+  await params.beforeDispatch();
   await params.dispatch({
     id: `${params.event.id}:addon-rule-review`,
     name: "addon_rule_review",

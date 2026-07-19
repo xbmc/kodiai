@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - Add-on submissions now receive one concise, diff-grounded Summary/Findings/Verdict review; configured add-on repositories no longer run the generic Python code-quality reviewer.
+- Explicit add-on review mentions now receive an eyes acknowledgement before the specialized review is dispatched.
 
 ## v0.48 (2026-07-13)
 

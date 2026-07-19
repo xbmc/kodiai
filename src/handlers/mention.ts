@@ -182,7 +182,7 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
 
         const findingLookup = createMentionFindingLookup(deps.knowledgeStore);
 
-        const mentionRequestPreparationGithubAdapters = buildMentionRequestPreparationGithubAdapters(octokit);
+        const mentionRequestPreparationGithubAdapters = buildMentionRequestPreparationGithubAdapters(octokit, mention, logger);
         const mentionRequestPreparation = await prepareMentionRequestExecutionContext({
           event,
           appSlug,

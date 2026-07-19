@@ -30,6 +30,7 @@ export async function prepareMentionRequestExecutionContext(params: {
   config: Pick<RepoConfig, "mention" | "write">;
   addonRepos: readonly string[];
   getPullRequest: Parameters<typeof routeAddonRuleReviewMention>[0]["getPullRequest"];
+  acknowledgeAddonReview: () => Promise<void>;
   dispatchAddonReview: Parameters<typeof routeAddonRuleReviewMention>[0]["dispatch"];
   logger: Logger;
 }): Promise<MentionRequestPreparationResult> {
@@ -63,6 +64,7 @@ export async function prepareMentionRequestExecutionContext(params: {
       prNumber: params.mention.prNumber,
       addonRepos: params.addonRepos,
       getPullRequest: params.getPullRequest,
+      beforeDispatch: params.acknowledgeAddonReview,
       dispatch: params.dispatchAddonReview,
       logger: params.logger,
     })
