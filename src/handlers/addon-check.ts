@@ -16,6 +16,7 @@ import type { WorkspaceManager, JobQueue } from "../jobs/types.ts";
 import {
   runAddonChecker,
   resolveCheckerBranch,
+  ValidAddonSubmissionBranches,
   type AddonFinding,
 } from "../lib/addon-checker-runner.ts";
 import {
@@ -156,6 +157,36 @@ function countFindings(findings: AddonFinding[]): {
   return { findingCount: findings.length, errorCount, warningCount };
 }
 
+export function filterCheckerFindingsToChangedEvidence(
+  findings: readonly AddonFinding[],
+  files: ReadonlyArray<{ filename: string }>,
+): AddonFinding[] {
+  const changedPathsByAddon = new Map<string, string[]>();
+  for (const file of files) {
+    const normalized = file.filename.replace(/\\/g, "/").replace(/^\/+/, "");
+    const slash = normalized.indexOf("/");
+    if (slash <= 0) continue;
+    const addonId = normalized.slice(0, slash);
+    const paths = changedPathsByAddon.get(addonId) ?? [];
+    paths.push(normalized);
+    changedPathsByAddon.set(addonId, paths);
+  }
+
+  return findings.filter((finding) => {
+    const paths = changedPathsByAddon.get(finding.addonId) ?? [];
+    const message = finding.message.toLowerCase();
+    for (const path of paths) {
+      const relativePath = path.slice(finding.addonId.length + 1).toLowerCase();
+      const basename = relativePath.split("/").pop() ?? "";
+      if (message.includes(path.toLowerCase()) || message.includes(relativePath)) return true;
+      if (basename.length >= 4 && message.includes(basename)) return true;
+    }
+
+    return paths.some((path) => path.toLowerCase().endsWith("/addon.xml"))
+      && /\b(addon\.xml|manifest|metadata|summary|description|license|version|dependency|extension)\b/i.test(message);
+  });
+}
+
 export function createAddonCheckHandler(deps: {
   eventRouter: EventRouter;
   githubApp: GitHubApp;
@@ -252,12 +283,9 @@ export function createAddonCheckHandler(deps: {
       const headRef = payload.pull_request!.head.ref;
       const headRepo = payload.pull_request!.head.repo;
 
-      // Resolve Kodi version from base branch name. Unknown branches are skipped.
+      // Checker execution requires a known Kodi version. The specialized rule
+      // review still runs for invalid branches so it can publish the violation.
       const kodiVersion = resolveCheckerBranch(baseBranch);
-      if (kodiVersion === null) {
-        handlerLogger.info({ baseBranch }, "addon-check: unknown kodi branch, skipping");
-        return;
-      }
 
       // If no addons changed, nothing to check.
       if (addonIds.length === 0) {
@@ -293,124 +321,137 @@ export function createAddonCheckHandler(deps: {
               });
             }
 
-            const shouldRunAddonRuleReview =
+            const shouldRunAddonRuleLlm =
               event.name === "addon_rule_review" || (payload as { action?: string }).action === "opened";
             const allFindings: AddonFinding[] = [];
             const addonSummaries: AddonCheckRuntimeSummary[] = [];
-            let addonRuleReview: AddonRuleReviewComment | undefined;
             const timeBudgetMs = __addonCheckTimeBudgetMsForTests ?? ADDON_CHECK_RUNNER_TIME_BUDGET_MS;
             const workspaceDir = workspace.dir;
 
-            const addonResults = await mapWithConcurrency(addonIds, ADDON_CHECK_CONCURRENCY, async (addonId) => {
-              const addonDir = path.join(workspaceDir, addonId);
-              const result = await runAddonChecker({
-                addonDir,
-                branch: kodiVersion,
-                timeBudgetMs,
-                __runSubprocessForTests,
+            const addonResults = kodiVersion === null
+              ? []
+              : await mapWithConcurrency(addonIds, ADDON_CHECK_CONCURRENCY, async (addonId) => {
+                const addonDir = path.join(workspaceDir, addonId);
+                const result = await runAddonChecker({
+                  addonDir,
+                  branch: kodiVersion,
+                  timeBudgetMs,
+                  __runSubprocessForTests,
+                });
+
+                if (result.toolNotFound) {
+                  handlerLogger.warn({ addonId }, "addon-check: kodi-addon-checker not installed, skipping");
+                  return { summary: { toolNotFound: true } satisfies AddonCheckRuntimeSummary, findings: [] };
+                }
+
+                if (result.timedOut) {
+                  handlerLogger.info({ timeBudgetMs }, "addon-check: runner skipped after budget");
+                  return { summary: { timedOut: true } satisfies AddonCheckRuntimeSummary, findings: [] };
+                }
+
+                const findingCounts = countFindings(result.findings);
+                const summary = { completed: true, ...findingCounts } satisfies AddonCheckRuntimeSummary;
+
+                for (const finding of result.findings) {
+                  handlerLogger.debug(
+                    {
+                      severity: toProductionLogAddonCheckFindingSeverity(finding.level),
+                      message: finding.message,
+                    },
+                    "addon-check: finding detail",
+                  );
+                }
+
+                return { summary, findings: result.findings };
               });
-
-              if (result.toolNotFound) {
-                handlerLogger.warn({ addonId }, "addon-check: kodi-addon-checker not installed, skipping");
-                return { summary: { toolNotFound: true } satisfies AddonCheckRuntimeSummary, findings: [] };
-              }
-
-              if (result.timedOut) {
-                handlerLogger.info({ timeBudgetMs }, "addon-check: runner skipped after budget");
-                return { summary: { timedOut: true } satisfies AddonCheckRuntimeSummary, findings: [] };
-              }
-
-              const findingCounts = countFindings(result.findings);
-              const summary = { completed: true, ...findingCounts } satisfies AddonCheckRuntimeSummary;
-
-              for (const finding of result.findings) {
-                handlerLogger.debug(
-                  {
-                    severity: toProductionLogAddonCheckFindingSeverity(finding.level),
-                    message: finding.message,
-                  },
-                  "addon-check: finding detail",
-                );
-              }
-
-              return { summary, findings: result.findings };
-            });
 
             for (const result of addonResults) {
               addonSummaries.push(result.summary);
               allFindings.push(...result.findings);
             }
 
-            addonRuleReview = shouldRunAddonRuleReview
-              ? await runAddonRuleReview({
-                repo,
-                prNumber,
-                workspaceDir,
-                files,
-                logger: handlerLogger,
-                ...(loadRules ? { loadRules } : {}),
-                ...(runAddonRuleLlm ? { runLlm: runAddonRuleLlm } : {}),
-              })
-              : undefined;
-
-            const classification = classifyAddonCheckOutcome({
-              deliveryId: event.id,
+            const addonRuleReview: AddonRuleReviewComment = await runAddonRuleReview({
               repo,
               prNumber,
-              addons: addonSummaries,
-              timeBudgetMs,
+              baseBranch,
+              validBranches: ValidAddonSubmissionBranches,
+              files,
+              runLlmReview: shouldRunAddonRuleLlm,
+              logger: handlerLogger,
+              ...(loadRules ? { loadRules } : {}),
+              ...(runAddonRuleLlm ? { runLlm: runAddonRuleLlm } : {}),
             });
+            if (kodiVersion === null && !addonRuleReview.incompleteReasons.includes("checker-incomplete")) {
+              addonRuleReview.incompleteReasons.push("checker-incomplete");
+            }
 
-            handlerLogger.info(
-              {
-                gate: classification.gate,
-                gateResult: classification.classification,
-                mode: toProductionLogAddonCheckMode(classification.mode),
-                reasonCodes: classification.reasonCodes.map(toProductionLogAddonCheckReasonCode),
-                actionableDiagnostic: classification.actionableDiagnostic,
-                expectedBoundedOutcome: classification.expectedBoundedOutcome,
-                addonCount: classification.counts.addonCount,
-                completedCount: classification.counts.completedCount,
-                boundedIncompleteCount: classification.counts.timedOutCount,
-                toolNotFoundCount: classification.counts.toolNotFoundCount,
-                findingCount: classification.counts.findingCount,
-                severeFindingCount: classification.counts.errorCount,
-                advisoryFindingCount: classification.counts.warningCount,
-                budgetMs: classification.counts.timeBudgetMs,
-                redaction: classification.redaction,
+            const classification = kodiVersion === null
+              ? undefined
+              : classifyAddonCheckOutcome({
                 deliveryId: event.id,
                 repo,
                 prNumber,
-              },
-              "addon-check: classification",
-            );
+                addons: addonSummaries,
+                timeBudgetMs,
+              });
+
+            if (classification) {
+              handlerLogger.info(
+                {
+                  gate: classification.gate,
+                  gateResult: classification.classification,
+                  mode: toProductionLogAddonCheckMode(classification.mode),
+                  reasonCodes: classification.reasonCodes.map(toProductionLogAddonCheckReasonCode),
+                  actionableDiagnostic: classification.actionableDiagnostic,
+                  expectedBoundedOutcome: classification.expectedBoundedOutcome,
+                  addonCount: classification.counts.addonCount,
+                  completedCount: classification.counts.completedCount,
+                  boundedIncompleteCount: classification.counts.timedOutCount,
+                  toolNotFoundCount: classification.counts.toolNotFoundCount,
+                  findingCount: classification.counts.findingCount,
+                  severeFindingCount: classification.counts.errorCount,
+                  advisoryFindingCount: classification.counts.warningCount,
+                  budgetMs: classification.counts.timeBudgetMs,
+                  redaction: classification.redaction,
+                  deliveryId: event.id,
+                  repo,
+                  prNumber,
+                },
+                "addon-check: classification",
+              );
+            } else {
+              handlerLogger.info(
+                {
+                  gate: "addon-check-branch",
+                  gateResult: "skipped",
+                  reasonCode: "invalid-target-branch",
+                  baseBranch,
+                },
+                "addon-check: checker skipped for invalid target branch",
+              );
+            }
 
             handlerLogger.info(
               { addonIds, totalFindings: allFindings.length },
               "addon-check: complete",
             );
 
-            // Skip comment entirely when every addon returned toolNotFound
-            // (kodi-addon-checker not installed on this runner).
-            if (allFindings.length === 0 && classification.mode === "tool-unavailable" && !addonRuleReview) {
-              handlerLogger.warn("addon-check: all addons returned toolNotFound, skipping comment");
-            } else {
-              const marker = buildAddonCheckMarker(owner, repoName, prNumber);
-              const body = formatAddonCheckComment(allFindings, marker, classification, addonRuleReview);
-              const appSlug = typeof githubApp.getAppSlug === "function"
-                ? githubApp.getAppSlug()
-                : "kodiai";
-              const commentUpsert = await upsertAddonCheckComment({
-                octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
-                owner,
-                repo: repoName,
-                prNumber,
-                body,
-                botHandles: [appSlug, "claude"],
-              });
-              if (!commentUpsert.ok) {
-                throw commentUpsert.err;
-              }
+            const marker = buildAddonCheckMarker(owner, repoName, prNumber);
+            const publicCheckerFindings = filterCheckerFindingsToChangedEvidence(allFindings, files);
+            const body = formatAddonCheckComment(publicCheckerFindings, marker, classification, addonRuleReview);
+            const appSlug = typeof githubApp.getAppSlug === "function"
+              ? githubApp.getAppSlug()
+              : "kodiai";
+            const commentUpsert = await upsertAddonCheckComment({
+              octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
+              owner,
+              repo: repoName,
+              prNumber,
+              body,
+              botHandles: [appSlug, "claude"],
+            });
+            if (!commentUpsert.ok) {
+              throw commentUpsert.err;
             }
           } finally {
             await workspace?.cleanup();

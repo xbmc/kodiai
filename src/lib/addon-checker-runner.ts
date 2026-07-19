@@ -5,6 +5,7 @@ import { runCommandWithCappedOutput } from "./capped-process.ts";
  * The 10 known Kodi release branch names used for --branch validation.
  */
 export const ValidKodiVersions: readonly string[] = [
+  "piers",
   "nexus",
   "omega",
   "matrix",
@@ -15,6 +16,14 @@ export const ValidKodiVersions: readonly string[] = [
   "gotham",
   "frodo",
   "dharma",
+] as const;
+
+/** Kodi branches accepted for new add-on submissions (Matrix and newer). */
+export const ValidAddonSubmissionBranches: readonly string[] = [
+  "matrix",
+  "nexus",
+  "omega",
+  "piers",
 ] as const;
 
 export type AddonFinding = {

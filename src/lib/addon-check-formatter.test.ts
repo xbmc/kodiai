@@ -112,6 +112,18 @@ describe("formatAddonCheckComment", () => {
     expect(comment).not.toContain("Raw checker output");
   });
 
+  test("describes an unavailable checker without calling it a timeout", () => {
+    const comment = formatAddonCheckComment([], marker, classification("tool-unavailable"), {
+      rulesSource: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules" },
+      summary: "Reviewed `script.example` on `nexus`.",
+      findings: [],
+      incompleteReasons: [],
+    });
+
+    expect(comment).toContain("⚠️ Review incomplete: kodi-addon-checker was unavailable.");
+    expect(comment).not.toContain("timed out");
+  });
+
   test("renders bounded rule-review incompleteness without internal codes", () => {
     const comment = formatAddonCheckComment([], marker, classification("completed-clean"), {
       rulesSource: { kind: "fallback", url: "https://kodi.wiki/view/Add-on_rules" },

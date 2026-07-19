@@ -90,4 +90,13 @@ describe("runAddonRuleReview", () => {
 
     expect(result.incompleteReasons).toContain("rules-fallback");
   });
+
+  test("uses a deterministic summary without calling the model on synchronize", async () => {
+    const runLlm = mock(async () => ({ summary: "not used", findings: [] }));
+    const result = await review({ runLlmReview: false, runLlm });
+
+    expect(runLlm).not.toHaveBeenCalled();
+    expect(result.summary).toBe("Reviewed 1 changed addon on `nexus` using 1 scoped patch.");
+    expect(result.incompleteReasons).not.toContain("llm-incomplete");
+  });
 });

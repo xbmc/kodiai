@@ -44,6 +44,7 @@ export async function runAddonRuleReview(params: {
   baseBranch: string;
   validBranches: readonly string[];
   files: readonly PullRequestFileMetadata[];
+  runLlmReview?: boolean;
   logger: Logger;
   loadRules?: LoadAddonRuleSource;
   runLlm?: RunAddonRuleLlm;
@@ -64,7 +65,7 @@ export async function runAddonRuleReview(params: {
   );
 
   let llmResult: AddonRuleLlmResult = { findings: [] };
-  if (scopedPatchCount > 0) {
+  if (scopedPatchCount > 0 && params.runLlmReview !== false) {
     try {
       llmResult = await runLlm({
         repo: params.repo,

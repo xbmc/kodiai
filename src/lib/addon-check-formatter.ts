@@ -30,9 +30,10 @@ export function formatAddonCheckComment(
   addonRuleReview?: AddonRuleReviewComment,
 ): string {
   const findings = collectPublicFindings(checkerFindings, addonRuleReview?.findings ?? []);
-  const checkerIncomplete = classification
-    ? INCOMPLETE_CHECKER_MODES.has(classification.mode)
-    : false;
+  const checkerMode = classification && INCOMPLETE_CHECKER_MODES.has(classification.mode)
+    ? classification.mode
+    : undefined;
+  const checkerIncomplete = checkerMode !== undefined;
   const reviewReasons = addonRuleReview?.incompleteReasons ?? [];
   const incomplete = checkerIncomplete || reviewReasons.length > 0;
   const errorCount = findings.filter((finding) => finding.level === "ERROR").length;
@@ -47,7 +48,7 @@ export function formatAddonCheckComment(
     boundedSummary(addonRuleReview?.summary),
   ];
 
-  const caveat = renderIncompleteCaveat(checkerIncomplete, reviewReasons);
+  const caveat = renderIncompleteCaveat(checkerMode, reviewReasons);
   if (caveat) lines.push("", caveat);
 
   lines.push("", "### Findings", "");
@@ -84,7 +85,13 @@ function collectPublicFindings(
 ): PublicFinding[] {
   const relevant: PublicFinding[] = [];
   for (const finding of checkerFindings) {
-    if (finding.level === "ERROR" || finding.level === "WARN") relevant.push(finding);
+    if (finding.level === "ERROR" || finding.level === "WARN") {
+      relevant.push({
+        addonId: finding.addonId,
+        level: finding.level,
+        message: finding.message,
+      });
+    }
   }
   relevant.push(...ruleFindings);
 
@@ -119,16 +126,22 @@ function plural(count: number, singular: string): string {
 }
 
 function renderIncompleteCaveat(
-  checkerIncomplete: boolean,
+  checkerMode: AddonCheckClassificationMode | undefined,
   reviewReasons: readonly AddonRuleIncompleteReason[],
 ): string | undefined {
   const clauses: string[] = [];
-  if (checkerIncomplete) clauses.push("kodi-addon-checker timed out before checking every changed addon");
+  if (checkerMode === "all-timeout" || checkerMode === "partial-timeout") {
+    clauses.push("kodi-addon-checker timed out before checking every changed addon");
+  } else if (checkerMode === "tool-unavailable") {
+    clauses.push("kodi-addon-checker was unavailable");
+  } else if (checkerMode) {
+    clauses.push("kodi-addon-checker did not complete for every changed addon");
+  }
   if (reviewReasons.includes("rules-fallback")) clauses.push("the live rules were unavailable");
   if (reviewReasons.includes("llm-incomplete")) clauses.push("the model-backed rule check was incomplete");
   if (reviewReasons.includes("patch-unavailable")) clauses.push("at least one changed patch was unavailable");
   if (reviewReasons.includes("patch-truncated")) clauses.push("at least one patch was truncated");
-  if (reviewReasons.includes("checker-incomplete") && !checkerIncomplete) {
+  if (reviewReasons.includes("checker-incomplete") && !checkerMode) {
     clauses.push("kodi-addon-checker did not complete");
   }
   if (clauses.length === 0) return undefined;

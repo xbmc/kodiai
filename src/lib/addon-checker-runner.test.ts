@@ -121,9 +121,10 @@ describe("resolveCheckerBranch", () => {
     expect(resolveCheckerBranch("Nexus")).toBeNull();
   });
 
-  it("covers all 10 expected version names", () => {
-    expect(ValidKodiVersions).toHaveLength(10);
+  it("covers all 11 expected version names", () => {
+    expect(ValidKodiVersions).toHaveLength(11);
     const expected = [
+      "piers",
       "nexus",
       "omega",
       "matrix",

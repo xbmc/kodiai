@@ -81,12 +81,24 @@ function createMockEventRouter(): EventRouter & { captured: CapturedRegistration
   };
 }
 
-function createMockOctokit(files: string[]) {
+type MockPullRequestFile = string | {
+  filename: string;
+  status?: string;
+  additions?: number;
+  deletions?: number;
+  patch?: string;
+};
+
+function toMockPullRequestFile(file: MockPullRequestFile) {
+  return typeof file === "string" ? { filename: file } : file;
+}
+
+function createMockOctokit(files: MockPullRequestFile[]) {
   return {
     rest: {
       pulls: {
         listFiles: mock(async () => ({
-          data: files.map((filename) => ({ filename })),
+          data: files.map(toMockPullRequestFile),
         })),
       },
     },
@@ -95,7 +107,7 @@ function createMockOctokit(files: string[]) {
 
 type MockComment = { id: number; body: string };
 
-function createMockOctokitWithIssues(files: string[], existingComments: MockComment[] = []) {
+function createMockOctokitWithIssues(files: MockPullRequestFile[], existingComments: MockComment[] = []) {
   const listCommentsMock = mock(async () => ({ data: existingComments }));
   const createCommentMock = mock(async () => ({ data: { id: 9999 } }));
   const updateCommentMock = mock(async () => ({ data: { id: existingComments[0]?.id ?? 1 } }));
@@ -103,7 +115,7 @@ function createMockOctokitWithIssues(files: string[], existingComments: MockComm
     rest: {
       pulls: {
         listFiles: mock(async () => ({
-          data: files.map((filename) => ({ filename })),
+          data: files.map(toMockPullRequestFile),
         })),
       },
       issues: {
@@ -118,7 +130,7 @@ function createMockOctokitWithIssues(files: string[], existingComments: MockComm
   };
 }
 
-function createMockGithubApp(files: string[]): {
+function createMockGithubApp(files: MockPullRequestFile[]): {
   app: GitHubApp;
   octokit: ReturnType<typeof createMockOctokit>;
 } {
@@ -135,7 +147,7 @@ function createMockGithubApp(files: string[]): {
 }
 
 function createMockGithubAppWithIssues(
-  files: string[],
+  files: MockPullRequestFile[],
   existingComments: MockComment[] = [],
 ): {
   app: GitHubApp;
@@ -166,7 +178,7 @@ function createAddonCheckHandlerForTest(
       url: "https://kodi.wiki/view/Add-on_rules",
       text: "test addon rules",
     }),
-    __runAddonRuleLlmForTests: async () => [],
+    __runAddonRuleLlmForTests: async () => ({ findings: [] }),
     ...deps,
   });
 }
@@ -418,10 +430,14 @@ describe("createAddonCheckHandler", () => {
 
   // ── Unknown kodi branch ───────────────────────────────────────────────
 
-  it("unknown base branch logs an info skip and does not enqueue", async () => {
-    const files = ["plugin.video.foo/addon.xml"];
-    const { app } = createMockGithubApp(files);
-    const { logger, infoCalls, warnCalls } = createMockLogger();
+  it("publishes an invalid target branch finding instead of silently skipping", async () => {
+    const files = [{
+      filename: "plugin.video.foo/addon.xml",
+      status: "modified",
+      patch: "@@ -1 +1 @@\n-<addon version=\"1.0.0\"/>\n+<addon version=\"2.0.0\"/>",
+    }];
+    const { app, octokit } = createMockGithubAppWithIssues(files);
+    const { logger } = createMockLogger();
     const { manager } = createMockWorkspaceManager();
     const { queue, enqueueArgs } = createMockJobQueue();
 
@@ -432,18 +448,22 @@ describe("createAddonCheckHandler", () => {
       logger,
       workspaceManager: manager,
       jobQueue: queue,
+      __runAddonRuleLlmForTests: async () => ({
+        summary: "plugin.video.foo updates its manifest on main.",
+        findings: [],
+      }),
     });
 
     await router.captured[0]!.handler(
       makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "main" }),
     );
 
-    // No enqueue
-    expect(enqueueArgs).toHaveLength(0);
-    const infoEntry = infoCalls.find((c) => c.message === "addon-check: unknown kodi branch, skipping");
-    expect(infoEntry).toBeDefined();
-    expect(infoEntry!.bindings.baseBranch).toBe("main");
-    expect(warnCalls.find((c) => c.message === "addon-check: unknown kodi branch, skipping")).toBeUndefined();
+    expect(enqueueArgs).toHaveLength(1);
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(commentBody).toContain("## Kodiai Add-on Review");
+    expect(commentBody).toContain('Target branch "main" is not an allowed Kodi add-on submission branch');
+    expect(commentBody).toContain("Needs human review: 1 error and 0 warnings found.");
   });
 
   // ── Workspace creation with head branch ──────────────────────────────
@@ -708,11 +728,10 @@ describe("createAddonCheckHandler", () => {
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
-    expect(commentBody).toContain("Mode: `all-timeout`");
-    expect(commentBody).toContain("`all-timeout`");
+    expect(commentBody).toContain("⚠️ Review incomplete: kodi-addon-checker timed out before checking every changed addon");
+    expect(commentBody).not.toContain("Mode:");
+    expect(commentBody).not.toContain("Reason codes:");
     expect(commentBody).not.toContain("✅ No issues found");
-    const checkerDiagnostic = commentBody.split("## Kodi Add-on Rule Review")[0] ?? commentBody;
-    expect(checkerDiagnostic).not.toContain("plugin.video.foo");
   });
 
   it("distinguishes partial timeout with findings from clean completion", async () => {
@@ -721,7 +740,7 @@ describe("createAddonCheckHandler", () => {
     const { logger, infoCalls } = createMockLogger();
     const subprocess = makeCheckerSubprocessByAddon({
       "plugin.audio.bar": "__TIMEOUT__",
-      "plugin.video.foo": "ERROR: missing changelog\nWARN: old icon\n",
+      "plugin.video.foo": "ERROR: addon.xml missing changelog\nWARN: addon.xml references an old icon\n",
     });
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
@@ -765,11 +784,9 @@ describe("createAddonCheckHandler", () => {
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
-    expect(commentBody).toContain("Addon check incomplete");
-    expect(commentBody).toContain("Mode: `partial-timeout`");
-    expect(commentBody).toContain("`findings-present`");
+    expect(commentBody).toContain("Review incomplete: kodi-addon-checker timed out");
     expect(commentBody).toContain("missing changelog");
-    expect(commentBody).not.toContain("Mode: `completed-clean`");
+    expect(commentBody).not.toContain("Mode:");
   });
 
   it("emits tool-unavailable classification and still posts addon-rule review", async () => {
@@ -813,7 +830,8 @@ describe("createAddonCheckHandler", () => {
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     expect(octokit._updateCommentMock).not.toHaveBeenCalled();
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
-    expect(commentBody).toContain("## Kodi Add-on Rule Review");
+    expect(commentBody).toContain("## Kodiai Add-on Review");
+    expect(commentBody).toContain("kodi-addon-checker was unavailable");
   });
 
   it("emits completed-clean classification for clean runs without raw workspace leakage in the gate", async () => {
@@ -997,7 +1015,7 @@ describe("createAddonCheckHandler", () => {
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
     // Subprocess returns one ERROR finding
-    const subprocess = makeCheckerSubprocess("ERROR: missing changelog\n");
+    const subprocess = makeCheckerSubprocess("ERROR: addon.xml missing changelog\n");
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
@@ -1029,7 +1047,7 @@ describe("createAddonCheckHandler", () => {
     const files = ["plugin.video.foo/addon.xml"];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
-    const subprocess = makeCheckerSubprocess("ERROR: @claude should inspect this addon\n");
+    const subprocess = makeCheckerSubprocess("ERROR: addon.xml says @claude should inspect this addon\n");
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
@@ -1083,7 +1101,8 @@ describe("createAddonCheckHandler", () => {
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     expect(octokit._updateCommentMock).not.toHaveBeenCalled();
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
-    expect(commentBody).toContain("## Kodi Add-on Rule Review");
+    expect(commentBody).toContain("## Kodiai Add-on Review");
+    expect(commentBody).toContain("kodi-addon-checker was unavailable");
   });
 
   it("updates existing comment on second push (upsert path)", async () => {
@@ -1191,25 +1210,34 @@ describe("createAddonCheckHandler", () => {
     expect(fetchAndCheckoutCalls[0]!.localBranch).toBe("pr-check");
   });
 
-  it("addon-rule review is merged into the addon-check comment on opened PRs", async () => {
-    const files = ["plugin.video.foo/addon.xml", "plugin.video.foo/default.py"];
+  it("opened PR review passes patches only and publishes concise structured output", async () => {
+    const files = [{
+      filename: "plugin.video.foo/default.py",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-old()\n+new()",
+    }];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
     const subprocess = makeCheckerSubprocess("");
-    const workspace = await createAddonRuleWorkspace({
-      "plugin.video.foo/addon.xml": "<addon id='plugin.video.foo' />",
-      "plugin.video.foo/default.py": "print('hello')",
-    });
-    const { manager } = createMockWorkspaceManager(workspace);
+    const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
-    const llmReview = mock(async () => [
-      {
+    let capturedInput: Parameters<NonNullable<Parameters<typeof createAddonCheckHandler>[0]["__runAddonRuleLlmForTests"]>>[0] | undefined;
+    const llmReview = mock(async (input: NonNullable<typeof capturedInput>) => {
+      capturedInput = input;
+      return {
+        summary: "plugin.video.foo updates one Python patch on nexus.",
+        findings: [{
         addonId: "plugin.video.foo",
+        path: "plugin.video.foo/default.py",
+        rule: "download-consent",
         level: "WARN" as const,
         source: "llm" as const,
         message: "Download appears to happen without user confirmation.",
-      },
-    ]);
+        }],
+      };
+    });
 
     createAddonCheckHandlerForTest({
       eventRouter: router,
@@ -1230,32 +1258,43 @@ describe("createAddonCheckHandler", () => {
     await router.captured[0]!.handler(makePrEvent("xbmc/repo-plugins"));
 
     expect(llmReview).toHaveBeenCalledTimes(1);
+    expect(capturedInput?.contexts[0]?.files[0]).toMatchObject({
+      path: "plugin.video.foo/default.py",
+      patch: "@@ -1 +1 @@\n-old()\n+new()",
+    });
+    expect(capturedInput?.contexts[0]?.files[0]).not.toHaveProperty("content");
+    expect(capturedInput).not.toHaveProperty("workspaceDir");
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
-    expect(commentBody).toContain("## Kodiai Addon Check");
-    expect(commentBody).toContain("## Kodi Add-on Rule Review");
-    expect(commentBody).toContain("Rules source: <https://kodi.wiki/view/Add-on_rules>");
+    expect(commentBody).toContain("## Kodiai Add-on Review");
+    expect(commentBody).toContain("### Summary");
+    expect(commentBody).toContain("### Findings");
+    expect(commentBody).toContain("### Verdict");
     expect(commentBody).toContain("Download appears to happen without user confirmation.");
   });
 
   it("synchronize events do not run addon-rule LLM review automatically", async () => {
-    const files = ["plugin.video.foo/addon.xml"];
+    const files = [{
+      filename: "plugin.video.foo/addon.xml",
+      status: "modified",
+      patch: "@@ -1 +1 @@\n-<addon version=\"1.0.0\"/>\n+<addon version=\"1.0.1\"/>",
+    }];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
-    const subprocess = makeCheckerSubprocess("ERROR: checker finding\n");
-    const workspace = await createAddonRuleWorkspace({
-      "plugin.video.foo/addon.xml": "<addon id='plugin.video.foo' />",
-    });
-    const { manager } = createMockWorkspaceManager(workspace);
+    const subprocess = makeCheckerSubprocess("ERROR: addon.xml checker finding\n");
+    const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
-    const llmReview = mock(async () => [
-      {
+    const llmReview = mock(async () => ({
+      summary: "Should not appear.",
+      findings: [{
         addonId: "plugin.video.foo",
+        path: "plugin.video.foo/addon.xml",
+        rule: "test",
         level: "WARN" as const,
         source: "llm" as const,
         message: "Should not appear.",
-      },
-    ]);
+      }],
+    }));
 
     createAddonCheckHandlerForTest({
       eventRouter: router,
@@ -1275,7 +1314,8 @@ describe("createAddonCheckHandler", () => {
     expect(llmReview).not.toHaveBeenCalled();
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
     expect(commentBody).toContain("checker finding");
-    expect(commentBody).not.toContain("Kodi Add-on Rule Review");
+    expect(commentBody).toContain("## Kodiai Add-on Review");
+    expect(commentBody).toContain("Reviewed 1 changed addon on `omega` using 1 scoped patch.");
     expect(commentBody).not.toContain("Should not appear.");
   });
 
@@ -1286,14 +1326,16 @@ describe("createAddonCheckHandler", () => {
     const subprocess = makeCheckerSubprocess("");
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
-    const llmReview = mock(async () => [
-      {
+    const llmReview = mock(async () => ({
+      summary: "Should not be generated.",
+      findings: [{
         addonId: "plugin.video.foo",
+        rule: "test",
         level: "WARN" as const,
         source: "llm" as const,
         message: "Should not be generated.",
-      },
-    ]);
+      }],
+    }));
 
     createAddonCheckHandlerForTest({
       eventRouter: router,
@@ -1310,19 +1352,20 @@ describe("createAddonCheckHandler", () => {
 
     expect(llmReview).not.toHaveBeenCalled();
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
-    expect(commentBody).toContain("## Kodi Add-on Rule Review");
+    expect(commentBody).toContain("## Kodiai Add-on Review");
     expect(commentBody).not.toContain("Should not be generated.");
   });
 
   it("posts addon-rule review even when kodi-addon-checker is unavailable", async () => {
-    const files = ["plugin.video.foo/addon.xml"];
+    const files = [{
+      filename: "plugin.video.foo/default.py",
+      status: "modified",
+      patch: "@@ -1 +1 @@\n-old()\n+track_usage()",
+    }];
     const { app, octokit } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
     const subprocess = makeCheckerSubprocessByAddon({ "plugin.video.foo": "__TOOL_NOT_FOUND__" });
-    const workspace = await createAddonRuleWorkspace({
-      "plugin.video.foo/addon.xml": "<addon id='plugin.video.foo' />",
-    });
-    const { manager } = createMockWorkspaceManager(workspace);
+    const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
 
     createAddonCheckHandlerForTest({
@@ -1338,22 +1381,24 @@ describe("createAddonCheckHandler", () => {
         url: "https://kodi.wiki/view/Add-on_rules",
         text: "Fallback rules.",
       }),
-      __runAddonRuleLlmForTests: async () => [
-        {
+      __runAddonRuleLlmForTests: async () => ({
+        summary: "plugin.video.foo adds usage tracking on omega.",
+        findings: [{
           addonId: "plugin.video.foo",
+          path: "plugin.video.foo/default.py",
+          rule: "usage-analytics",
           level: "ERROR",
           source: "llm",
           message: "Uses analytics.",
-        },
-      ],
+        }],
+      }),
     });
 
     await router.captured[0]!.handler(makePrEvent("xbmc/repo-plugins"));
 
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const commentBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
-    expect(commentBody).toContain("Addon check incomplete");
-    expect(commentBody).toContain("Rules source: embedded fallback based on <https://kodi.wiki/view/Add-on_rules>");
+    expect(commentBody).toContain("Review incomplete: kodi-addon-checker was unavailable and the live rules were unavailable");
     expect(commentBody).toContain("Uses analytics.");
   });
 });
