@@ -29,6 +29,7 @@ import {
 } from "../review-audit/production-log-projection.ts";
 import {
   buildAddonCheckMarker,
+  buildAddonReviewRequestMarker,
   formatAddonCheckComment,
 } from "../lib/addon-check-formatter.ts";
 import {
@@ -91,11 +92,11 @@ export async function upsertAddonCheckComment(params: {
   owner: string;
   repo: string;
   prNumber: number;
+  marker: string;
   body: string;
   botHandles: string[];
 }): Promise<AddonCheckCommentUpsertResult> {
-  const { octokit, owner, repo, prNumber, body, botHandles } = params;
-  const marker = buildAddonCheckMarker(owner, repo, prNumber);
+  const { octokit, owner, repo, prNumber, marker, body, botHandles } = params;
 
   try {
     const existing = await findIssueCommentByMarkerPaged(octokit, {
@@ -436,7 +437,9 @@ export function createAddonCheckHandler(deps: {
               "addon-check: complete",
             );
 
-            const marker = buildAddonCheckMarker(owner, repoName, prNumber);
+            const marker = event.name === "addon_rule_review"
+              ? buildAddonReviewRequestMarker(event.id)
+              : buildAddonCheckMarker(owner, repoName, prNumber);
             const publicCheckerFindings = filterCheckerFindingsToChangedEvidence(allFindings, files);
             const body = formatAddonCheckComment(publicCheckerFindings, marker, classification, addonRuleReview);
             const appSlug = typeof githubApp.getAppSlug === "function"
@@ -447,6 +450,7 @@ export function createAddonCheckHandler(deps: {
               owner,
               repo: repoName,
               prNumber,
+              marker,
               body,
               botHandles: [appSlug, "claude"],
             });

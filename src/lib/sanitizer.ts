@@ -298,7 +298,7 @@ const SECRET_BLOCKED_PUBLICATION_BODY = [
 ].join("\n");
 
 const KODIAI_MARKER_RE =
-  /<!--\s*kodiai:(?:(?:review-output-key|review-details|inline-output-key|wiki-modification|triage|addon-check|ci-analysis|troubleshoot):[^>]+?|error:usage-limit)\s*-->/gi;
+  /<!--\s*kodiai:(?:(?:review-output-key|review-details|inline-output-key|wiki-modification|triage|addon-check|addon-review-request|ci-analysis|troubleshoot):[^>]+?|error:usage-limit)\s*-->/gi;
 
 function preserveKodiaiMarkers(originalBody: string, sanitizedBody: string): string {
   const markers = originalBody.match(KODIAI_MARKER_RE) ?? [];

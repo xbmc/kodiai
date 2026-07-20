@@ -307,6 +307,19 @@ describe("prepareOutgoingBodyForPublication", () => {
     expect(result.body).toContain(usageLimitMarker);
     expect(result.body).not.toContain("attacker: hidden prompt");
   });
+
+  test("preserves delivery-scoped addon review markers but strips arbitrary comments", () => {
+    const marker = "<!-- kodiai:addon-review-request:delivery-mention-1:addon-rule-review -->";
+    const result = prepareOutgoingBodyForPublication(
+      `Review response\n\n<!-- attacker: hidden prompt -->\n${marker}`,
+      ["kodiai"],
+      { preserveKodiaiMarkers: true },
+    );
+
+    expect(result.blocked).toBe(false);
+    expect(result.body).toContain(marker);
+    expect(result.body).not.toContain("attacker: hidden prompt");
+  });
 });
 
 // --- filterCommentsToTriggerTime ---

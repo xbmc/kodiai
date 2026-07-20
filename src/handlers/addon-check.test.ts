@@ -306,6 +306,16 @@ function makePrEvent(
   };
 }
 
+function makeAddonRuleReviewEvent(deliveryId: string): WebhookEvent {
+  const event = makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "nexus" });
+  return {
+    ...event,
+    id: deliveryId,
+    name: "addon_rule_review",
+    payload: { ...event.payload, action: "requested" },
+  };
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 describe("createAddonCheckHandler", () => {
@@ -323,6 +333,7 @@ describe("createAddonCheckHandler", () => {
       owner: "xbmc",
       repo: "repo-plugins",
       prNumber: 42,
+      marker: buildAddonCheckMarker("xbmc", "repo-plugins", 42),
       body: "addon check for @claude",
       botHandles: ["kodiai", "claude"],
     });
@@ -344,6 +355,7 @@ describe("createAddonCheckHandler", () => {
       owner: "xbmc",
       repo: "repo-plugins",
       prNumber: 42,
+      marker,
       body: "updated addon check",
       botHandles: ["kodiai", "claude"],
     });
@@ -368,6 +380,7 @@ describe("createAddonCheckHandler", () => {
       owner: "xbmc",
       repo: "repo-plugins",
       prNumber: 42,
+      marker: buildAddonCheckMarker("xbmc", "repo-plugins", 42),
       body: "addon check",
       botHandles: ["kodiai", "claude"],
     });
@@ -376,6 +389,28 @@ describe("createAddonCheckHandler", () => {
     if (!result.ok) {
       expect(result.err).toBe(failure);
     }
+  });
+
+  it("updates the response for a replayed explicit-review delivery", async () => {
+    const marker = "<!-- kodiai:addon-review-request:delivery-mention-1:addon-rule-review -->";
+    const octokit = createMockOctokitWithIssues([], [{ id: 778, body: `${marker}\nold response` }]);
+
+    const result = await upsertAddonCheckComment({
+      octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
+      owner: "xbmc",
+      repo: "repo-plugins",
+      prNumber: 42,
+      marker,
+      body: `${marker}\nnew response`,
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { action: "updated", commentId: 778 },
+    });
+    expect(octokit._updateCommentMock).toHaveBeenCalledTimes(1);
+    expect(octokit._createCommentMock).not.toHaveBeenCalled();
   });
 
   // ── Registration ──────────────────────────────────────────────────────
@@ -1009,6 +1044,84 @@ describe("createAddonCheckHandler", () => {
   });
 
   // ── Comment upsert ────────────────────────────────────────────────────
+
+  it("creates a structured response after an explicit request without overwriting the canonical comment", async () => {
+    const files = [{
+      filename: "plugin.video.foo/default.py",
+      status: "modified",
+      patch: "@@ -1 +1 @@\n-old()\n+new()",
+    }];
+    const canonicalMarker = buildAddonCheckMarker("xbmc", "repo-plugins", 42);
+    const deliveryId = "delivery-mention-1:addon-rule-review";
+    const responseMarker = `<!-- kodiai:addon-review-request:${deliveryId} -->`;
+    const { app, octokit } = createMockGithubAppWithIssues(files, [{
+      id: 777,
+      body: `${canonicalMarker}\nold automatic review`,
+    }]);
+    const { logger } = createMockLogger();
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandlerForTest({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: makeCheckerSubprocess(""),
+      __runAddonRuleLlmForTests: async () => ({
+        summary: "plugin.video.foo changes one Python line on nexus.",
+        findings: [],
+      }),
+    });
+
+    await router.captured.find((entry) => entry.key === "addon_rule_review.requested")!.handler(
+      makeAddonRuleReviewEvent(deliveryId),
+    );
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    expect(octokit._updateCommentMock).not.toHaveBeenCalled();
+    const body = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(body).toContain(responseMarker);
+    expect(body).not.toContain(canonicalMarker);
+    expect(body).toContain("### Summary");
+    expect(body).toContain("### Findings");
+    expect(body).toContain("### Verdict");
+  });
+
+  it("creates separate responses for distinct explicit-review deliveries", async () => {
+    const files = [{
+      filename: "plugin.video.foo/default.py",
+      status: "modified",
+      patch: "@@ -1 +1 @@\n-old()\n+new()",
+    }];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandlerForTest({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: makeCheckerSubprocess(""),
+    });
+
+    const handler = router.captured.find((entry) => entry.key === "addon_rule_review.requested")!.handler;
+    await handler(makeAddonRuleReviewEvent("delivery-mention-1:addon-rule-review"));
+    await handler(makeAddonRuleReviewEvent("delivery-mention-2:addon-rule-review"));
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(2);
+    const firstBody = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    const secondBody = (octokit._createCommentMock as any).mock.calls[1][0].body as string;
+    expect(firstBody).toContain("<!-- kodiai:addon-review-request:delivery-mention-1:addon-rule-review -->");
+    expect(secondBody).toContain("<!-- kodiai:addon-review-request:delivery-mention-2:addon-rule-review -->");
+    expect(firstBody).not.toBe(secondBody);
+  });
 
   it("posts comment when findings exist", async () => {
     const files = ["plugin.video.foo/addon.xml"];

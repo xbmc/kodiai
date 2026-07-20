@@ -10,6 +10,7 @@ import type {
 } from "./addon-rule-types.ts";
 
 export const ADDON_CHECK_MARKER_PREFIX = "kodiai:addon-check";
+export const ADDON_REVIEW_REQUEST_MARKER_PREFIX = "kodiai:addon-review-request";
 
 const INCOMPLETE_CHECKER_MODES = new Set<AddonCheckClassificationMode>([
   "partial-timeout",
@@ -21,6 +22,10 @@ const INCOMPLETE_CHECKER_MODES = new Set<AddonCheckClassificationMode>([
 
 export function buildAddonCheckMarker(owner: string, repo: string, prNumber: number): string {
   return `<!-- ${ADDON_CHECK_MARKER_PREFIX}:${owner}/${repo}:${prNumber} -->`;
+}
+
+export function buildAddonReviewRequestMarker(deliveryId: string): string {
+  return `<!-- ${ADDON_REVIEW_REQUEST_MARKER_PREFIX}:${deliveryId} -->`;
 }
 
 export function formatAddonCheckComment(
