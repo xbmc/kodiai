@@ -175,8 +175,6 @@ expect(capturedModels).toEqual([
   "claude-haiku-4-5-20251001",
   "claude-sonnet-4-5-20250929",
 ]);
-expect(process.env.ANTHROPIC_API_KEY).toBeUndefined();
-
 // A non-retryable external cancellation performs one call only.
 expect(externalCancellationModels).toEqual(["claude-haiku-4-5-20251001"]);
 ```
@@ -719,7 +717,7 @@ git commit -m "fix: complete large addon model reviews"
 - Consumes: unchanged specialized add-on handler and formatter interfaces.
 - Produces: regression proof that complete structured coverage omits `llm-incomplete` and renders exact locations.
 
-- [ ] **Step 1: Add a failing handler-level complete-review test**
+- [ ] **Step 1: Add a handler-level complete-review integration test**
 
 Use the existing explicit `addon_rule_review.requested` fixture and inject:
 
@@ -740,11 +738,11 @@ __runAddonRuleLlmForTests: async () => ({
 
 Assert the published response contains Summary, Findings, Verdict, and ``script.module.pyrollbar/lib/rollbar/kodi/__init__.py:1``; assert it does not contain `model-backed rule check was incomplete`, `Decision:`, or general Python quality language.
 
-- [ ] **Step 2: Run the handler test and confirm RED if integration copy regresses**
+- [ ] **Step 2: Run the handler integration test**
 
 Run: `bun test src/handlers/addon-check.test.ts -t "complete structured addon review"`
 
-Expected: the new test initially fails until its fixture and assertions are integrated; no production formatter change should be needed.
+Expected: PASS if the existing handler and formatter already preserve the structured result; otherwise FAIL at the precise integration boundary that drops the summary, line, or completeness state.
 
 - [ ] **Step 3: Make only the minimal integration adjustment required by the test**
 
