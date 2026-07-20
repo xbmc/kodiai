@@ -52,3 +52,12 @@ export {
   generateWithFallback,
   type GenerateResult,
 } from "./generate.ts";
+
+// Structured Agent SDK generation
+export {
+  generateStructuredWithFallback,
+  StructuredGenerationError,
+  type StructuredFailureKind,
+  type StructuredGenerateOptions,
+  type StructuredGenerateResult,
+} from "./structured-generate.ts";
