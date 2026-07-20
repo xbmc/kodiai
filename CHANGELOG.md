@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Make Kodi add-on rule reviews use schema-backed Haiku output and bounded line-numbered diff evidence, preventing large Python submissions from silently losing model coverage.
 - Add-on submissions now receive one concise, diff-grounded Summary/Findings/Verdict review; configured add-on repositories no longer run the generic Python code-quality reviewer.
 - Explicit add-on review mentions now receive an eyes acknowledgement before the specialized review is dispatched.
 

@@ -1120,6 +1120,56 @@ describe("createAddonCheckHandler", () => {
     expect(body).toContain("### Verdict");
   });
 
+  it("complete structured addon review publishes exact locations without generic-review language", async () => {
+    const files = [{
+      filename: "script.module.pyrollbar/lib/rollbar/kodi/__init__.py",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -0,0 +1 @@\n+from rollbar import report_exc_info",
+    }];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandlerForTest({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: makeCheckerSubprocess(""),
+      __runAddonRuleLlmForTests: async () => ({
+        summary: "script.module.pyrollbar updates vendored Python code on nexus.",
+        findings: [{
+          addonId: "script.module.pyrollbar",
+          path: "script.module.pyrollbar/lib/rollbar/kodi/__init__.py",
+          line: 1,
+          rule: "line-endings",
+          level: "WARN",
+          source: "llm",
+          message: "The added source uses CRLF line endings.",
+        }],
+      }),
+    });
+
+    await router.captured.find((entry) => entry.key === "addon_rule_review.requested")!.handler(
+      makeAddonRuleReviewEvent("delivery-complete-addon-review:addon-rule-review"),
+    );
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    const body = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
+    expect(body).toContain("### Summary");
+    expect(body).toContain("### Findings");
+    expect(body).toContain("### Verdict");
+    expect(body).toContain("script.module.pyrollbar/lib/rollbar/kodi/__init__.py:1");
+    expect(body).not.toContain("model-backed rule check was incomplete");
+    expect(body).not.toContain("Decision:");
+    expect(body).not.toContain("Python code quality");
+  });
+
   it("creates separate responses for distinct explicit-review deliveries", async () => {
     const files = [{
       filename: "plugin.video.foo/default.py",
