@@ -23,13 +23,20 @@ const MAX_SUMMARY_CHARS = 600;
 const MAX_FINDINGS = 20;
 const MAX_MESSAGE_CHARS = 400;
 const MAX_RULE_CHARS = 80;
+const TRIMMED_NON_WHITESPACE_PATTERN = "^(?!\\s)[\\s\\S]*\\S(?![\\s\\S])$";
+const trimmedNonWhitespace = new RegExp(TRIMMED_NON_WHITESPACE_PATTERN);
 
 export const ADDON_RULE_REVIEW_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
   required: ["summary", "findings"],
   properties: {
-    summary: { type: "string", minLength: 1, maxLength: MAX_SUMMARY_CHARS },
+    summary: {
+      type: "string",
+      minLength: 1,
+      maxLength: MAX_SUMMARY_CHARS,
+      pattern: TRIMMED_NON_WHITESPACE_PATTERN,
+    },
     findings: {
       type: "array",
       maxItems: MAX_FINDINGS,
@@ -38,12 +45,22 @@ export const ADDON_RULE_REVIEW_SCHEMA: Record<string, unknown> = {
         additionalProperties: false,
         required: ["addonId", "path", "line", "rule", "level", "message"],
         properties: {
-          addonId: { type: "string", minLength: 1 },
-          path: { type: "string", minLength: 1 },
+          addonId: { type: "string", minLength: 1, pattern: TRIMMED_NON_WHITESPACE_PATTERN },
+          path: { type: "string", minLength: 1, pattern: TRIMMED_NON_WHITESPACE_PATTERN },
           line: { type: "integer", minimum: 1 },
-          rule: { type: "string", minLength: 1, maxLength: MAX_RULE_CHARS },
+          rule: {
+            type: "string",
+            minLength: 1,
+            maxLength: MAX_RULE_CHARS,
+            pattern: TRIMMED_NON_WHITESPACE_PATTERN,
+          },
           level: { type: "string", enum: ["ERROR", "WARN"] },
-          message: { type: "string", minLength: 1, maxLength: MAX_MESSAGE_CHARS },
+          message: {
+            type: "string",
+            minLength: 1,
+            maxLength: MAX_MESSAGE_CHARS,
+            pattern: TRIMMED_NON_WHITESPACE_PATTERN,
+          },
         },
       },
     },
@@ -52,7 +69,7 @@ export const ADDON_RULE_REVIEW_SCHEMA: Record<string, unknown> = {
 
 export function buildAddonRuleReviewPrompt(
   params: AddonRuleLlmInput,
-  evidenceContexts: readonly AddonRuleEvidenceContext[],
+  evidenceContexts: readonly AddonRuleEvidenceContext[] = projectAddonRuleEvidence(params.contexts),
 ): string {
   return [
     `Review Kodi addon submission rules for ${params.repo}#${params.prNumber}.`,
@@ -174,11 +191,12 @@ function requireExactRecord(value: unknown, keys: readonly string[]): Record<str
 
 function requireBoundedSafeString(value: unknown, maxLength?: number): string {
   if (typeof value !== "string") throw new Error();
-  const result = value.trim();
-  if (!result || (maxLength !== undefined && result.length > maxLength) || isUnsafeText(result)) {
+  if (!trimmedNonWhitespace.test(value)
+    || (maxLength !== undefined && value.length > maxLength)
+    || isUnsafeText(value)) {
     throw new Error();
   }
-  return result;
+  return value;
 }
 
 function extractJsonObject(text: string): string {

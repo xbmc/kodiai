@@ -43,8 +43,21 @@ describe("buildAddonRuleReviewPrompt", () => {
       additionalProperties: false,
       required: ["summary", "findings"],
       properties: {
-        summary: { type: "string", maxLength: 600 },
-        findings: { type: "array", maxItems: 20 },
+        summary: {
+          type: "string",
+          maxLength: 600,
+          pattern: "^(?!\\s)[\\s\\S]*\\S(?![\\s\\S])$",
+        },
+        findings: {
+          type: "array",
+          maxItems: 20,
+          items: {
+            properties: {
+              rule: { pattern: "^(?!\\s)[\\s\\S]*\\S(?![\\s\\S])$" },
+              message: { pattern: "^(?!\\s)[\\s\\S]*\\S(?![\\s\\S])$" },
+            },
+          },
+        },
       },
     });
 
@@ -72,6 +85,25 @@ describe("buildAddonRuleReviewPrompt", () => {
     expect(prompt).toContain("Return the result using the supplied JSON schema");
     expect(prompt).not.toContain("Full changed files are provided");
     expect(prompt).not.toContain("Prefer Kodi addon submission-rule findings");
+  });
+
+  test("derives added-line evidence for the one-argument compatibility call", () => {
+    const prompt = buildAddonRuleReviewPrompt({
+      repo: "xbmc/repo-plugins",
+      prNumber: 123,
+      baseBranch: "nexus",
+      rules: {
+        kind: "wiki",
+        url: "https://kodi.wiki/view/Add-on_rules",
+        text: "No analytics.",
+      },
+      contexts: lineContexts,
+    });
+
+    expect(prompt).toContain('"line":21');
+    expect(prompt).toContain('"text":"track_usage()"');
+    expect(prompt).not.toContain("-old()");
+    expect(prompt).not.toContain("undefined");
   });
 });
 
@@ -134,6 +166,71 @@ describe("validateAddonRuleReviewOutput", () => {
         "Structured addon review output failed domain validation",
       );
     }
+  });
+
+  test("enforces raw trimmed string bounds identically to the schema", () => {
+    const exactMax = {
+      summary: "s".repeat(600),
+      findings: [{
+        ...validValue.findings[0],
+        rule: "r".repeat(80),
+        message: "m".repeat(400),
+      }],
+    };
+    expect(validateAddonRuleReviewOutput(exactMax, lineContexts)).toMatchObject(exactMax);
+
+    const invalidValues = [
+      { ...validValue, summary: ` ${"s".repeat(600)}` },
+      { ...validValue, summary: "   " },
+      { ...validValue, findings: [{ ...validValue.findings[0], rule: ` ${"r".repeat(80)}` }] },
+      { ...validValue, findings: [{ ...validValue.findings[0], rule: "\t" }] },
+      { ...validValue, findings: [{ ...validValue.findings[0], message: `${"m".repeat(400)} ` }] },
+      { ...validValue, findings: [{ ...validValue.findings[0], message: "\n" }] },
+    ];
+    for (const value of invalidValues) {
+      expect(() => validateAddonRuleReviewOutput(value, lineContexts)).toThrow(
+        "Structured addon review output failed domain validation",
+      );
+    }
+  });
+
+  test("rejects unknown addons, mismatched addon paths, and top-level extras", () => {
+    const originalContexts: AddonRuleAddonContext[] = [...lineContexts, {
+      addonId: "plugin.video.bar",
+      allChangedPaths: ["plugin.video.bar/default.py"],
+      files: [{
+        path: "plugin.video.bar/default.py",
+        status: "modified",
+        patch: "@@ -1 +1 @@\n-old_bar()\n+new_bar()",
+      }],
+    }];
+    const invalidValues = [
+      {
+        ...validValue,
+        findings: [{ ...validValue.findings[0], addonId: "plugin.video.unknown" }],
+      },
+      {
+        ...validValue,
+        findings: [{ ...validValue.findings[0], addonId: "plugin.video.bar" }],
+      },
+      { ...validValue, extra: true },
+    ];
+
+    for (const value of invalidValues) {
+      expect(() => validateAddonRuleReviewOutput(value, originalContexts)).toThrow(
+        "Structured addon review output failed domain validation",
+      );
+    }
+  });
+
+  test("rejects mixed valid and invalid findings atomically", () => {
+    expect(() => validateAddonRuleReviewOutput({
+      ...validValue,
+      findings: [
+        validValue.findings[0],
+        { ...validValue.findings[0], line: 20 },
+      ],
+    }, lineContexts)).toThrow("Structured addon review output failed domain validation");
   });
 });
 
