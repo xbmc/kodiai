@@ -9,6 +9,7 @@
 
 import path from "node:path";
 import type { Logger } from "pino";
+import type { CostTracker } from "../llm/cost-tracker.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { AppConfig } from "../config.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -199,6 +200,7 @@ export function createAddonCheckHandler(deps: {
   logger: Logger;
   workspaceManager: WorkspaceManager;
   jobQueue: JobQueue;
+  costTracker?: CostTracker;
   /** Test-only: injected subprocess stub forwarded to runAddonChecker. */
   __runSubprocessForTests?: RunSubprocess;
   /** Test-only: override the checker time budget for deterministic timeout tests. */
@@ -217,6 +219,7 @@ export function createAddonCheckHandler(deps: {
     logger,
     workspaceManager,
     jobQueue,
+    costTracker,
     __runSubprocessForTests,
     __fetchAndCheckoutForTests,
     __addonCheckTimeBudgetMsForTests,
@@ -383,6 +386,8 @@ export function createAddonCheckHandler(deps: {
               files,
               runLlmReview: shouldRunAddonRuleLlm,
               logger: handlerLogger,
+              costTracker,
+              deliveryId: event.id,
               ...(loadRules ? { loadRules } : {}),
               ...(runAddonRuleLlm ? { runLlm: runAddonRuleLlm } : {}),
             });

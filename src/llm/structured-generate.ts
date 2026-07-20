@@ -4,6 +4,7 @@ import type {
   query as agentSdkQuery,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
+import { tmpdir } from "node:os";
 import { buildAgentEnv } from "../execution/env.ts";
 import { createAbortControllerWithTimeout } from "../lib/with-timeout.ts";
 import type { CostTracker } from "./cost-tracker.ts";
@@ -19,9 +20,12 @@ export type StructuredFailureKind =
   | "cancelled"
   | "provider"
   | "transport"
-  | "unsuccessful-result"
+  | "structured-output-retries-exhausted"
+  | "turn-limit"
+  | "budget-limit"
+  | "execution-error"
   | "missing-structured-output"
-  | "validation";
+  | "domain-grounding-rejection";
 
 export class StructuredGenerationError extends Error {
   constructor(
@@ -46,6 +50,8 @@ export type StructuredGenerateOptions<T> = {
   costTracker?: CostTracker;
   repo?: string;
   deliveryId?: string;
+  chunkOrdinal?: number;
+  chunkTotal?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
   loadQuery?: AgentSdkLoader;
@@ -107,6 +113,41 @@ async function defaultLoadQuery(): Promise<AgentSdkQuery> {
   return (await import("@anthropic-ai/claude-agent-sdk")).query;
 }
 
+function classifyUnsuccessfulResult(subtype: SDKResultMessage["subtype"]): StructuredGenerationError {
+  switch (subtype) {
+    case "error_max_structured_output_retries":
+      return new StructuredGenerationError(
+        "structured-output-retries-exhausted",
+        "Claude Agent SDK exhausted structured output retries",
+        true,
+      );
+    case "error_max_turns":
+      return new StructuredGenerationError(
+        "turn-limit",
+        "Claude Agent SDK reached the structured generation turn limit",
+        true,
+      );
+    case "error_max_budget_usd":
+      return new StructuredGenerationError(
+        "budget-limit",
+        "Claude Agent SDK reached the structured generation budget limit",
+        false,
+      );
+    case "error_during_execution":
+      return new StructuredGenerationError(
+        "execution-error",
+        "Claude Agent SDK structured generation execution failed",
+        true,
+      );
+    default:
+      return new StructuredGenerationError(
+        "execution-error",
+        "Claude Agent SDK returned an unsuccessful result",
+        true,
+      );
+  }
+}
+
 async function runStructuredAgentAttempt<T>(
   options: StructuredGenerateOptions<T>,
   model: string,
@@ -136,21 +177,23 @@ async function runStructuredAgentAttempt<T>(
 
   try {
     const query = await (options.loadQuery ?? defaultLoadQuery)();
+    const env = buildAgentEnv();
+    delete env.ANTHROPIC_API_KEY;
     const sdkQuery = query({
       prompt: options.prompt,
       options: {
         abortController: deadline.controller,
-        cwd: process.cwd(),
+        cwd: tmpdir(),
         model,
         maxTurns: 3,
         systemPrompt: options.system,
+        tools: [],
         allowedTools: [],
         disallowedTools: [],
+        persistSession: false,
         outputFormat: { type: "json_schema", schema: options.schema },
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
         env: {
-          ...buildAgentEnv(),
+          ...env,
           CLAUDE_CODE_ENTRYPOINT: "kodiai-llm-structured-generate",
         },
       },
@@ -188,11 +231,7 @@ async function runStructuredAgentAttempt<T>(
       });
     }
     if (resultMessage.subtype !== "success") {
-      throw new StructuredGenerationError(
-        "unsuccessful-result",
-        "Claude Agent SDK did not return success",
-        true,
-      );
+      throw classifyUnsuccessfulResult(resultMessage.subtype);
     }
     if (!("structured_output" in resultMessage) || resultMessage.structured_output === undefined) {
       throw new StructuredGenerationError(
@@ -207,9 +246,9 @@ async function runStructuredAgentAttempt<T>(
       output = options.validate(resultMessage.structured_output);
     } catch (error) {
       throw new StructuredGenerationError(
-        "validation",
+        "domain-grounding-rejection",
         "Structured output failed domain validation",
-        true,
+        false,
         { cause: error },
       );
     }
@@ -262,6 +301,8 @@ async function runStructuredAgentAttempt<T>(
         durationMs,
         completionCategory,
         promptCharacterCount: options.prompt.length,
+        ...(options.chunkOrdinal === undefined ? {} : { chunkOrdinal: options.chunkOrdinal }),
+        ...(options.chunkTotal === undefined ? {} : { chunkTotal: options.chunkTotal }),
       },
       "Claude Agent SDK structured generation attempt completed",
     );

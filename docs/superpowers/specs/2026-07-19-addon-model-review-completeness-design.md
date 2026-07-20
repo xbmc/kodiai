@@ -1,7 +1,7 @@
 # Add-on Model Review Completeness Design
 
-Date: 2026-07-19  
-Related issue: https://github.com/xbmc/kodiai/issues/194  
+Date: 2026-07-19
+Related issue: https://github.com/xbmc/kodiai/issues/194
 Production example: https://github.com/xbmc/repo-scripts/pull/2861#issuecomment-5017999328
 
 ## Reader and outcome

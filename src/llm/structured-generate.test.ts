@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { TASK_TYPES } from "./task-types.ts";
 import { createTaskRouter } from "./task-router.ts";
@@ -65,21 +66,59 @@ describe("generateStructuredWithFallback", () => {
     });
     expect(calls[0]?.prompt).toBe("bounded prompt");
     expect(calls[0]?.options).toMatchObject({
+      cwd: tmpdir(),
       model: "claude-haiku-4-5-20251001",
       maxTurns: 3,
       systemPrompt: "Kodi add-on submission-rule classifier. Use only supplied evidence.",
+      tools: [],
       allowedTools: [],
       disallowedTools: [],
+      persistSession: false,
       outputFormat: { type: "json_schema", schema: expect.any(Object) },
     });
+    expect(calls[0]?.options).not.toHaveProperty("permissionMode");
+    expect(calls[0]?.options).not.toHaveProperty("allowDangerouslySkipPermissions");
     expect(calls[0]?.options.systemPrompt).not.toEqual(
       expect.objectContaining({ preset: "claude_code" }),
     );
   });
 
-  test("rejects partial assistant prose when no successful result arrives", async () => {
+  test("retains OAuth while omitting the Anthropic API key from the structured subprocess", async () => {
+    const previousOauth = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    const previousApiKey = process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-secret";
+    process.env.ANTHROPIC_API_KEY = "api-secret";
+    try {
+      let capturedEnv: NodeJS.ProcessEnv | undefined;
+      const query = ((input: { options: { env: NodeJS.ProcessEnv } }) => {
+        capturedEnv = input.options.env;
+        return (async function* () {
+          yield successResult({ summary: "Reviewed.", findings: [] });
+        })();
+      }) as never;
+
+      await generateStructuredWithFallback({
+        ...baseOptions(),
+        loadQuery: async () => query,
+      });
+
+      expect(capturedEnv).toMatchObject({
+        CLAUDE_CODE_OAUTH_TOKEN: "oauth-secret",
+        CLAUDE_CODE_ENTRYPOINT: "kodiai-llm-structured-generate",
+      });
+      expect(capturedEnv).not.toHaveProperty("ANTHROPIC_API_KEY");
+    } finally {
+      if (previousOauth === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      else process.env.CLAUDE_CODE_OAUTH_TOKEN = previousOauth;
+      if (previousApiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = previousApiKey;
+    }
+  });
+
+  test("rejects assistant and tool-like events when no successful structured result arrives", async () => {
     const query = (() => (async function* () {
       yield { type: "assistant", message: { content: [{ type: "text", text: "partial" }] } };
+      yield { type: "tool", name: "Read", result: { summary: "forged", findings: [] } };
     })()) as never;
 
     await expect(generateStructuredWithFallback({
@@ -137,7 +176,7 @@ describe("generateStructuredWithFallback", () => {
     })).rejects.toMatchObject({ kind: "timeout", retryable: true });
   });
 
-  test("retries one validation failure on Sonnet through the same loader", async () => {
+  test("does not retry a domain-grounding rejection on Sonnet", async () => {
     const capturedModels: string[] = [];
     const trackAgentSdkCall = mock(() => Promise.resolve());
     let loadCount = 0;
@@ -159,14 +198,13 @@ describe("generateStructuredWithFallback", () => {
     }) as never;
     let validationCount = 0;
 
-    const result = await generateStructuredWithFallback({
+    const result = generateStructuredWithFallback({
       ...baseOptions({
         repo: "xbmc/repo-plugins",
         costTracker: { trackAgentSdkCall } as never,
-        validate: (value: unknown) => {
+        validate: (_value: unknown) => {
           validationCount++;
-          if (validationCount === 1) throw new Error("invalid primary output");
-          return value as ReviewOutput;
+          throw new Error("invalid grounded output");
         },
       }),
       loadQuery: async () => {
@@ -175,17 +213,71 @@ describe("generateStructuredWithFallback", () => {
       },
     });
 
-    expect(capturedModels).toEqual([
-      "claude-haiku-4-5-20251001",
-      "claude-sonnet-4-5-20250929",
-    ]);
-    expect(loadCount).toBe(2);
-    expect(trackAgentSdkCall).toHaveBeenCalledTimes(2);
+    await expect(result).rejects.toMatchObject({
+      kind: "domain-grounding-rejection",
+      retryable: false,
+    });
+    expect(capturedModels).toEqual(["claude-haiku-4-5-20251001"]);
+    expect(loadCount).toBe(1);
+    expect(trackAgentSdkCall).toHaveBeenCalledTimes(1);
+    expect(validationCount).toBe(1);
+  });
+
+  test("cost-tracks a retryable primary result and successful fallback result", async () => {
+    const trackAgentSdkCall = mock(() => Promise.resolve());
+    let callCount = 0;
+    const query = ((input: { options: { model: string } }) => {
+      callCount++;
+      return (async function* () {
+        const usage = {
+          [input.options.model]: {
+            inputTokens: callCount,
+            outputTokens: callCount + 1,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+          },
+        };
+        if (callCount === 1) {
+          yield {
+            type: "result",
+            subtype: "error_during_execution",
+            modelUsage: usage,
+            duration_ms: 10,
+            total_cost_usd: 0.01,
+          };
+        } else {
+          yield successResult({ summary: "Reviewed.", findings: [] }, usage);
+        }
+      })();
+    }) as never;
+
+    const result = await generateStructuredWithFallback({
+      ...baseOptions({
+        repo: "xbmc/repo-plugins",
+        deliveryId: "delivery-fallback",
+        costTracker: { trackAgentSdkCall } as never,
+      }),
+      loadQuery: async () => query,
+    });
+
     expect(result).toMatchObject({
       usedFallback: true,
-      fallbackReason: "validation",
+      fallbackReason: "execution-error",
       model: "claude-sonnet-4-5-20250929",
     });
+    expect(trackAgentSdkCall).toHaveBeenCalledTimes(2);
+    expect(trackAgentSdkCall).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      repo: "xbmc/repo-plugins",
+      taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
+      model: "claude-haiku-4-5-20251001",
+      deliveryId: "delivery-fallback",
+    }));
+    expect(trackAgentSdkCall).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      repo: "xbmc/repo-plugins",
+      taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
+      model: "claude-sonnet-4-5-20250929",
+      deliveryId: "delivery-fallback",
+    }));
   });
 
   test("does not retry external cancellation", async () => {
@@ -210,17 +302,31 @@ describe("generateStructuredWithFallback", () => {
     expect(models).toEqual(["claude-haiku-4-5-20251001"]);
   });
 
-  test("rejects unsuccessful results and successful results without structured output", async () => {
-    for (const [message, kind] of [
-      [{ type: "result", subtype: "error_max_turns", modelUsage: {}, duration_ms: 1 }, "unsuccessful-result"],
-      [{ type: "result", subtype: "success", modelUsage: {}, duration_ms: 1 }, "missing-structured-output"],
+  test("maps bounded SDK error subtypes with deliberate retryability", async () => {
+    for (const [subtype, kind, retryable] of [
+      ["error_max_structured_output_retries", "structured-output-retries-exhausted", true],
+      ["error_max_turns", "turn-limit", true],
+      ["error_max_budget_usd", "budget-limit", false],
+      ["error_during_execution", "execution-error", true],
     ] as const) {
-      const query = (() => (async function* () { yield message; })()) as never;
+      const query = (() => (async function* () {
+        yield { type: "result", subtype, modelUsage: {}, duration_ms: 1 };
+      })()) as never;
       await expect(generateStructuredWithFallback({
         ...baseOptions({ resolved: { ...baseOptions().resolved, fallbackModelId: "" } }),
         loadQuery: async () => query,
-      })).rejects.toMatchObject({ kind, retryable: true });
+      })).rejects.toMatchObject({ kind, retryable });
     }
+  });
+
+  test("rejects a successful result without structured output", async () => {
+    const query = (() => (async function* () {
+      yield { type: "result", subtype: "success", modelUsage: {}, duration_ms: 1 };
+    })()) as never;
+    await expect(generateStructuredWithFallback({
+      ...baseOptions({ resolved: { ...baseOptions().resolved, fallbackModelId: "" } }),
+      loadQuery: async () => query,
+    })).rejects.toMatchObject({ kind: "missing-structured-output", retryable: true });
   });
 
   test("normalizes provider failures as retryable and unknown failures as transport failures", async () => {
@@ -260,18 +366,25 @@ describe("generateStructuredWithFallback", () => {
         deliveryId: "delivery",
         costTracker: { trackAgentSdkCall } as never,
         prompt: "secret prompt",
+        chunkOrdinal: 2,
+        chunkTotal: 3,
       }),
       loadQuery: async () => query,
     });
 
     expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 4 });
-    expect(trackAgentSdkCall).toHaveBeenCalledWith(expect.objectContaining({
+    expect(trackAgentSdkCall).toHaveBeenCalledWith({
+      repo: "xbmc/repo-plugins",
+      taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
       model: "claude-haiku-4-5-20251001",
       inputTokens: 10,
       outputTokens: 4,
       cacheReadTokens: 3,
       cacheWriteTokens: 2,
-    }));
+      durationMs: 12,
+      costUsd: 0,
+      deliveryId: "delivery",
+    });
     expect(logger.info).toHaveBeenCalledTimes(1);
     expect(logger.info).toHaveBeenCalledWith({
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
@@ -281,6 +394,8 @@ describe("generateStructuredWithFallback", () => {
       durationMs: expect.any(Number),
       completionCategory: "success",
       promptCharacterCount: 13,
+      chunkOrdinal: 2,
+      chunkTotal: 3,
     }, "Claude Agent SDK structured generation attempt completed");
     const serializedLogs = JSON.stringify((logger.info as ReturnType<typeof mock>).mock.calls);
     expect(serializedLogs).not.toContain("secret prompt");

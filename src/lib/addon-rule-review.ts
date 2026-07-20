@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import type { CostTracker } from "../llm/cost-tracker.ts";
 import { mapWithConcurrency } from "./concurrency.ts";
 import { createTaskRouter } from "../llm/task-router.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
@@ -31,7 +32,15 @@ import type {
 } from "./addon-rule-types.ts";
 
 export type LoadAddonRuleSource = typeof loadAddonRuleSource;
-export type RunAddonRuleLlm = (params: AddonRuleLlmInput) => Promise<AddonRuleLlmResult>;
+export type AddonRuleLlmRuntimeOptions = {
+  costTracker?: CostTracker;
+  deliveryId?: string;
+  generateStructured?: typeof generateStructuredWithFallback;
+};
+export type RunAddonRuleLlm = (
+  params: AddonRuleLlmInput,
+  runtime?: AddonRuleLlmRuntimeOptions,
+) => Promise<AddonRuleLlmResult>;
 type ReviewStructuredAddonRuleChunk = (params: {
   prompt: string;
   evidence: readonly AddonRuleEvidenceContext[];
@@ -47,6 +56,7 @@ export async function runDefaultAddonRuleLlm(
   input: AddonRuleLlmInput,
   logger: Logger,
   generateChunkForTests?: ReviewStructuredAddonRuleChunk,
+  runtime: AddonRuleLlmRuntimeOptions = {},
 ): Promise<AddonRuleLlmResult> {
   const projected = projectAddonRuleEvidence(input.contexts);
   const renderPrompt = (contexts: readonly AddonRuleEvidenceContext[]) => (
@@ -54,7 +64,7 @@ export async function runDefaultAddonRuleLlm(
   );
   const pack = packAddonRuleEvidence(projected, renderPrompt);
   const prompts = pack.chunks.map((evidence) => ({ evidence, prompt: renderPrompt(evidence) }));
-  const generateChunk = generateChunkForTests ?? createDefaultChunkGenerator(input, logger);
+  const generateChunk = generateChunkForTests ?? createDefaultChunkGenerator(input, logger, runtime);
   logger.info(
     {
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
@@ -123,11 +133,13 @@ async function reviewAddonRuleChunk(params: {
 function createDefaultChunkGenerator(
   input: AddonRuleLlmInput,
   logger: Logger,
+  runtime: AddonRuleLlmRuntimeOptions,
 ): ReviewStructuredAddonRuleChunk {
   const taskRouter = createTaskRouter({ models: {} });
   const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
-  return async ({ prompt }) => {
-    const result = await generateStructuredWithFallback({
+  const generateStructured = runtime.generateStructured ?? generateStructuredWithFallback;
+  return async ({ prompt, chunkIndex, chunkCount }) => {
+    const result = await generateStructured({
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
       resolved,
       prompt,
@@ -136,6 +148,10 @@ function createDefaultChunkGenerator(
       validate: (output) => validateAddonRuleReviewOutput(output, input.contexts),
       logger,
       repo: input.repo,
+      costTracker: runtime.costTracker,
+      deliveryId: runtime.deliveryId,
+      chunkOrdinal: chunkIndex + 1,
+      chunkTotal: chunkCount,
     });
     return result.output;
   };
@@ -164,10 +180,11 @@ function aggregateAddonRuleChunkResults(
   const result: AddonRuleLlmResult = {
     findings: findings.slice(0, MAX_AGGREGATED_ADDON_RULE_FINDINGS),
   };
-  if (chunkCount === 1) {
+  const coverageComplete = !rejectedSummary && !rejectedOutput;
+  if (chunkCount === 1 && coverageComplete) {
     result.summary = results[0]?.summary;
-  } else if (chunkCount > 1) {
-    result.summary = buildChunkedSummary(input, chunkCount, results);
+  } else if (chunkCount > 0 || !coverageComplete) {
+    result.summary = buildChunkedSummary(input, chunkCount, results, coverageComplete);
   }
   if (rejectedSummary) result.rejectedSummary = true;
   if (rejectedOutput) result.rejectedOutput = true;
@@ -178,14 +195,21 @@ function buildChunkedSummary(
   input: AddonRuleLlmInput,
   chunkCount: number,
   results: readonly AddonRuleLlmResult[],
+  coverageComplete: boolean,
 ): string {
   const addonCount = input.contexts.length;
   const patchCount = input.contexts.reduce(
     (count, context) => count + context.files.filter((file) => file.patch !== undefined).length,
     0,
   );
-  const base = `Reviewed ${addonCount} changed ${addonCount === 1 ? "addon" : "addons"} on \`${input.baseBranch}\` across ${patchCount} scoped ${patchCount === 1 ? "patch" : "patches"} in ${chunkCount} evidence chunks.`;
-  const summaries = [...new Set(results.flatMap((result) => result.summary ? [result.summary] : []))];
+  const chunkNoun = chunkCount === 1 ? "chunk" : "chunks";
+  const completedChunkCount = results.filter((result) => !result.rejectedOutput).length;
+  const base = coverageComplete
+    ? `Reviewed ${addonCount} changed ${addonCount === 1 ? "addon" : "addons"} on \`${input.baseBranch}\` across ${patchCount} scoped ${patchCount === 1 ? "patch" : "patches"} in ${chunkCount} evidence ${chunkNoun}.`
+    : `Prepared ${addonCount} changed ${addonCount === 1 ? "addon" : "addons"} on \`${input.baseBranch}\` across ${patchCount} scoped ${patchCount === 1 ? "patch" : "patches"} in ${chunkCount} evidence ${chunkNoun}; completed ${completedChunkCount} of ${chunkCount} prepared ${chunkNoun}.`;
+  const summaries = coverageComplete
+    ? [...new Set(results.flatMap((result) => result.summary ? [result.summary] : []))]
+    : [];
   let summary = base;
   for (const candidate of summaries) {
     if (summary.length + candidate.length + 1 > 600) break;
@@ -204,9 +228,14 @@ export async function runAddonRuleReview(params: {
   logger: Logger;
   loadRules?: LoadAddonRuleSource;
   runLlm?: RunAddonRuleLlm;
+  costTracker?: CostTracker;
+  deliveryId?: string;
 }): Promise<AddonRuleReviewComment> {
   const loadRules = params.loadRules ?? loadAddonRuleSource;
-  const runLlm = params.runLlm ?? ((input) => runDefaultAddonRuleLlm(input, params.logger));
+  const runtime = { costTracker: params.costTracker, deliveryId: params.deliveryId };
+  const runLlm = params.runLlm ?? ((input, options) => (
+    runDefaultAddonRuleLlm(input, params.logger, undefined, options)
+  ));
   const ruleSource = await loadRules();
   const contexts = collectAddonRuleContext({ files: params.files });
   const deterministicFindings = runDeterministicAddonRuleChecks({
@@ -229,7 +258,7 @@ export async function runAddonRuleReview(params: {
         baseBranch: params.baseBranch,
         rules: ruleSource,
         contexts,
-      });
+      }, runtime);
       if (!llmResult.summary || llmResult.rejectedSummary || llmResult.rejectedOutput) {
         incompleteReasons.add("llm-incomplete");
       }

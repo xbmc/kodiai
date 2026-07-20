@@ -1132,6 +1132,8 @@ describe("createAddonCheckHandler", () => {
     const { logger } = createMockLogger();
     const { manager } = createMockWorkspaceManager();
     const { queue } = createMockJobQueue();
+    const costTracker = { trackAgentSdkCall: mock(() => Promise.resolve()) } as never;
+    let capturedRuntime: Record<string, unknown> | undefined;
 
     createAddonCheckHandlerForTest({
       eventRouter: router,
@@ -1140,19 +1142,23 @@ describe("createAddonCheckHandler", () => {
       logger,
       workspaceManager: manager,
       jobQueue: queue,
+      costTracker,
       __runSubprocessForTests: makeCheckerSubprocess(""),
-      __runAddonRuleLlmForTests: async () => ({
-        summary: "script.module.pyrollbar updates vendored Python code on nexus.",
-        findings: [{
-          addonId: "script.module.pyrollbar",
-          path: "script.module.pyrollbar/lib/rollbar/kodi/__init__.py",
-          line: 1,
-          rule: "line-endings",
-          level: "WARN",
-          source: "llm",
-          message: "The added source uses CRLF line endings.",
-        }],
-      }),
+      __runAddonRuleLlmForTests: async (_input, runtime) => {
+        capturedRuntime = runtime;
+        return {
+          summary: "script.module.pyrollbar updates vendored Python code on nexus.",
+          findings: [{
+            addonId: "script.module.pyrollbar",
+            path: "script.module.pyrollbar/lib/rollbar/kodi/__init__.py",
+            line: 1,
+            rule: "line-endings",
+            level: "WARN",
+            source: "llm",
+            message: "The added source uses CRLF line endings.",
+          }],
+        };
+      },
     });
 
     await router.captured.find((entry) => entry.key === "addon_rule_review.requested")!.handler(
@@ -1169,6 +1175,10 @@ describe("createAddonCheckHandler", () => {
     expect(body).not.toContain("model-backed rule check was incomplete");
     expect(body).not.toContain("Decision:");
     expect(body).not.toContain("Python code quality");
+    expect(capturedRuntime).toEqual({
+      costTracker,
+      deliveryId: "delivery-complete-addon-review:addon-rule-review",
+    });
   });
 
   it("creates separate responses for distinct explicit-review deliveries", async () => {

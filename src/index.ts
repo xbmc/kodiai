@@ -472,6 +472,7 @@ createAddonCheckHandler({
   logger,
   workspaceManager,
   jobQueue,
+  costTracker,
 });
 
 if (issueStore && embeddingProvider) {

@@ -180,6 +180,10 @@ describe("runDefaultAddonRuleLlm", () => {
     expect(result.findings.length).toBeGreaterThan(0);
     expect(result.rejectedOutput).toBe(true);
     expect([...callsByChunk.values()].every((calls) => calls === 1)).toBe(true);
+    expect(result.summary).toBe(
+      "Prepared 1 changed addon on `matrix` across 1 scoped patch in 3 evidence chunks; completed 2 of 3 prepared chunks.",
+    );
+    expect(result.summary).not.toContain("Reviewed");
   });
 
   test("marks a final domain-validation rejection incomplete", async () => {
@@ -271,12 +275,75 @@ describe("runDefaultAddonRuleLlm", () => {
       },
     ];
 
-    for (const input of inputs) {
+    const expectedSummaries = [
+      "Prepared 1 changed addon on `matrix` across 1 scoped patch in 1 evidence chunk; completed 1 of 1 prepared chunk.",
+      "Prepared 1 changed addon on `matrix` across 1 scoped patch in 0 evidence chunks; completed 0 of 0 prepared chunks.",
+    ];
+    for (const [index, input] of inputs.entries()) {
       const result = await runDefaultAddonRuleLlm(input, logger, async ({ validate }) => (
         validate({ summary: "Reviewed available evidence.", findings: [] })
       ));
       expect(result.rejectedOutput).toBe(true);
+      expect(result.summary).toBe(expectedSummaries[index]);
+      expect(result.summary).not.toContain("Reviewed");
     }
+  });
+
+  test("passes runtime cost, delivery, and one-based chunk metadata to every default call", async () => {
+    const costTracker = { trackAgentSdkCall: mock(() => Promise.resolve()) } as never;
+    const calls: Array<Record<string, unknown>> = [];
+    const generateStructured = mock(async (options: Record<string, unknown>) => {
+      calls.push(options);
+      const validate = options.validate as (value: unknown) => unknown;
+      return {
+        output: validate({ summary: "Reviewed.", findings: [] }),
+        model: "claude-haiku-4-5-20251001",
+        provider: "anthropic" as const,
+        usedFallback: false,
+        durationMs: 1,
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    });
+
+    await runDefaultAddonRuleLlm(
+      largeSingleFileInput().input,
+      logger,
+      undefined,
+      {
+        costTracker,
+        deliveryId: "delivery-runtime",
+        generateStructured: generateStructured as never,
+      },
+    );
+
+    expect(calls).toHaveLength(3);
+    expect(calls.map(({ chunkOrdinal, chunkTotal }) => ({ chunkOrdinal, chunkTotal }))).toEqual([
+      { chunkOrdinal: 1, chunkTotal: 3 },
+      { chunkOrdinal: 2, chunkTotal: 3 },
+      { chunkOrdinal: 3, chunkTotal: 3 },
+    ]);
+    expect(calls.every((call) => (
+      call.costTracker === costTracker && call.deliveryId === "delivery-runtime"
+    ))).toBe(true);
+  });
+
+  test("threads review runtime options through the default LLM runner", async () => {
+    const costTracker = { trackAgentSdkCall: mock(() => Promise.resolve()) } as never;
+    const runLlm = mock(async (_input: AddonRuleLlmInput, runtime?: Record<string, unknown>) => ({
+      summary: JSON.stringify({
+        hasTracker: runtime?.costTracker === costTracker,
+        deliveryId: runtime?.deliveryId,
+      }),
+      findings: [],
+    }));
+
+    const result = await review({
+      costTracker,
+      deliveryId: "delivery-review",
+      runLlm,
+    });
+
+    expect(result.summary).toBe('{"hasTracker":true,"deliveryId":"delivery-review"}');
   });
 
   test("logs bounded chunk categories without model or source content", async () => {
