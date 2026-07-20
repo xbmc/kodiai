@@ -110,6 +110,33 @@ describe("generateStructuredWithFallback", () => {
     })).rejects.toMatchObject({ kind: "timeout", retryable: true });
   });
 
+  test("keeps timeout ownership when the caller signal aborts from the deadline handler", async () => {
+    const external = new AbortController();
+    const query = ((input: { options: { abortController: AbortController } }) =>
+      (async function* () {
+        await new Promise<void>((_resolve, reject) => {
+          input.options.abortController.signal.addEventListener(
+            "abort",
+            () => {
+              external.abort(new Error("caller observed deadline"));
+              reject(new Error("Claude Code process aborted by user"));
+            },
+            { once: true },
+          );
+        });
+        yield undefined;
+      })()) as never;
+
+    await expect(generateStructuredWithFallback({
+      ...baseOptions({
+        resolved: { ...baseOptions().resolved, fallbackModelId: "" },
+        timeoutMs: 5,
+        signal: external.signal,
+      }),
+      loadQuery: async () => query,
+    })).rejects.toMatchObject({ kind: "timeout", retryable: true });
+  });
+
   test("retries one validation failure on Sonnet through the same loader", async () => {
     const capturedModels: string[] = [];
     const trackAgentSdkCall = mock(() => Promise.resolve());

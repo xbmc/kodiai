@@ -123,6 +123,7 @@ async function runStructuredAgentAttempt<T>(
   let resultMessage: SDKResultMessage | undefined;
   let completionCategory: StructuredFailureKind | "success" = "transport";
   const onExternalAbort = () => {
+    if (deadline.controller.signal.aborted) return;
     externallyCancelled = true;
     deadline.controller.abort(options.signal?.reason);
   };
