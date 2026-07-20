@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { AddonRuleAddonContext } from "./addon-rule-context.ts";
 import {
   collectAddedRightSideEvidence,
+  MAX_ADDON_RULE_LLM_EVIDENCE_LINES,
+  MAX_ADDON_RULE_LLM_PROMPT_CHARS,
   packAddonRuleEvidence,
   projectAddonRuleEvidence,
   type AddonRuleEvidenceContext,
@@ -112,6 +114,38 @@ describe("projectAddonRuleEvidence", () => {
 });
 
 describe("packAddonRuleEvidence", () => {
+  test("splits before the 121st evidence line without duplicating or reordering lines", () => {
+    const addedLines = Array.from({ length: 121 }, (_, index) => ({
+      line: index + 1,
+      text: `line-${index + 1}`,
+    }));
+    const projected: AddonRuleEvidenceContext[] = [{
+      addonId: "a",
+      allChangedPaths: ["a/f.py", "a/deleted.py"],
+      files: [{
+        path: "a/deleted.py",
+        status: "removed",
+        additions: 0,
+        deletions: 1,
+        addedLines: [],
+      }, {
+        path: "a/f.py",
+        status: "modified",
+        additions: addedLines.length,
+        deletions: 0,
+        addedLines,
+      }],
+    }];
+
+    const packed = packAddonRuleEvidence(projected, renderPrompt, 100_000);
+
+    expect(MAX_ADDON_RULE_LLM_PROMPT_CHARS).toBe(22_000);
+    expect(MAX_ADDON_RULE_LLM_EVIDENCE_LINES).toBe(120);
+    expect(packed.chunks.map((chunk) => allLines(chunk).length)).toEqual([120, 1]);
+    expect(packed.chunks.flatMap(allLines)).toEqual(addedLines);
+    expect(packed.chunks[0]![0]!.files[0]!.addedLines).toEqual([]);
+  });
+
   test("splits one large file while bounding every complete rendered prompt", () => {
     const input: AddonRuleAddonContext[] = [{
       addonId: "a",

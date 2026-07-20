@@ -2,7 +2,10 @@ import { describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
 import { StructuredGenerationError } from "../llm/structured-generate.ts";
 import type { AddonRuleEvidenceContext } from "./addon-rule-evidence.ts";
-import { MAX_ADDON_RULE_LLM_PROMPT_CHARS } from "./addon-rule-evidence.ts";
+import {
+  MAX_ADDON_RULE_LLM_EVIDENCE_LINES,
+  MAX_ADDON_RULE_LLM_PROMPT_CHARS,
+} from "./addon-rule-evidence.ts";
 import type { AddonRuleLlmInput } from "./addon-rule-llm.ts";
 import {
   runAddonRuleReview,
@@ -150,6 +153,26 @@ describe("runDefaultAddonRuleLlm", () => {
     expect(result.rejectedOutput).toBeUndefined();
   });
 
+  test("bounds every 53,089-character chunk by prompt characters and evidence lines", async () => {
+    const { input } = largeSingleFileInput();
+    const chunks: Array<{ promptChars: number; evidenceLines: number }> = [];
+
+    await runDefaultAddonRuleLlm(input, logger, async ({ prompt, evidence, validate }) => {
+      chunks.push({
+        promptChars: prompt.length,
+        evidenceLines: evidence.flatMap((context) => context.files)
+          .reduce((count, file) => count + file.addedLines.length, 0),
+      });
+      return validate({ summary: "Reviewed.", findings: [] });
+    });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every(({ promptChars, evidenceLines }) => (
+      promptChars <= MAX_ADDON_RULE_LLM_PROMPT_CHARS
+      && evidenceLines <= MAX_ADDON_RULE_LLM_EVIDENCE_LINES
+    ))).toBe(true);
+  });
+
   test("all successful chunks remove model incompleteness", async () => {
     const result = await runDefaultAddonRuleLlm(largeSingleFileInput().input, logger, async ({
       validate,
@@ -181,7 +204,7 @@ describe("runDefaultAddonRuleLlm", () => {
     expect(result.rejectedOutput).toBe(true);
     expect([...callsByChunk.values()].every((calls) => calls === 1)).toBe(true);
     expect(result.summary).toBe(
-      "Prepared 1 changed addon on `matrix` across 1 scoped patch in 3 evidence chunks; completed 2 of 3 prepared chunks.",
+      "Prepared 1 changed addon on `matrix` across 1 scoped patch in 7 evidence chunks; completed 6 of 7 prepared chunks.",
     );
     expect(result.summary).not.toContain("Reviewed");
   });
@@ -215,7 +238,7 @@ describe("runDefaultAddonRuleLlm", () => {
         summary: "Reviewed.",
         findings: Array.from({ length: 20 }, (_, index) => ({
           ...finding,
-          rule: `rule-${index}`,
+          message: `A reviewer must confirm contextual execution concern ${index + 1}.`,
         })),
       });
     });
@@ -230,7 +253,7 @@ describe("runDefaultAddonRuleLlm", () => {
       addonId: "script.example",
       path: "script.example/generated.py",
       line: 1,
-      rule: "duplicate-rule",
+      rule: "usage-analytics",
       level: "WARN" as const,
       message: "A reviewer must confirm this added line follows the rule.",
     };
@@ -316,12 +339,10 @@ describe("runDefaultAddonRuleLlm", () => {
       },
     );
 
-    expect(calls).toHaveLength(3);
-    expect(calls.map(({ chunkOrdinal, chunkTotal }) => ({ chunkOrdinal, chunkTotal }))).toEqual([
-      { chunkOrdinal: 1, chunkTotal: 3 },
-      { chunkOrdinal: 2, chunkTotal: 3 },
-      { chunkOrdinal: 3, chunkTotal: 3 },
-    ]);
+    expect(calls).toHaveLength(7);
+    expect(calls.map(({ chunkOrdinal, chunkTotal }) => ({ chunkOrdinal, chunkTotal }))).toEqual(
+      Array.from({ length: 7 }, (_, index) => ({ chunkOrdinal: index + 1, chunkTotal: 7 })),
+    );
     expect(calls.every((call) => (
       call.costTracker === costTracker && call.deliveryId === "delivery-runtime"
     ))).toBe(true);
@@ -354,8 +375,9 @@ describe("runDefaultAddonRuleLlm", () => {
       warn: (record: unknown) => records.push(record),
     } as unknown as Logger;
     const secret = "source-and-provider-secret";
+    const { input, sourceLines } = largeSingleFileInput();
 
-    await runDefaultAddonRuleLlm(largeSingleFileInput().input, capturingLogger, async ({
+    await runDefaultAddonRuleLlm(input, capturingLogger, async ({
       chunkIndex,
       validate,
     }) => {
@@ -368,6 +390,7 @@ describe("runDefaultAddonRuleLlm", () => {
     });
 
     expect(JSON.stringify(records)).not.toContain(secret);
+    expect(JSON.stringify(records)).not.toContain(sourceLines[0]!);
     expect(records).toContainEqual(expect.objectContaining({
       errorKind: "provider",
       chunkIndex: 2,
@@ -376,7 +399,10 @@ describe("runDefaultAddonRuleLlm", () => {
     }));
     expect(records).toContainEqual(expect.objectContaining({
       chunkCount: expect.any(Number),
+      maxPromptChars: 22_000,
+      maxEvidenceLines: 120,
       promptChars: expect.any(Array),
+      evidenceLinesPerChunk: expect.any(Array),
       evidenceLineCount: 800,
       omittedOversizedLines: 0,
       omittedFiles: 0,

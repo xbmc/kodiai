@@ -16,7 +16,8 @@ export type AddonRuleEvidenceContext = {
   files: AddonRuleEvidenceFile[];
 };
 
-export const MAX_ADDON_RULE_LLM_PROMPT_CHARS = 28_000;
+export const MAX_ADDON_RULE_LLM_PROMPT_CHARS = 22_000;
+export const MAX_ADDON_RULE_LLM_EVIDENCE_LINES = 120;
 
 export type AddonRuleEvidencePack = {
   chunks: AddonRuleEvidenceContext[][];
@@ -72,6 +73,7 @@ export function packAddonRuleEvidence(
   contexts: readonly AddonRuleEvidenceContext[],
   renderPrompt: (contexts: readonly AddonRuleEvidenceContext[]) => string,
   maxPromptChars = MAX_ADDON_RULE_LLM_PROMPT_CHARS,
+  maxEvidenceLines = MAX_ADDON_RULE_LLM_EVIDENCE_LINES,
 ): AddonRuleEvidencePack {
   const chunks: AddonRuleEvidenceContext[][] = [];
   let current: AddonRuleEvidenceContext[] = [];
@@ -80,6 +82,7 @@ export function packAddonRuleEvidence(
 
   const fits = (candidate: readonly AddonRuleEvidenceContext[]) => (
     renderPrompt(candidate).length <= maxPromptChars
+    && countEvidenceLines(candidate) <= maxEvidenceLines
   );
   const flush = () => {
     if (current.length > 0) chunks.push(current);
@@ -121,6 +124,13 @@ export function packAddonRuleEvidence(
 
   flush();
   return { chunks, omittedFiles, omittedOversizedLines };
+}
+
+function countEvidenceLines(contexts: readonly AddonRuleEvidenceContext[]): number {
+  return contexts.flatMap((context) => context.files).reduce(
+    (count, file) => count + file.addedLines.length,
+    0,
+  );
 }
 
 function appendFileMetadata(

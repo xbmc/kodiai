@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { AddonRuleAddonContext } from "./addon-rule-context.ts";
 import { projectAddonRuleEvidence } from "./addon-rule-evidence.ts";
 import {
+  ADDON_RULE_MODEL_RULE_IDS,
   ADDON_RULE_REVIEW_SCHEMA,
   buildAddonRuleReviewPrompt,
   parseAddonRuleReviewOutput,
@@ -37,6 +38,55 @@ const lineContexts: AddonRuleAddonContext[] = [{
 }];
 
 describe("buildAddonRuleReviewPrompt", () => {
+  test("limits the schema and prompt to contextual model rules", () => {
+    const expectedRules = [
+      "filesystem-boundaries",
+      "download-consent",
+      "executable-execution",
+      "addon-modification",
+      "direct-database-access",
+      "skin-view-sort-mode",
+      "usage-analytics",
+      "obfuscation",
+    ] as const;
+    const ruleSchema = (((ADDON_RULE_REVIEW_SCHEMA.properties as Record<string, unknown>)
+      .findings as Record<string, unknown>).items as Record<string, unknown>)
+      .properties as Record<string, Record<string, unknown>>;
+
+    expect(ADDON_RULE_MODEL_RULE_IDS).toEqual(expectedRules);
+    expect(ruleSchema.rule?.enum).toEqual(expectedRules);
+
+    const input = {
+      repo: "xbmc/repo-plugins",
+      prNumber: 123,
+      baseBranch: "nexus",
+      rules: { kind: "wiki", url: "https://kodi.wiki/view/Add-on_rules", text: "Rules." },
+      contexts: lineContexts,
+    } satisfies AddonRuleLlmInput;
+    const prompt = buildAddonRuleReviewPrompt(input);
+
+    for (const rule of expectedRules) expect(prompt).toContain(rule);
+    for (const deterministicCategory of [
+      "target branches",
+      "development artifacts",
+      "binaries",
+      "license naming/content",
+      "translation paths",
+      "addon.xml metadata/dependencies",
+      "line endings",
+    ]) expect(prompt).toContain(deterministicCategory);
+    for (const excludedCategory of [
+      "print",
+      "xbmc.log",
+      "Python version/syntax/type hints",
+      "general compatibility/correctness/style/architecture",
+      "hard-coded non-UI/log/error strings",
+      "localization of Python library strings",
+      "test coverage",
+      "dependency-use claims requiring repository-wide evidence",
+    ]) expect(prompt).toContain(excludedCategory);
+  });
+
   test("uses a native schema and only added-line evidence", () => {
     expect(ADDON_RULE_REVIEW_SCHEMA).toMatchObject({
       type: "object",
@@ -53,7 +103,18 @@ describe("buildAddonRuleReviewPrompt", () => {
           maxItems: 20,
           items: {
             properties: {
-              rule: { pattern: "^(?!\\s)[\\s\\S]*\\S(?![\\s\\S])$" },
+              rule: {
+                enum: [
+                  "filesystem-boundaries",
+                  "download-consent",
+                  "executable-execution",
+                  "addon-modification",
+                  "direct-database-access",
+                  "skin-view-sort-mode",
+                  "usage-analytics",
+                  "obfuscation",
+                ],
+              },
               message: { pattern: "^(?!\\s)[\\s\\S]*\\S(?![\\s\\S])$" },
             },
           },
@@ -135,6 +196,23 @@ describe("validateAddonRuleReviewOutput", () => {
     });
   });
 
+  test("accepts every contextual rule and atomically rejects a generic rule", () => {
+    for (const rule of ADDON_RULE_MODEL_RULE_IDS) {
+      expect(validateAddonRuleReviewOutput({
+        ...validValue,
+        findings: [{ ...validValue.findings[0], rule }],
+      }, lineContexts).findings[0]?.rule).toBe(rule);
+    }
+
+    expect(() => validateAddonRuleReviewOutput({
+      ...validValue,
+      findings: [
+        validValue.findings[0],
+        { ...validValue.findings[0], rule: "python-style" },
+      ],
+    }, lineContexts)).toThrow("Structured addon review output failed domain validation");
+  });
+
   test("rejects an unknown path or a coordinate outside the added-line allowlist", () => {
     expect(() => validateAddonRuleReviewOutput({
       ...validValue,
@@ -173,7 +251,6 @@ describe("validateAddonRuleReviewOutput", () => {
       summary: "s".repeat(600),
       findings: [{
         ...validValue.findings[0],
-        rule: "r".repeat(80),
         message: "m".repeat(400),
       }],
     };
@@ -242,7 +319,7 @@ describe("parseAddonRuleReviewOutput", () => {
         addonId: "plugin.video.foo",
         path: "plugin.video.foo/default.py",
         line: 1,
-        rule: "skin-view-mode",
+        rule: "skin-view-sort-mode",
         level: "ERROR",
         message: "The changed line calls Container.SetViewMode, which add-ons may not force.",
       }],
@@ -254,7 +331,7 @@ describe("parseAddonRuleReviewOutput", () => {
         addonId: "plugin.video.foo",
         path: "plugin.video.foo/default.py",
         line: 1,
-        rule: "skin-view-mode",
+        rule: "skin-view-sort-mode",
         level: "ERROR",
         source: "llm",
         message: "The changed line calls Container.SetViewMode, which add-ons may not force.",
@@ -303,7 +380,7 @@ describe("parseAddonRuleReviewOutput", () => {
         addonId: "plugin.video.foo",
         path: "plugin.video.foo/default.py",
         line: 1,
-        rule: "skin-view-mode",
+        rule: "skin-view-sort-mode",
         level: "WARN",
         message: "Confirm the changed view-mode call is removed.",
       }],
@@ -317,7 +394,7 @@ describe("parseAddonRuleReviewOutput", () => {
       addonId: "plugin.video.foo",
       path: "plugin.video.foo/default.py",
       line: 1,
-      rule: "rule",
+      rule: "usage-analytics",
       level: "WARN",
       message: "Safe message.",
     };

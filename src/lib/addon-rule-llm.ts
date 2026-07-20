@@ -26,6 +26,19 @@ const MAX_RULE_CHARS = 80;
 const TRIMMED_NON_WHITESPACE_PATTERN = "^(?!\\s)[\\s\\S]*\\S(?![\\s\\S])$";
 const trimmedNonWhitespace = new RegExp(TRIMMED_NON_WHITESPACE_PATTERN);
 
+export const ADDON_RULE_MODEL_RULE_IDS = [
+  "filesystem-boundaries",
+  "download-consent",
+  "executable-execution",
+  "addon-modification",
+  "direct-database-access",
+  "skin-view-sort-mode",
+  "usage-analytics",
+  "obfuscation",
+] as const;
+
+const addonRuleModelRuleIds = new Set<string>(ADDON_RULE_MODEL_RULE_IDS);
+
 export const ADDON_RULE_REVIEW_SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
@@ -50,9 +63,7 @@ export const ADDON_RULE_REVIEW_SCHEMA: Record<string, unknown> = {
           line: { type: "integer", minimum: 1 },
           rule: {
             type: "string",
-            minLength: 1,
-            maxLength: MAX_RULE_CHARS,
-            pattern: TRIMMED_NON_WHITESPACE_PATTERN,
+            enum: ADDON_RULE_MODEL_RULE_IDS,
           },
           level: { type: "string", enum: ["ERROR", "WARN"] },
           message: {
@@ -82,9 +93,12 @@ export function buildAddonRuleReviewPrompt(
     "",
     "Exclusive review scope:",
     "- Review only the supplied added-line evidence and changed-path metadata.",
+    "- Model-only contextual rule IDs (use exactly one): filesystem-boundaries (runtime access outside add-on-owned storage); download-consent (downloads without prior user consent); executable-execution (downloaded or bundled executable launch); addon-modification (installing or modifying add-ons); direct-database-access (direct Kodi database access); skin-view-sort-mode (forcing skin view or sort modes); usage-analytics (usage analytics or telemetry transmission); obfuscation (obfuscated source behavior).",
+    "- Deterministic checks own target branches, development artifacts, binaries, license naming/content, translation paths, addon.xml metadata/dependencies, and line endings. Do not report those deterministic categories.",
+    "- Do not report logging API choice (print, xbmc.log), Python version/syntax/type hints, general compatibility/correctness/style/architecture, hard-coded non-UI/log/error strings, localization of Python library strings, test coverage, or dependency-use claims requiring repository-wide evidence.",
     "- Do not review Python or JavaScript correctness, syntax, logic, style, architecture, or maintainability.",
     "- Review content only for addon.xml, Python, and web-interface JavaScript added lines.",
-    "- Check only Kodi addon submission rules: target branch, development artifacts, obfuscation, binaries, licenses, translations, addon.xml metadata, filesystem boundaries, user consent for downloads, executable execution, addon installation or modification, direct database access, forced skin view/sort modes, and analytics.",
+    "- Check only the eight model-only contextual Kodi add-on submission rules defined above.",
     "- Ground every statement and finding in the supplied target branch, changed paths, or added-line evidence.",
     "- Every finding must identify an exact path and line from the supplied added-line evidence. Branch and file-level rules are handled deterministically.",
     "- Use only ERROR or WARN finding levels. Omit uncertain claims unless a WARN clearly states what a human must confirm.",
@@ -131,7 +145,8 @@ export function validateAddonRuleReviewOutput(
       const line = finding.line;
       const level = finding.level;
 
-      if ((level !== "ERROR" && level !== "WARN")
+      if (!addonRuleModelRuleIds.has(rule)
+        || (level !== "ERROR" && level !== "WARN")
         || typeof line !== "number"
         || !Number.isInteger(line)
         || line < 1

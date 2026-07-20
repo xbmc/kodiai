@@ -13,6 +13,8 @@ import {
 } from "./addon-rule-context.ts";
 import { runDeterministicAddonRuleChecks } from "./addon-rule-deterministic.ts";
 import {
+  MAX_ADDON_RULE_LLM_EVIDENCE_LINES,
+  MAX_ADDON_RULE_LLM_PROMPT_CHARS,
   packAddonRuleEvidence,
   projectAddonRuleEvidence,
   type AddonRuleEvidenceContext,
@@ -64,12 +66,21 @@ export async function runDefaultAddonRuleLlm(
   );
   const pack = packAddonRuleEvidence(projected, renderPrompt);
   const prompts = pack.chunks.map((evidence) => ({ evidence, prompt: renderPrompt(evidence) }));
+  const evidenceLinesPerChunk = prompts.map(({ evidence }) => (
+    evidence.flatMap((context) => context.files).reduce(
+      (count, file) => count + file.addedLines.length,
+      0,
+    )
+  ));
   const generateChunk = generateChunkForTests ?? createDefaultChunkGenerator(input, logger, runtime);
   logger.info(
     {
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
       chunkCount: prompts.length,
+      maxPromptChars: MAX_ADDON_RULE_LLM_PROMPT_CHARS,
+      maxEvidenceLines: MAX_ADDON_RULE_LLM_EVIDENCE_LINES,
       promptChars: prompts.map(({ prompt }) => prompt.length),
+      evidenceLinesPerChunk,
       evidenceLineCount: projected.flatMap((context) => context.files).reduce(
         (count, file) => count + file.addedLines.length,
         0,
