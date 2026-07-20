@@ -199,7 +199,7 @@ describe("runDefaultAddonRuleLlm", () => {
 
     expect(result.findings).toHaveLength(1);
     expect(result.summary).toBe(
-      "Reviewed 1 changed addon on `matrix` across 1 scoped patch in 7 evidence chunks. Found 1 contextual rule finding.",
+      "Reviewed 1 changed addon on `matrix` across 1 scoped patch in 7 evidence chunks. Found 1 model-backed contextual rule finding.",
     );
     expect(result.summary).not.toContain("No contextual violations found.");
   });
@@ -216,8 +216,22 @@ describe("runDefaultAddonRuleLlm", () => {
 
     expect(result.findings).toHaveLength(1);
     expect(result.summary).toBe(
-      "Reviewed 1 changed addon on `matrix` across 1 scoped patch in 1 evidence chunk. Found 1 contextual rule finding.",
+      "Reviewed 1 changed addon on `matrix` across 1 scoped patch in 1 evidence chunk. Found 1 model-backed contextual rule finding.",
     );
+  });
+
+  test("replaces a clean single-chunk model claim with a deterministic zero count", async () => {
+    const { input } = largeSingleFileInput();
+    input.contexts[0]!.files[0]!.patch = "@@ -0,0 +1 @@\n+track_usage()";
+    const result = await runDefaultAddonRuleLlm(input, logger, async ({ validate }) => (
+      validate({ summary: "Analytics violations found.", findings: [] })
+    ));
+
+    expect(result.findings).toEqual([]);
+    expect(result.summary).toBe(
+      "Reviewed 1 changed addon on `matrix` across 1 scoped patch in 1 evidence chunk. Found no model-backed contextual rule findings.",
+    );
+    expect(result.summary).not.toContain("Analytics violations found.");
   });
 
   test("bounds deterministic complete and incomplete aggregate summaries to 600 characters", async () => {

@@ -191,9 +191,7 @@ function aggregateAddonRuleChunkResults(
   const boundedFindings = findings.slice(0, MAX_AGGREGATED_ADDON_RULE_FINDINGS);
   const result: AddonRuleLlmResult = { findings: boundedFindings };
   const coverageComplete = !rejectedSummary && !rejectedOutput;
-  if (chunkCount === 1 && coverageComplete && boundedFindings.length === 0) {
-    result.summary = results[0]?.summary;
-  } else if (chunkCount > 0 || !coverageComplete) {
+  if (chunkCount > 0 || !coverageComplete) {
     result.summary = buildChunkedSummary(
       input,
       chunkCount,
@@ -225,10 +223,16 @@ function buildChunkedSummary(
     ? `Reviewed ${addonCount} changed ${addonCount === 1 ? "addon" : "addons"} on \`${input.baseBranch}\` across ${patchCount} scoped ${patchCount === 1 ? "patch" : "patches"} in ${chunkCount} evidence ${chunkNoun}.`
     : `Prepared ${addonCount} changed ${addonCount === 1 ? "addon" : "addons"} on \`${input.baseBranch}\` across ${patchCount} scoped ${patchCount === 1 ? "patch" : "patches"} in ${chunkCount} evidence ${chunkNoun}; completed ${completedChunkCount} of ${chunkCount} prepared ${chunkNoun}.`;
   if (!coverageComplete) return boundSummary(base);
+  if (findingCount === 0) {
+    return appendBoundedSummarySuffix(
+      base,
+      "Found no model-backed contextual rule findings.",
+    );
+  }
   const findingNoun = findingCount === 1 ? "finding" : "findings";
   return appendBoundedSummarySuffix(
     base,
-    `Found ${findingCount} contextual rule ${findingNoun}.`,
+    `Found ${findingCount} model-backed contextual rule ${findingNoun}.`,
   );
 }
 
