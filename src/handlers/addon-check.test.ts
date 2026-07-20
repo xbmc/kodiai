@@ -1162,6 +1162,7 @@ describe("createAddonCheckHandler", () => {
     expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
     const body = (octokit._createCommentMock as any).mock.calls[0][0].body as string;
     expect(body).toContain("### Summary");
+    expect(body).toContain("script.module.pyrollbar updates vendored Python code on nexus.");
     expect(body).toContain("### Findings");
     expect(body).toContain("### Verdict");
     expect(body).toContain("script.module.pyrollbar/lib/rollbar/kodi/__init__.py:1");
