@@ -96,7 +96,7 @@ export async function runDefaultAddonRuleLlm(
     ({ evidence, prompt }, chunkIndex) => reviewAddonRuleChunk({
       prompt,
       evidence,
-      validate: (value) => validateAddonRuleReviewOutput(value, input.contexts),
+      validate: (value) => validateAddonRuleReviewOutput(value, input.contexts, evidence),
       generateChunk,
       logger,
       chunkIndex,
@@ -149,14 +149,14 @@ function createDefaultChunkGenerator(
   const taskRouter = createTaskRouter({ models: {} });
   const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
   const generateStructured = runtime.generateStructured ?? generateStructuredWithFallback;
-  return async ({ prompt, chunkIndex, chunkCount }) => {
+  return async ({ prompt, validate, chunkIndex, chunkCount }) => {
     const result = await generateStructured({
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
       resolved,
       prompt,
       system: "You classify supplied Kodi add-on diff evidence only for repository submission-rule compliance. Do not perform general code review.",
       schema: ADDON_RULE_REVIEW_SCHEMA,
-      validate: (output) => validateAddonRuleReviewOutput(output, input.contexts),
+      validate,
       logger,
       repo: input.repo,
       costTracker: runtime.costTracker,

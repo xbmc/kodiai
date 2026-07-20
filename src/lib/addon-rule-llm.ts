@@ -117,6 +117,9 @@ export function buildAddonRuleReviewPrompt(
 export function validateAddonRuleReviewOutput(
   value: unknown,
   originalContexts: readonly AddonRuleAddonContext[],
+  allowedEvidenceContexts: readonly AddonRuleEvidenceContext[] = projectAddonRuleEvidence(
+    originalContexts,
+  ),
 ): AddonRuleLlmResult {
   try {
     const record = requireExactRecord(value, ["summary", "findings"]);
@@ -128,7 +131,7 @@ export function validateAddonRuleReviewOutput(
     const pathsByAddon = new Map(
       originalContexts.map((context) => [context.addonId, new Set(context.allChangedPaths)] as const),
     );
-    const addedLinesByPath = collectAddedLinesByPath(originalContexts);
+    const addedLinesByPath = collectAddedLinesByPath(allowedEvidenceContexts);
     const findings: AddonRuleFinding[] = record.findings.map((item) => {
       const finding = requireExactRecord(item, [
         "addonId",
@@ -176,10 +179,10 @@ export function parseAddonRuleReviewOutput(
 }
 
 function collectAddedLinesByPath(
-  contexts: readonly AddonRuleAddonContext[],
+  contexts: readonly AddonRuleEvidenceContext[],
 ): Map<string, Set<number>> {
   const result = new Map<string, Set<number>>();
-  for (const context of projectAddonRuleEvidence(contexts)) {
+  for (const context of contexts) {
     for (const file of context.files) {
       result.set(
         addonPathKey(context.addonId, file.path),
