@@ -96,6 +96,33 @@ describe("collectAddonRuleContext", () => {
     });
   });
 
+  test("retains the complete 53,089-character patch used by PR 2861", () => {
+    const patch = "x".repeat(53_089);
+    const contexts = collectAddonRuleContext({
+      files: [{
+        filename: "script.example/default.py",
+        status: "modified",
+        patch,
+      }],
+    });
+
+    expect(contexts[0]?.files[0]?.patch).toBe(patch);
+    expect(contexts[0]?.files[0]?.omittedReason).toBeUndefined();
+  });
+
+  test("bounds default patch context at 80,000 characters", () => {
+    const contexts = collectAddonRuleContext({
+      files: [{
+        filename: "script.example/default.py",
+        status: "modified",
+        patch: "x".repeat(80_001),
+      }],
+    });
+
+    expect(contexts[0]?.files[0]?.patch).toHaveLength(80_000);
+    expect(contexts[0]?.files[0]?.omittedReason).toBe("truncated");
+  });
+
   test("normalizes paths, sorts addons, and ignores root-level files", () => {
     const contexts = collectAddonRuleContext({
       files: [

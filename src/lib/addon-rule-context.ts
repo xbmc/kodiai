@@ -15,11 +15,13 @@ export type AddonRuleAddonContext = {
   allChangedPaths: string[];
 };
 
+export const MAX_ADDON_RULE_PATCH_CHARS = 80_000;
+
 export function collectAddonRuleContext(params: {
   files: readonly PullRequestFileMetadata[];
   maxPatchChars?: number;
 }): AddonRuleAddonContext[] {
-  const maxPatchChars = params.maxPatchChars ?? 40_000;
+  const maxPatchChars = params.maxPatchChars ?? MAX_ADDON_RULE_PATCH_CHARS;
   const byAddon = new Map<string, PullRequestFileMetadata[]>();
 
   for (const file of params.files) {

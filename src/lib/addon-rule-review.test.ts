@@ -91,6 +91,18 @@ describe("runAddonRuleReview", () => {
     expect(result.incompleteReasons).toContain("rules-fallback");
   });
 
+  test("does not mark a 53,089-character supplied patch truncated", async () => {
+    const result = await review({
+      files: [{
+        filename: "script.example/default.py",
+        status: "modified",
+        patch: "x".repeat(53_089),
+      }],
+    });
+
+    expect(result.incompleteReasons).not.toContain("patch-truncated");
+  });
+
   test("uses a deterministic summary without calling the model on synchronize", async () => {
     const runLlm = mock(async () => ({ summary: "not used", findings: [] }));
     const result = await review({ runLlmReview: false, runLlm });
