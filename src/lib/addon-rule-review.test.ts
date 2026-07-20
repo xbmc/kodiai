@@ -220,6 +220,34 @@ describe("runDefaultAddonRuleLlm", () => {
     expect(result.rejectedOutput).toBe(true);
   });
 
+  test("deduplicates cross-chunk findings before applying the aggregate cap", async () => {
+    const { input } = largeSingleFileInput();
+    const duplicateFinding = {
+      addonId: "script.example",
+      path: "script.example/generated.py",
+      line: 1,
+      rule: "duplicate-rule",
+      level: "WARN" as const,
+      message: "A reviewer must confirm this added line follows the rule.",
+    };
+    const result = await runDefaultAddonRuleLlm(input, logger, async ({
+      chunkIndex,
+      chunkCount,
+      validate,
+      evidence,
+    }) => validate({
+      summary: "Reviewed.",
+      findings: chunkIndex < chunkCount - 1
+        ? Array.from({ length: 20 }, () => duplicateFinding)
+        : findingFor(evidence),
+    }));
+
+    expect(result.findings).toHaveLength(2);
+    expect(result.findings[0]).toEqual(expect.objectContaining({ line: 1 }));
+    expect(result.findings.some(({ line }) => line !== 1)).toBe(true);
+    expect(result.rejectedOutput).toBeUndefined();
+  });
+
   test("marks omitted oversized lines and files incomplete", async () => {
     const baseInput = largeSingleFileInput().input;
     const oversizedLine = `@@ -0,0 +1 @@\n+${"x".repeat(MAX_ADDON_RULE_LLM_PROMPT_CHARS)}`;

@@ -154,7 +154,7 @@ function aggregateAddonRuleChunkResults(
   results: readonly AddonRuleLlmResult[],
   omissions: { omittedFiles: number; omittedOversizedLines: number },
 ): AddonRuleLlmResult {
-  const findings = results.flatMap((result) => result.findings);
+  const findings = dedupeFindings(results.flatMap((result) => result.findings));
   const rejectedSummary = results.some((result) => result.rejectedSummary);
   let rejectedOutput = results.some((result) => result.rejectedOutput);
   if (findings.length > MAX_AGGREGATED_ADDON_RULE_FINDINGS
