@@ -20,25 +20,33 @@ export const MAX_ADDON_RULE_LLM_PROMPT_CHARS = 28_000;
 
 export type AddonRuleEvidencePack = {
   chunks: AddonRuleEvidenceContext[][];
+  omittedFiles: number;
   omittedOversizedLines: number;
 };
 
 export function collectAddedRightSideEvidence(patch: string): AddonRuleAddedLine[] {
   const result: AddonRuleAddedLine[] = [];
   let rightLine: number | undefined;
+  let rightLinesRemaining = 0;
 
   for (const patchLine of patch.split("\n")) {
-    const hunk = patchLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    const hunk = patchLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
     if (hunk) {
       rightLine = Number.parseInt(hunk[1]!, 10);
+      rightLinesRemaining = hunk[2] == null ? 1 : Number.parseInt(hunk[2], 10);
       continue;
     }
-    if (rightLine === undefined || patchLine === "\\ No newline at end of file") continue;
+    if (rightLine === undefined
+      || rightLinesRemaining === 0
+      || patchLine === "\\ No newline at end of file") continue;
     if (patchLine.startsWith("-")) continue;
     if (patchLine.startsWith("+")) {
       result.push({ line: rightLine, text: patchLine.slice(1) });
     }
-    if (patchLine.startsWith("+") || patchLine.startsWith(" ")) rightLine += 1;
+    if (patchLine.startsWith("+") || patchLine.startsWith(" ")) {
+      rightLine += 1;
+      rightLinesRemaining -= 1;
+    }
   }
 
   return result;
@@ -67,6 +75,7 @@ export function packAddonRuleEvidence(
 ): AddonRuleEvidencePack {
   const chunks: AddonRuleEvidenceContext[][] = [];
   let current: AddonRuleEvidenceContext[] = [];
+  let omittedFiles = 0;
   let omittedOversizedLines = 0;
 
   const fits = (candidate: readonly AddonRuleEvidenceContext[]) => (
@@ -85,7 +94,11 @@ export function packAddonRuleEvidence(
       } else {
         flush();
         const metadataOnly = singleFileChunk(context, file);
-        if (!fits(metadataOnly)) continue;
+        if (!fits(metadataOnly)) {
+          omittedFiles += 1;
+          omittedOversizedLines += file.addedLines.length;
+          continue;
+        }
         current = metadataOnly;
       }
 
@@ -107,7 +120,7 @@ export function packAddonRuleEvidence(
   }
 
   flush();
-  return { chunks, omittedOversizedLines };
+  return { chunks, omittedFiles, omittedOversizedLines };
 }
 
 function appendFileMetadata(

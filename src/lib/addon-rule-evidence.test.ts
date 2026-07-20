@@ -48,6 +48,30 @@ describe("collectAddedRightSideEvidence", () => {
       { line: 50, text: "replacement()" },
     ]);
   });
+
+  test("stops collecting after the hunk's default right-side count of one", () => {
+    const patch = [
+      "@@ -0,0 +7 @@",
+      "+start",
+      "--- a/next.py",
+      "+++ b/next.py",
+    ].join("\n");
+
+    expect(collectAddedRightSideEvidence(patch)).toEqual([
+      { line: 7, text: "start" },
+    ]);
+  });
+
+  test("collects no lines from a zero-count right-side hunk", () => {
+    const patch = [
+      "@@ -1 +7,0 @@",
+      "-removed",
+      "--- a/next.py",
+      "+++ b/next.py",
+    ].join("\n");
+
+    expect(collectAddedRightSideEvidence(patch)).toEqual([]);
+  });
 });
 
 describe("projectAddonRuleEvidence", () => {
@@ -164,6 +188,50 @@ describe("packAddonRuleEvidence", () => {
 
     expect(packAddonRuleEvidence(projected, renderPrompt, 180)).toEqual({
       chunks: [projected],
+      omittedFiles: 0,
+      omittedOversizedLines: 0,
+    });
+  });
+
+  test("records an omitted metadata-overflow file and all of its added lines", () => {
+    const projected: AddonRuleEvidenceContext[] = [{
+      addonId: "a",
+      allChangedPaths: ["a/oversized.py"],
+      files: [{
+        path: "a/oversized.py",
+        status: "modified",
+        additions: 2,
+        deletions: 0,
+        addedLines: [
+          { line: 1, text: "first" },
+          { line: 2, text: "second" },
+        ],
+      }],
+    }];
+
+    expect(packAddonRuleEvidence(projected, renderPrompt, 110)).toEqual({
+      chunks: [],
+      omittedFiles: 1,
+      omittedOversizedLines: 2,
+    });
+  });
+
+  test("records an omitted deletion-only metadata-overflow file", () => {
+    const projected: AddonRuleEvidenceContext[] = [{
+      addonId: "a",
+      allChangedPaths: ["a/deleted.py"],
+      files: [{
+        path: "a/deleted.py",
+        status: "modified",
+        additions: 0,
+        deletions: 3,
+        addedLines: [],
+      }],
+    }];
+
+    expect(packAddonRuleEvidence(projected, renderPrompt, 110)).toEqual({
+      chunks: [],
+      omittedFiles: 1,
       omittedOversizedLines: 0,
     });
   });
