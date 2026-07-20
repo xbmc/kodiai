@@ -43,7 +43,7 @@ export interface TaskRouter {
 }
 
 const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
-const DEFAULT_HAIKU_MODEL = "claude-haiku-4-5-20250929";
+const DEFAULT_HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
 /**
  * Creates a task router that resolves task types to model configurations.
