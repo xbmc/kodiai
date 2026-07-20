@@ -186,6 +186,59 @@ describe("runDefaultAddonRuleLlm", () => {
     expect(result.findings.every((finding) => finding.line !== undefined)).toBe(true);
   });
 
+  test("summarizes final findings without retaining an earlier clean-chunk claim", async () => {
+    const result = await runDefaultAddonRuleLlm(largeSingleFileInput().input, logger, async ({
+      chunkIndex,
+      chunkCount,
+      validate,
+      evidence,
+    }) => validate({
+      summary: chunkIndex === 0 ? "No contextual violations found." : "Reviewed this chunk.",
+      findings: chunkIndex === chunkCount - 1 ? findingFor(evidence) : [],
+    }));
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.summary).toBe(
+      "Reviewed 1 changed addon on `matrix` across 1 scoped patch in 7 evidence chunks. Found 1 contextual rule finding.",
+    );
+    expect(result.summary).not.toContain("No contextual violations found.");
+  });
+
+  test("replaces a contradictory single-chunk summary when findings exist", async () => {
+    const { input } = largeSingleFileInput();
+    input.contexts[0]!.files[0]!.patch = "@@ -0,0 +1 @@\n+track_usage()";
+    const result = await runDefaultAddonRuleLlm(input, logger, async ({ validate, evidence }) => (
+      validate({
+        summary: "No contextual violations found.",
+        findings: findingFor(evidence),
+      })
+    ));
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.summary).toBe(
+      "Reviewed 1 changed addon on `matrix` across 1 scoped patch in 1 evidence chunk. Found 1 contextual rule finding.",
+    );
+  });
+
+  test("bounds deterministic complete and incomplete aggregate summaries to 600 characters", async () => {
+    const { input } = largeSingleFileInput();
+    input.baseBranch = "branch-".repeat(100);
+    const complete = await runDefaultAddonRuleLlm(input, logger, async ({
+      validate,
+      evidence,
+    }) => validate({ summary: "Reviewed.", findings: findingFor(evidence) }));
+    const incomplete = await runDefaultAddonRuleLlm(input, logger, async ({
+      chunkIndex,
+      validate,
+    }) => {
+      if (chunkIndex === 0) throw new Error("failed chunk");
+      return validate({ summary: "Reviewed.", findings: [] });
+    });
+
+    expect(complete.summary?.length).toBeLessThanOrEqual(600);
+    expect(incomplete.summary?.length).toBeLessThanOrEqual(600);
+  });
+
   test("one exhausted structured chunk retains successful findings and marks incomplete", async () => {
     const callsByChunk = new Map<number, number>();
     const result = await runDefaultAddonRuleLlm(largeSingleFileInput().input, logger, async ({

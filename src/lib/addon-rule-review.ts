@@ -188,14 +188,19 @@ function aggregateAddonRuleChunkResults(
     || omissions.omittedFiles > 0
     || omissions.omittedOversizedLines > 0) rejectedOutput = true;
 
-  const result: AddonRuleLlmResult = {
-    findings: findings.slice(0, MAX_AGGREGATED_ADDON_RULE_FINDINGS),
-  };
+  const boundedFindings = findings.slice(0, MAX_AGGREGATED_ADDON_RULE_FINDINGS);
+  const result: AddonRuleLlmResult = { findings: boundedFindings };
   const coverageComplete = !rejectedSummary && !rejectedOutput;
-  if (chunkCount === 1 && coverageComplete) {
+  if (chunkCount === 1 && coverageComplete && boundedFindings.length === 0) {
     result.summary = results[0]?.summary;
   } else if (chunkCount > 0 || !coverageComplete) {
-    result.summary = buildChunkedSummary(input, chunkCount, results, coverageComplete);
+    result.summary = buildChunkedSummary(
+      input,
+      chunkCount,
+      results,
+      coverageComplete,
+      boundedFindings.length,
+    );
   }
   if (rejectedSummary) result.rejectedSummary = true;
   if (rejectedOutput) result.rejectedOutput = true;
@@ -207,6 +212,7 @@ function buildChunkedSummary(
   chunkCount: number,
   results: readonly AddonRuleLlmResult[],
   coverageComplete: boolean,
+  findingCount: number,
 ): string {
   const addonCount = input.contexts.length;
   const patchCount = input.contexts.reduce(
@@ -218,15 +224,22 @@ function buildChunkedSummary(
   const base = coverageComplete
     ? `Reviewed ${addonCount} changed ${addonCount === 1 ? "addon" : "addons"} on \`${input.baseBranch}\` across ${patchCount} scoped ${patchCount === 1 ? "patch" : "patches"} in ${chunkCount} evidence ${chunkNoun}.`
     : `Prepared ${addonCount} changed ${addonCount === 1 ? "addon" : "addons"} on \`${input.baseBranch}\` across ${patchCount} scoped ${patchCount === 1 ? "patch" : "patches"} in ${chunkCount} evidence ${chunkNoun}; completed ${completedChunkCount} of ${chunkCount} prepared ${chunkNoun}.`;
-  const summaries = coverageComplete
-    ? [...new Set(results.flatMap((result) => result.summary ? [result.summary] : []))]
-    : [];
-  let summary = base;
-  for (const candidate of summaries) {
-    if (summary.length + candidate.length + 1 > 600) break;
-    summary += ` ${candidate}`;
-  }
-  return summary;
+  if (!coverageComplete) return boundSummary(base);
+  const findingNoun = findingCount === 1 ? "finding" : "findings";
+  return appendBoundedSummarySuffix(
+    base,
+    `Found ${findingCount} contextual rule ${findingNoun}.`,
+  );
+}
+
+function boundSummary(summary: string): string {
+  return summary.length <= 600 ? summary : `${summary.slice(0, 597)}...`;
+}
+
+function appendBoundedSummarySuffix(base: string, suffix: string): string {
+  const maxBaseLength = 600 - suffix.length - 1;
+  if (base.length <= maxBaseLength) return `${base} ${suffix}`;
+  return `${base.slice(0, maxBaseLength - 3)}... ${suffix}`;
 }
 
 export async function runAddonRuleReview(params: {
