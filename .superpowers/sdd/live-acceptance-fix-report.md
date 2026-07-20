@@ -202,6 +202,43 @@ Result: `41 pass, 0 fail, 188 expect() calls`.
 
 Scoped ESLint exited 0. The temporary Bun build passed with 832 modules and a 5.85 MB bundle. `bunx tsc --noEmit` continued to report only the unrelated `src/jobs/aca-launcher.test.ts(344,70)` TS2493 baseline. `git diff --check` passed. No deployment was performed.
 
+## Re-review Fix: Source-Scoped Complete Summaries
+
+Re-review identified two remaining ambiguities: the deterministic count described only LLM findings but could be read as the total public Findings count after deterministic/checker merging, and a clean single chunk could still publish arbitrary model summary prose.
+
+Fix commit: `b690f7f9c569a68022f281bd2e5b54e57533869a` (`fix: scope addon model summary counts`).
+
+Every complete default model review now derives its Summary deterministically from coverage and the final bounded LLM finding count, for both single and multiple chunks. Positive counts explicitly say `model-backed contextual rule finding(s)`. Zero uses `Found no model-backed contextual rule findings.` Incomplete prepared/completed summaries and the 600-character bound are unchanged. Public Findings/Verdict formatting and later deterministic/checker merging are unchanged.
+
+### Re-review RED
+
+```text
+bun test src/lib/addon-rule-review.test.ts --test-name-pattern "summarizes final findings|contradictory single-chunk|clean single-chunk model claim"
+```
+
+Result before the fix: `0 pass, 3 fail, 6 expect() calls`.
+
+- Positive single- and multi-chunk counts said only `contextual rule finding`, without model-source scoping.
+- A clean single chunk returned `Analytics violations found.` unchanged despite having zero findings.
+
+### Re-review GREEN and regressions
+
+The same targeted command passed with `3 pass, 0 fail, 8 expect() calls`.
+
+```text
+bun test src/lib/addon-rule-evidence.test.ts src/lib/addon-rule-llm.test.ts src/lib/addon-rule-review.test.ts src/llm/structured-generate.test.ts
+```
+
+Result: `60 pass, 0 fail, 313 expect() calls`.
+
+```text
+bun test src/handlers/addon-check.test.ts src/lib/addon-check-formatter.test.ts
+```
+
+Result: `41 pass, 0 fail, 188 expect() calls`.
+
+Scoped ESLint exited 0. The temporary Bun build passed with 832 modules and a 5.85 MB bundle. `bunx tsc --noEmit` continued to report only the unrelated `src/jobs/aca-launcher.test.ts(344,70)` TS2493 baseline. `git diff --check` passed. No deployment was performed.
+
 ## Touched Files
 
 - `src/lib/addon-rule-evidence.ts`
