@@ -157,6 +157,51 @@ Result: exit 0, no diagnostics.
 
 `bunx tsc --noEmit` continued to report only the unrelated `src/jobs/aca-launcher.test.ts(344,70)` TS2493 baseline. A fresh temporary-directory Bun build passed with 832 modules and a 5.85 MB bundle. `git diff --check` passed. No deployment was performed.
 
+## Live Response Fix: Truthful Aggregate Summary
+
+Live response `5018969400` exposed a contradiction: an early clean chunk's prose was concatenated into the aggregate Summary even though later chunks produced analytics findings. The public Findings/Verdict format was not changed.
+
+Fix commit: `095c167690ebed2f9062deedb72ab85af5dc2d75` (`fix: derive addon summary from final findings`).
+
+Complete multi-chunk summaries are now deterministic and derived from coverage plus the final deduplicated/bounded finding count; arbitrary chunk summaries are not concatenated. A finding-bearing single chunk uses the same deterministic sentence so its model prose cannot contradict its findings. A genuinely clean single chunk retains its validated model summary. Incomplete summaries retain their existing prepared/completed semantics. Deterministic aggregate summaries are bounded to 600 characters while preserving the finding-count suffix for complete reviews.
+
+### Summary-fix RED
+
+```text
+bun test src/lib/addon-rule-review.test.ts --test-name-pattern "summarizes final findings|contradictory single-chunk"
+```
+
+Result before the fix: `0 pass, 2 fail, 4 expect() calls`.
+
+- The multi-chunk Summary incorrectly contained `No contextual violations found.` before a later finding.
+- The single-chunk Summary returned the same clean claim while retaining one finding.
+
+A second RED case covered the hard 600-character contract for complete and incomplete aggregate summaries:
+
+```text
+bun test src/lib/addon-rule-review.test.ts --test-name-pattern "bounds deterministic complete and incomplete"
+```
+
+Result before the incomplete-summary bound: `0 pass, 1 fail`; the incomplete aggregate was 808 characters.
+
+### Summary-fix GREEN and regressions
+
+The contradiction command passed with `2 pass, 0 fail, 5 expect() calls`; the length-bound command passed with `1 pass, 0 fail, 2 expect() calls`.
+
+```text
+bun test src/lib/addon-rule-evidence.test.ts src/lib/addon-rule-llm.test.ts src/lib/addon-rule-review.test.ts src/llm/structured-generate.test.ts
+```
+
+Result: `59 pass, 0 fail, 310 expect() calls`.
+
+```text
+bun test src/handlers/addon-check.test.ts src/lib/addon-check-formatter.test.ts
+```
+
+Result: `41 pass, 0 fail, 188 expect() calls`.
+
+Scoped ESLint exited 0. The temporary Bun build passed with 832 modules and a 5.85 MB bundle. `bunx tsc --noEmit` continued to report only the unrelated `src/jobs/aca-launcher.test.ts(344,70)` TS2493 baseline. `git diff --check` passed. No deployment was performed.
+
 ## Touched Files
 
 - `src/lib/addon-rule-evidence.ts`
