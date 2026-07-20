@@ -1,7 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
+import { StructuredGenerationError } from "../llm/structured-generate.ts";
+import type { AddonRuleEvidenceContext } from "./addon-rule-evidence.ts";
+import { MAX_ADDON_RULE_LLM_PROMPT_CHARS } from "./addon-rule-evidence.ts";
+import type { AddonRuleLlmInput } from "./addon-rule-llm.ts";
 import {
-  MAX_ADDON_RULE_LLM_CHUNK_PATCH_CHARS,
   runAddonRuleReview,
   runDefaultAddonRuleLlm,
 } from "./addon-rule-review.ts";
@@ -118,112 +121,212 @@ describe("runAddonRuleReview", () => {
 });
 
 describe("runDefaultAddonRuleLlm", () => {
-  test("reviews large complete evidence in bounded chunks and aggregates the result", async () => {
-    const chunkInputs: Array<Parameters<typeof runDefaultAddonRuleLlm>[0]> = [];
-    const paths = ["one.py", "two.py", "three.py"].map((name) => `script.example/${name}`);
-    const result = await runDefaultAddonRuleLlm({
-      repo: "xbmc/repo-scripts",
-      prNumber: 42,
-      baseBranch: "matrix",
-      rules,
-      contexts: [{
-        addonId: "script.example",
-        allChangedPaths: paths,
-        files: paths.map((path, index) => ({
-          path,
-          status: "modified",
-          patch: `@@ -1 +1 @@\n-old_${index}()\n+${"x".repeat(39_980)}()`,
-        })),
-      }],
-    }, logger, async (chunkInput) => {
-      chunkInputs.push(chunkInput);
-      return JSON.stringify({
-        summary: `Reviewed evidence chunk ${chunkInputs.length}.`,
-        findings: [],
-      });
+  test("splits a 53,089-character new file into complete bounded prompts", async () => {
+    const { input, sourceLines } = largeSingleFileInput();
+    const promptLengths: number[] = [];
+    const reviewedLines: string[] = [];
+    const returnedLines: number[] = [];
+
+    const result = await runDefaultAddonRuleLlm(input, logger, async ({
+      prompt,
+      evidence,
+      validate,
+    }) => {
+      promptLengths.push(prompt.length);
+      reviewedLines.push(...evidence.flatMap((context) => (
+        context.files.flatMap((file) => file.addedLines.map(({ text }) => text))
+      )));
+      const finding = findingFor(evidence);
+      returnedLines.push(...finding.map(({ line }) => line));
+      return validate({ summary: "Reviewed this evidence chunk.", findings: finding });
     });
 
-    expect(chunkInputs).toHaveLength(3);
-    for (const input of chunkInputs) {
-      const patchChars = input.contexts
-        .flatMap((context) => context.files)
-        .reduce((total, file) => total + (file.patch?.length ?? 0), 0);
-      expect(patchChars).toBeLessThanOrEqual(MAX_ADDON_RULE_LLM_CHUNK_PATCH_CHARS);
-    }
-    expect(result.summary).toContain("3 evidence chunks");
-    expect(result.findings).toEqual([]);
-    expect(result.rejectedSummary).toBeUndefined();
+    expect(input.contexts[0]!.files[0]!.patch).toHaveLength(53_089);
+    expect(promptLengths.length).toBeGreaterThan(1);
+    expect(promptLengths.every((length) => length <= MAX_ADDON_RULE_LLM_PROMPT_CHARS)).toBe(true);
+    expect(reviewedLines).toEqual(sourceLines);
+    expect(new Set(reviewedLines).size).toBe(sourceLines.length);
+    expect(result.findings.map(({ line }) => line)).toEqual(returnedLines);
     expect(result.rejectedOutput).toBeUndefined();
   });
 
-  test("retains successful chunk findings while marking a failed chunk incomplete", async () => {
-    const attemptsByPath = new Map<string, number>();
-    const result = await runDefaultAddonRuleLlm({
-      repo: "xbmc/repo-scripts",
-      prNumber: 42,
-      baseBranch: "matrix",
-      rules,
-      contexts: [{
-        addonId: "script.example",
-        allChangedPaths: ["script.example/one.py", "script.example/two.py"],
-        files: ["one.py", "two.py"].map((name, index) => ({
-          path: `script.example/${name}`,
-          status: "modified",
-          patch: `@@ -1 +1 @@\n-old_${index}()\n+${"x".repeat(39_980)}()`,
+  test("all successful chunks remove model incompleteness", async () => {
+    const result = await runDefaultAddonRuleLlm(largeSingleFileInput().input, logger, async ({
+      validate,
+      evidence,
+    }) => validate({
+      summary: "Reviewed this evidence chunk.",
+      findings: findingFor(evidence),
+    }));
+
+    expect(result.rejectedOutput).toBeUndefined();
+    expect(result.findings.every((finding) => finding.line !== undefined)).toBe(true);
+  });
+
+  test("one exhausted structured chunk retains successful findings and marks incomplete", async () => {
+    const callsByChunk = new Map<number, number>();
+    const result = await runDefaultAddonRuleLlm(largeSingleFileInput().input, logger, async ({
+      chunkIndex,
+      validate,
+      evidence,
+    }) => {
+      callsByChunk.set(chunkIndex, (callsByChunk.get(chunkIndex) ?? 0) + 1);
+      if (chunkIndex === 1) {
+        throw new StructuredGenerationError("timeout", "deadline", true);
+      }
+      return validate({ summary: "Reviewed.", findings: findingFor(evidence) });
+    });
+
+    expect(result.findings.length).toBeGreaterThan(0);
+    expect(result.rejectedOutput).toBe(true);
+    expect([...callsByChunk.values()].every((calls) => calls === 1)).toBe(true);
+  });
+
+  test("marks a final domain-validation rejection incomplete", async () => {
+    const result = await runDefaultAddonRuleLlm(largeSingleFileInput().input, logger, async ({
+      chunkIndex,
+      validate,
+      evidence,
+    }) => {
+      if (chunkIndex === 1) {
+        return validate({
+          summary: "Reviewed.",
+          findings: [{ ...findingFor(evidence)[0], line: 999_999 }],
+        });
+      }
+      return validate({ summary: "Reviewed.", findings: findingFor(evidence) });
+    });
+
+    expect(result.findings.length).toBeGreaterThan(0);
+    expect(result.rejectedOutput).toBe(true);
+  });
+
+  test("caps aggregated findings and marks the review incomplete", async () => {
+    const result = await runDefaultAddonRuleLlm(largeSingleFileInput().input, logger, async ({
+      validate,
+      evidence,
+    }) => {
+      const finding = findingFor(evidence)[0]!;
+      return validate({
+        summary: "Reviewed.",
+        findings: Array.from({ length: 20 }, (_, index) => ({
+          ...finding,
+          rule: `rule-${index}`,
         })),
-      }],
-    }, logger, async (chunkInput) => {
-      const file = chunkInput.contexts[0]!.files[0]!;
-      attemptsByPath.set(file.path, (attemptsByPath.get(file.path) ?? 0) + 1);
-      if (file.path.endsWith("two.py")) throw new Error("model timeout");
-      return JSON.stringify({
-        summary: "The first chunk adds a restricted call.",
-        findings: [{
-          addonId: "script.example",
-          path: file.path,
-          line: 1,
-          rule: "executable-execution",
-          level: "ERROR",
-          message: "The added line executes an external program.",
-        }],
       });
     });
 
-    expect(result.findings).toEqual([expect.objectContaining({
-      path: "script.example/one.py",
-      line: 1,
-      rule: "executable-execution",
-    })]);
+    expect(result.findings).toHaveLength(20);
     expect(result.rejectedOutput).toBe(true);
-    expect(attemptsByPath.get("script.example/two.py")).toBe(2);
   });
 
-  test("retries a transient failed chunk once without marking the review incomplete", async () => {
-    let attempts = 0;
-    const result = await runDefaultAddonRuleLlm({
+  test("marks omitted oversized lines and files incomplete", async () => {
+    const baseInput = largeSingleFileInput().input;
+    const oversizedLine = `@@ -0,0 +1 @@\n+${"x".repeat(MAX_ADDON_RULE_LLM_PROMPT_CHARS)}`;
+    const oversizedPath = `script.example/${"x".repeat(MAX_ADDON_RULE_LLM_PROMPT_CHARS)}.py`;
+    const inputs = [
+      {
+        ...baseInput,
+        contexts: [{
+          addonId: "script.example",
+          allChangedPaths: ["script.example/generated.py"],
+          files: [{ path: "script.example/generated.py", status: "added", patch: oversizedLine }],
+        }],
+      },
+      {
+        ...baseInput,
+        contexts: [{
+          addonId: "script.example",
+          allChangedPaths: [oversizedPath],
+          files: [{ path: oversizedPath, status: "added", patch: "@@ -0,0 +1 @@\n+line" }],
+        }],
+      },
+    ];
+
+    for (const input of inputs) {
+      const result = await runDefaultAddonRuleLlm(input, logger, async ({ validate }) => (
+        validate({ summary: "Reviewed available evidence.", findings: [] })
+      ));
+      expect(result.rejectedOutput).toBe(true);
+    }
+  });
+
+  test("logs bounded chunk categories without model or source content", async () => {
+    const records: unknown[] = [];
+    const capturingLogger = {
+      ...logger,
+      info: (record: unknown) => records.push(record),
+      warn: (record: unknown) => records.push(record),
+    } as unknown as Logger;
+    const secret = "source-and-provider-secret";
+
+    await runDefaultAddonRuleLlm(largeSingleFileInput().input, capturingLogger, async ({
+      chunkIndex,
+      validate,
+    }) => {
+      if (chunkIndex === 1) {
+        throw new StructuredGenerationError("provider", secret, true, {
+          cause: { output: secret },
+        });
+      }
+      return validate({ summary: "Reviewed.", findings: [] });
+    });
+
+    expect(JSON.stringify(records)).not.toContain(secret);
+    expect(records).toContainEqual(expect.objectContaining({
+      errorKind: "provider",
+      chunkIndex: 2,
+      chunkCount: expect.any(Number),
+      durationCategory: "under-1s",
+    }));
+    expect(records).toContainEqual(expect.objectContaining({
+      chunkCount: expect.any(Number),
+      promptChars: expect.any(Array),
+      evidenceLineCount: 800,
+      omittedOversizedLines: 0,
+      omittedFiles: 0,
+    }));
+  });
+});
+
+function largeSingleFileInput(): { input: AddonRuleLlmInput; sourceLines: string[] } {
+  const lineCount = 800;
+  const header = `@@ -0,0 +1,${lineCount} @@\n`;
+  const sourceLines = Array.from({ length: lineCount }, (_, index) => `numbered_${index + 1}`);
+  const unpaddedPatch = `${header}${sourceLines.map((line) => `+${line}\n`).join("")}`;
+  const padding = 53_089 - unpaddedPatch.length;
+  for (const [index, line] of sourceLines.entries()) {
+    const linePadding = Math.floor(padding / lineCount) + (index < padding % lineCount ? 1 : 0);
+    sourceLines[index] = `${line}${"x".repeat(linePadding)}`;
+  }
+  const patch = `${header}${sourceLines.map((line) => `+${line}\n`).join("")}`;
+  const path = "script.example/generated.py";
+  return {
+    input: {
       repo: "xbmc/repo-scripts",
       prNumber: 42,
       baseBranch: "matrix",
       rules,
       contexts: [{
         addonId: "script.example",
-        allChangedPaths: ["script.example/default.py"],
-        files: [{
-          path: "script.example/default.py",
-          status: "modified",
-          patch: "@@ -1 +1 @@\n-old()\n+new()",
-        }],
+        allChangedPaths: [path],
+        files: [{ path, status: "added", additions: lineCount, deletions: 0, patch }],
       }],
-    }, logger, async () => {
-      attempts += 1;
-      if (attempts === 1) throw new Error("model timeout");
-      return JSON.stringify({ summary: "The retry reviewed the Python change.", findings: [] });
-    });
+    },
+    sourceLines,
+  };
+}
 
-    expect(attempts).toBe(2);
-    expect(result).toEqual({
-      summary: "The retry reviewed the Python change.",
-      findings: [],
-    });
-  });
-});
+function findingFor(evidence: readonly AddonRuleEvidenceContext[]) {
+  return evidence.flatMap((context) => context.files.flatMap((file) => {
+    const firstLine = file.addedLines[0];
+    return firstLine == null ? [] : [{
+      addonId: context.addonId,
+      path: file.path,
+      line: firstLine.line,
+      rule: "executable-execution",
+      level: "WARN" as const,
+      message: "A reviewer must confirm this added line follows the execution rule.",
+    }];
+  }));
+}

@@ -2,18 +2,26 @@ import type { Logger } from "pino";
 import { mapWithConcurrency } from "./concurrency.ts";
 import { createTaskRouter } from "../llm/task-router.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
-import { generateWithFallback } from "../llm/generate.ts";
+import {
+  generateStructuredWithFallback,
+  StructuredGenerationError,
+} from "../llm/structured-generate.ts";
 import type { PullRequestFileMetadata } from "./github-pr-files.ts";
 import {
   collectAddonRuleContext,
-  type AddonRuleAddonContext,
 } from "./addon-rule-context.ts";
 import { runDeterministicAddonRuleChecks } from "./addon-rule-deterministic.ts";
 import {
+  packAddonRuleEvidence,
+  projectAddonRuleEvidence,
+  type AddonRuleEvidenceContext,
+} from "./addon-rule-evidence.ts";
+import {
+  ADDON_RULE_REVIEW_SCHEMA,
   buildAddonRuleReviewPrompt,
-  parseAddonRuleReviewOutput,
   type AddonRuleLlmInput,
   type AddonRuleLlmResult,
+  validateAddonRuleReviewOutput,
 } from "./addon-rule-llm.ts";
 import { loadAddonRuleSource, type AddonRuleSource } from "./addon-rule-source.ts";
 import type {
@@ -24,129 +32,134 @@ import type {
 
 export type LoadAddonRuleSource = typeof loadAddonRuleSource;
 export type RunAddonRuleLlm = (params: AddonRuleLlmInput) => Promise<AddonRuleLlmResult>;
-type GenerateAddonRuleChunk = (params: AddonRuleLlmInput) => Promise<string>;
+type ReviewStructuredAddonRuleChunk = (params: {
+  prompt: string;
+  evidence: readonly AddonRuleEvidenceContext[];
+  validate: (value: unknown) => AddonRuleLlmResult;
+  chunkIndex: number;
+  chunkCount: number;
+}) => Promise<AddonRuleLlmResult>;
 
-export const MAX_ADDON_RULE_LLM_CHUNK_PATCH_CHARS = 60_000;
 const ADDON_RULE_LLM_CHUNK_CONCURRENCY = 3;
-const ADDON_RULE_LLM_CHUNK_ATTEMPTS = 2;
 const MAX_AGGREGATED_ADDON_RULE_FINDINGS = 20;
 
 export async function runDefaultAddonRuleLlm(
   input: AddonRuleLlmInput,
   logger: Logger,
-  generateChunkForTests?: GenerateAddonRuleChunk,
+  generateChunkForTests?: ReviewStructuredAddonRuleChunk,
 ): Promise<AddonRuleLlmResult> {
-  const chunks = chunkAddonRuleContexts(input.contexts);
-  const generateChunk = generateChunkForTests ?? createDefaultChunkGenerator(logger);
+  const projected = projectAddonRuleEvidence(input.contexts);
+  const renderPrompt = (contexts: readonly AddonRuleEvidenceContext[]) => (
+    buildAddonRuleReviewPrompt(input, contexts)
+  );
+  const pack = packAddonRuleEvidence(projected, renderPrompt);
+  const prompts = pack.chunks.map((evidence) => ({ evidence, prompt: renderPrompt(evidence) }));
+  const generateChunk = generateChunkForTests ?? createDefaultChunkGenerator(input, logger);
+  logger.info(
+    {
+      taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
+      chunkCount: prompts.length,
+      promptChars: prompts.map(({ prompt }) => prompt.length),
+      evidenceLineCount: projected.flatMap((context) => context.files).reduce(
+        (count, file) => count + file.addedLines.length,
+        0,
+      ),
+      omittedOversizedLines: pack.omittedOversizedLines,
+      omittedFiles: pack.omittedFiles,
+    },
+    "Prepared bounded addon rule model evidence",
+  );
   const chunkResults = await mapWithConcurrency(
-    chunks,
+    prompts,
     ADDON_RULE_LLM_CHUNK_CONCURRENCY,
-    (contexts, chunkIndex) => reviewAddonRuleChunk({
-      input: { ...input, contexts },
+    ({ evidence, prompt }, chunkIndex) => reviewAddonRuleChunk({
+      prompt,
+      evidence,
+      validate: (value) => validateAddonRuleReviewOutput(value, input.contexts),
       generateChunk,
       logger,
       chunkIndex,
-      chunkCount: chunks.length,
+      chunkCount: prompts.length,
     }),
   );
-  return aggregateAddonRuleChunkResults(input, chunks.length, chunkResults);
+  return aggregateAddonRuleChunkResults(input, prompts.length, chunkResults, {
+    omittedFiles: pack.omittedFiles,
+    omittedOversizedLines: pack.omittedOversizedLines,
+  });
 }
 
 async function reviewAddonRuleChunk(params: {
-  input: AddonRuleLlmInput;
-  generateChunk: GenerateAddonRuleChunk;
+  prompt: string;
+  evidence: readonly AddonRuleEvidenceContext[];
+  validate: (value: unknown) => AddonRuleLlmResult;
+  generateChunk: ReviewStructuredAddonRuleChunk;
   logger: Logger;
   chunkIndex: number;
   chunkCount: number;
 }): Promise<AddonRuleLlmResult> {
-  let retained: AddonRuleLlmResult | undefined;
-  for (let attempt = 1; attempt <= ADDON_RULE_LLM_CHUNK_ATTEMPTS; attempt += 1) {
-    try {
-      const text = await params.generateChunk(params.input);
-      const parsed = parseAddonRuleReviewOutput(text, params.input.contexts);
-      if (!parsed.rejectedOutput && !parsed.rejectedSummary) return parsed;
-      if (!retained || parsed.findings.length > retained.findings.length) retained = parsed;
-      params.logger.warn(
-        { attempt, chunkIndex: params.chunkIndex + 1, chunkCount: params.chunkCount },
-        "Addon rule model chunk returned rejected output",
-      );
-    } catch (err) {
-      params.logger.warn(
-        { err, attempt, chunkIndex: params.chunkIndex + 1, chunkCount: params.chunkCount },
-        "Addon rule model chunk failed",
-      );
-    }
+  const startedAt = Date.now();
+  try {
+    return await params.generateChunk({
+      prompt: params.prompt,
+      evidence: params.evidence,
+      validate: params.validate,
+      chunkIndex: params.chunkIndex,
+      chunkCount: params.chunkCount,
+    });
+  } catch (error) {
+    params.logger.warn(
+      {
+        errorKind: error instanceof StructuredGenerationError ? error.kind : "unknown",
+        chunkIndex: params.chunkIndex + 1,
+        chunkCount: params.chunkCount,
+        durationCategory: categorizeDuration(Date.now() - startedAt),
+      },
+      "Addon rule model chunk failed",
+    );
+    return { findings: [], rejectedOutput: true };
   }
-  return {
-    ...(retained?.summary ? { summary: retained.summary } : {}),
-    findings: retained?.findings ?? [],
-    ...(retained?.rejectedSummary ? { rejectedSummary: true } : {}),
-    rejectedOutput: true,
-  };
 }
 
-function createDefaultChunkGenerator(logger: Logger): GenerateAddonRuleChunk {
+function createDefaultChunkGenerator(
+  input: AddonRuleLlmInput,
+  logger: Logger,
+): ReviewStructuredAddonRuleChunk {
   const taskRouter = createTaskRouter({ models: {} });
   const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
-  return async (input) => {
-    const result = await generateWithFallback({
+  return async ({ prompt }) => {
+    const result = await generateStructuredWithFallback({
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
       resolved,
-      prompt: buildAddonRuleReviewPrompt(input),
-      system: "Review only supplied Kodi addon diff evidence for submission-rule compliance. Return only the requested JSON.",
+      prompt,
+      system: "You classify supplied Kodi add-on diff evidence only for repository submission-rule compliance. Do not perform general code review.",
+      schema: ADDON_RULE_REVIEW_SCHEMA,
+      validate: (output) => validateAddonRuleReviewOutput(output, input.contexts),
       logger,
       repo: input.repo,
     });
-    return result.text;
+    return result.output;
   };
 }
 
-function chunkAddonRuleContexts(
-  contexts: readonly AddonRuleLlmInput["contexts"][number][],
-): AddonRuleLlmInput["contexts"][] {
-  const chunks: AddonRuleAddonContext[][] = [];
-  let current = new Map<string, AddonRuleAddonContext>();
-  let currentPatchChars = 0;
-
-  const flush = () => {
-    if (current.size === 0) return;
-    chunks.push([...current.values()]);
-    current = new Map();
-    currentPatchChars = 0;
-  };
-
-  for (const context of contexts) {
-    for (const file of context.files) {
-      const patchChars = file.patch?.length ?? 0;
-      if (currentPatchChars > 0
-        && patchChars > 0
-        && currentPatchChars + patchChars > MAX_ADDON_RULE_LLM_CHUNK_PATCH_CHARS) {
-        flush();
-      }
-
-      const chunkContext = current.get(context.addonId) ?? {
-        addonId: context.addonId,
-        allChangedPaths: [...context.allChangedPaths],
-        files: [],
-      };
-      chunkContext.files.push(file);
-      current.set(context.addonId, chunkContext);
-      currentPatchChars += patchChars;
-    }
-  }
-  flush();
-  return chunks;
+function categorizeDuration(durationMs: number): "under-1s" | "1s-to-10s" | "10s-to-60s" | "over-60s" {
+  if (durationMs < 1_000) return "under-1s";
+  if (durationMs < 10_000) return "1s-to-10s";
+  if (durationMs < 60_000) return "10s-to-60s";
+  return "over-60s";
 }
 
 function aggregateAddonRuleChunkResults(
   input: AddonRuleLlmInput,
   chunkCount: number,
   results: readonly AddonRuleLlmResult[],
+  omissions: { omittedFiles: number; omittedOversizedLines: number },
 ): AddonRuleLlmResult {
   const findings = results.flatMap((result) => result.findings);
   const rejectedSummary = results.some((result) => result.rejectedSummary);
   let rejectedOutput = results.some((result) => result.rejectedOutput);
-  if (findings.length > MAX_AGGREGATED_ADDON_RULE_FINDINGS) rejectedOutput = true;
+  if (findings.length > MAX_AGGREGATED_ADDON_RULE_FINDINGS
+    || omissions.omittedFiles > 0
+    || omissions.omittedOversizedLines > 0) rejectedOutput = true;
 
   const result: AddonRuleLlmResult = {
     findings: findings.slice(0, MAX_AGGREGATED_ADDON_RULE_FINDINGS),
