@@ -50,6 +50,10 @@ The live PR #2861 review marked one patch truncated because `script.module.pyrol
 
 The formatter will render a validated location as `path:line`. File-level findings, path-only deterministic findings, and findings based on metadata without a usable patch will remain `path`-only.
 
+Complete evidence sets that would form an oversized single model prompt are partitioned on file boundaries into requests containing at most 60,000 patch characters, except when one already-accepted file patch is larger. Up to three chunks run concurrently and their grounded findings are aggregated into the same response. A failed chunk retains findings from successful chunks and marks the model review incomplete instead of discarding useful evidence.
+
+Rules that are explicit and mechanically provable do not depend on model availability. A changed license-like path must be named `LICENSE.txt`, and CRLF on an added text line produces a deterministic `path:line` finding derived from the unified diff's right-side coordinate.
+
 ## Error Handling
 
 Comment lookup, creation, and update retain the existing sanitized publication pipeline and result-based error handling. The complete marker-idempotent upsert transaction retries transient GitHub failures so a temporary 5xx response does not permanently lose the review before ingress delivery deduplication takes effect. An exhausted response publication remains a logged non-fatal add-on handler failure; automatic canonical publication behavior is unchanged.

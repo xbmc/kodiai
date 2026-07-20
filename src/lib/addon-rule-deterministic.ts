@@ -64,6 +64,27 @@ export function runDeterministicAddonRuleChecks(params: {
           changedPath,
         ));
       }
+      if (isInvalidLicenseFilename(changedPath)) {
+        findings.push(error(
+          context.addonId,
+          "license-file-name",
+          `License file must be named LICENSE.txt; changed path is ${changedPath}.`,
+          changedPath,
+        ));
+      }
+    }
+
+    for (const file of context.files) {
+      const crlfLine = file.patch === undefined ? undefined : findFirstAddedCrLfLine(file.patch);
+      if (crlfLine !== undefined) {
+        findings.push(error(
+          context.addonId,
+          "unix-line-endings",
+          "Added text uses CRLF line endings; Kodi add-on text files must use UNIX LF line endings.",
+          file.path,
+          crlfLine,
+        ));
+      }
     }
 
     const addonXml = context.files.find((file) => file.path.toLowerCase().endsWith("/addon.xml"));
@@ -83,8 +104,22 @@ export function runDeterministicAddonRuleChecks(params: {
   return dedupeFindings(findings);
 }
 
-function error(addonId: string, rule: string, message: string, path?: string): AddonRuleFinding {
-  return { addonId, ...(path ? { path } : {}), rule, level: "ERROR", source: "deterministic", message };
+function error(
+  addonId: string,
+  rule: string,
+  message: string,
+  path?: string,
+  line?: number,
+): AddonRuleFinding {
+  return {
+    addonId,
+    ...(path ? { path } : {}),
+    ...(line !== undefined ? { line } : {}),
+    rule,
+    level: "ERROR",
+    source: "deterministic",
+    message,
+  };
 }
 
 function warn(addonId: string, rule: string, message: string, path?: string): AddonRuleFinding {
@@ -104,6 +139,30 @@ function isForbiddenBinary(path: string): boolean {
 function isInvalidTranslationPath(path: string): boolean {
   if (!path.endsWith("/strings.po") || !path.includes("/resources/language/")) return false;
   return !/\/resources\/language\/resource\.language\.[a-z]{2}_[a-z]{2}\/strings\.po$/.test(path);
+}
+
+function isInvalidLicenseFilename(path: string): boolean {
+  const filename = path.split("/").pop() ?? "";
+  return /^licen[sc]e(?:\.[A-Za-z0-9]+)?$/i.test(filename)
+    && filename.toLowerCase() !== "license.txt";
+}
+
+function findFirstAddedCrLfLine(patch: string): number | undefined {
+  let rightLine: number | undefined;
+  for (const patchLine of patch.split("\n")) {
+    const hunk = patchLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      rightLine = Number.parseInt(hunk[1]!, 10);
+      continue;
+    }
+    if (rightLine === undefined || patchLine.startsWith("\\ No newline at end of file")) continue;
+    if (patchLine.startsWith("-") && !patchLine.startsWith("---")) continue;
+    if (patchLine.startsWith("+") && !patchLine.startsWith("+++") && patchLine.endsWith("\r")) {
+      return rightLine;
+    }
+    rightLine += 1;
+  }
+  return undefined;
 }
 
 function isLicensePath(path: string): boolean {

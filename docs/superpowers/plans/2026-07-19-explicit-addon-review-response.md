@@ -211,6 +211,8 @@ git commit -m "Add validated addon finding lines"
 
 ### Task 4: Verify, Deploy, and Prove the Live Review
 
+Before deployment, split complete add-on patch evidence into bounded file chunks and aggregate their model results so the raised per-file cap does not create one oversized generation request. Add deterministic `LICENSE.txt` filename and CRLF added-line checks so explicit, mechanically provable findings remain actionable during a model-provider outage.
+
 **Files:**
 - Verify: all files changed in Tasks 1-3
 - Deploy: existing `deploy.sh` with `/home/keith/src/kodiai/.env`

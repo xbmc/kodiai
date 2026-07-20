@@ -98,6 +98,43 @@ describe("runDeterministicAddonRuleChecks", () => {
     expect(findings).not.toContainEqual(expect.objectContaining({ rule: "license-file" }));
   });
 
+  test("flags a changed license file that is not named LICENSE.txt", () => {
+    const findings = run([
+      context({
+        allChangedPaths: ["plugin.video.foo/LICENSE"],
+        files: [{ path: "plugin.video.foo/LICENSE", status: "added", omittedReason: "out-of-scope" }],
+      }),
+    ]);
+
+    expect(findings).toContainEqual(expect.objectContaining({
+      rule: "license-file-name",
+      level: "ERROR",
+      path: "plugin.video.foo/LICENSE",
+      message: expect.stringContaining("LICENSE.txt"),
+    }));
+  });
+
+  test("reports the first added CRLF line with its new-file coordinate", () => {
+    const path = "plugin.video.foo/resources/lib/main.py";
+    const findings = run([
+      context({
+        allChangedPaths: [path],
+        files: [{
+          path,
+          status: "modified",
+          patch: "@@ -10,2 +20,3 @@\n context\n-old()\n+new()\r\n+next_line()\r\n context",
+        }],
+      }),
+    ]);
+
+    expect(findings).toContainEqual(expect.objectContaining({
+      rule: "unix-line-endings",
+      level: "ERROR",
+      path,
+      line: 21,
+    }));
+  });
+
   test("checks a complete newly added addon manifest from added patch lines", () => {
     const patch = [
       "+<addon id=\"plugin.video.foo\">",
