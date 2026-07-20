@@ -117,7 +117,7 @@ function deterministicSummary(addonCount: number, patchCount: number, baseBranch
 function dedupeFindings(findings: readonly AddonRuleFinding[]): AddonRuleFinding[] {
   const seen = new Set<string>();
   return findings.filter((finding) => {
-    const key = `${finding.addonId}|${finding.path ?? ""}|${finding.rule}|${finding.level}|${finding.message}`;
+    const key = `${finding.addonId}|${finding.path ?? ""}|${finding.line ?? ""}|${finding.rule}|${finding.level}|${finding.message}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

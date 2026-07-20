@@ -80,6 +80,7 @@ describe("formatAddonCheckComment", () => {
       findings: [{
         addonId: "plugin.video.example",
         path: "plugin.video.example/resources/lib/client.py",
+        line: 21,
         rule: "download-consent",
         level: "WARN",
         source: "llm",
@@ -89,7 +90,7 @@ describe("formatAddonCheckComment", () => {
     });
 
     expect(comment).toContain("- **ERROR** `plugin.video.example`: Runs a downloaded executable.");
-    expect(comment).toContain("- **WARN** `plugin.video.example/resources/lib/client.py`: The changed download path has no visible user-consent prompt; confirm consent before download.");
+    expect(comment).toContain("- **WARN** `plugin.video.example/resources/lib/client.py:21`: The changed download path has no visible user-consent prompt; confirm consent before download.");
     expect(comment).toContain("Needs human review: 1 error and 1 warning found. Final approval remains with a human reviewer.");
     expect(comment).not.toContain("| Addon | Level");
     expect(comment).not.toContain("deterministic");

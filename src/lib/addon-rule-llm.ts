@@ -38,6 +38,7 @@ export function buildAddonRuleReviewPrompt(params: AddonRuleLlmInput): string {
     "- Review content only for addon.xml, Python, and web-interface JavaScript patches.",
     "- Check only Kodi addon submission rules: target branch, development artifacts, obfuscation, binaries, licenses, translations, addon.xml metadata, filesystem boundaries, user consent for downloads, executable execution, addon installation or modification, direct database access, forced skin view/sort modes, and analytics.",
     "- Ground every statement and finding in the supplied target branch, changed paths, or patch text.",
+    "- For a line-specific finding, include line as the new-file/right-side added-line number from a supplied patch. Omit line for file-level findings or when no added-line coordinate is available.",
     "- Use only ERROR or WARN finding levels. Omit uncertain claims unless a WARN clearly states what a human must confirm.",
     "- Do not include an approval, rejection, or merge verdict.",
     "- Do not mention reviewer handles, prior PR backlinks, raw prompts, hidden context, or unverifiable claims.",
@@ -45,7 +46,7 @@ export function buildAddonRuleReviewPrompt(params: AddonRuleLlmInput): string {
     "- Return at most 20 findings; each message must be at most 400 characters.",
     "",
     "Return only JSON with this shape:",
-    '{ "summary": "Factual changed-evidence summary.", "findings": [{ "addonId": "plugin.video.example", "path": "plugin.video.example/default.py", "rule": "skin-view-mode", "level": "ERROR", "message": "Specific rule issue grounded in the patch." }] }',
+    '{ "summary": "Factual changed-evidence summary.", "findings": [{ "addonId": "plugin.video.example", "path": "plugin.video.example/default.py", "line": 42, "rule": "skin-view-mode", "level": "ERROR", "message": "Specific rule issue grounded in the patch." }] }',
     "",
     "Changed addon patch context JSON:",
     JSON.stringify(params.contexts, null, 2),
@@ -83,6 +84,7 @@ export function parseAddonRuleReviewOutput(
   const pathsByAddon = new Map(
     contexts.map((context) => [context.addonId, new Set(context.allChangedPaths)] as const),
   );
+  const addedLinesByPath = collectAddedLinesByPath(contexts);
 
   for (const item of record.findings) {
     if (!item || typeof item !== "object") continue;
@@ -93,6 +95,14 @@ export function parseAddonRuleReviewOutput(
     const level = finding.level;
     const message = safeString(finding.message);
     const addonPaths = pathsByAddon.get(addonId);
+    const requestedLine = finding.line;
+    const line = typeof requestedLine === "number"
+      && Number.isInteger(requestedLine)
+      && requestedLine > 0
+      && path
+      && addedLinesByPath.get(addonPathKey(addonId, path))?.has(requestedLine)
+      ? requestedLine
+      : undefined;
 
     if (!addonPaths
       || !rule
@@ -109,6 +119,7 @@ export function parseAddonRuleReviewOutput(
     result.findings.push({
       addonId,
       ...(path ? { path } : {}),
+      ...(line !== undefined ? { line } : {}),
       rule,
       level,
       source: "llm",
@@ -117,6 +128,48 @@ export function parseAddonRuleReviewOutput(
   }
 
   return result;
+}
+
+function collectAddedLinesByPath(
+  contexts: readonly AddonRuleAddonContext[],
+): Map<string, Set<number>> {
+  const result = new Map<string, Set<number>>();
+  for (const context of contexts) {
+    for (const file of context.files) {
+      if (file.patch === undefined) continue;
+      result.set(addonPathKey(context.addonId, file.path), collectAddedRightSideLines(file.patch));
+    }
+  }
+  return result;
+}
+
+function collectAddedRightSideLines(patch: string): Set<number> {
+  const lines = new Set<number>();
+  let rightLine: number | undefined;
+
+  for (const patchLine of patch.split("\n")) {
+    const hunk = patchLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      rightLine = Number.parseInt(hunk[1]!, 10);
+      continue;
+    }
+    if (rightLine === undefined || patchLine.startsWith("\\ No newline at end of file")) {
+      continue;
+    }
+    if (patchLine.startsWith("-") && !patchLine.startsWith("---")) {
+      continue;
+    }
+    if (patchLine.startsWith("+") && !patchLine.startsWith("+++")) {
+      lines.add(rightLine);
+    }
+    rightLine += 1;
+  }
+
+  return lines;
+}
+
+function addonPathKey(addonId: string, path: string): string {
+  return `${addonId}\u0000${path}`;
 }
 
 function safeString(value: unknown): string {

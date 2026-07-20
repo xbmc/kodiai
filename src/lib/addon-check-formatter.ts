@@ -61,7 +61,8 @@ export function formatAddonCheckComment(
     lines.push("No addon-rule violations were found in the reviewed diff.");
   } else {
     for (const finding of findings) {
-      const location = escapeInlineCode(finding.path ?? finding.addonId);
+      const path = finding.path ?? finding.addonId;
+      const location = escapeInlineCode(finding.line ? `${path}:${finding.line}` : path);
       lines.push(`- **${finding.level}** \`${location}\`: ${boundedMessage(finding.message)}`);
     }
   }
@@ -82,7 +83,7 @@ export function formatAddonCheckComment(
   return lines.join("\n");
 }
 
-type PublicFinding = Pick<AddonRuleFinding, "addonId" | "path" | "level" | "message">;
+type PublicFinding = Pick<AddonRuleFinding, "addonId" | "path" | "line" | "level" | "message">;
 
 function collectPublicFindings(
   checkerFindings: readonly AddonFinding[],
@@ -102,7 +103,7 @@ function collectPublicFindings(
 
   const seen = new Set<string>();
   return relevant.filter((finding) => {
-    const key = `${finding.addonId}|${finding.path ?? ""}|${finding.level}|${finding.message}`;
+    const key = `${finding.addonId}|${finding.path ?? ""}|${finding.line ?? ""}|${finding.level}|${finding.message}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

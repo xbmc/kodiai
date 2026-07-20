@@ -12,6 +12,23 @@ const contexts: AddonRuleAddonContext[] = [{
   }],
 }];
 
+const lineContexts: AddonRuleAddonContext[] = [{
+  addonId: "plugin.video.foo",
+  allChangedPaths: [
+    "plugin.video.foo/default.py",
+    "plugin.video.foo/without-patch.py",
+  ],
+  files: [{
+    path: "plugin.video.foo/default.py",
+    status: "modified",
+    patch: "@@ -10,3 +20,4 @@\n context\n-old()\n+new()\n+track_usage()\n context",
+  }, {
+    path: "plugin.video.foo/without-patch.py",
+    status: "modified",
+    omittedReason: "patch-unavailable",
+  }],
+}];
+
 describe("buildAddonRuleReviewPrompt", () => {
   test("uses exclusive diff-only addon submission scope and a structured result", () => {
     const prompt = buildAddonRuleReviewPrompt({
@@ -32,6 +49,8 @@ describe("buildAddonRuleReviewPrompt", () => {
     expect(prompt).toContain("Do not review Python or JavaScript correctness, syntax, logic, style, architecture, or maintainability");
     expect(prompt).toContain('"summary"');
     expect(prompt).toContain('"path"');
+    expect(prompt).toContain('"line"');
+    expect(prompt).toContain("new-file/right-side added-line number");
     expect(prompt).toContain("Container.SetViewMode");
     expect(prompt).not.toContain("Full changed files are provided");
     expect(prompt).not.toContain("Prefer Kodi addon submission-rule findings");
@@ -62,6 +81,37 @@ describe("parseAddonRuleReviewOutput", () => {
         message: "The changed line calls Container.SetViewMode, which add-ons may not force.",
       }],
     });
+  });
+
+  test("retains a finding line only when it is an added right-side diff line", () => {
+    const finding = {
+      addonId: "plugin.video.foo",
+      path: "plugin.video.foo/default.py",
+      rule: "usage-analytics",
+      level: "WARN",
+      message: "The added call appears to send usage data.",
+    };
+
+    const valid = parseAddonRuleReviewOutput(JSON.stringify({
+      findings: [{ ...finding, line: 21 }],
+    }), lineContexts);
+    expect(valid.findings[0]).toMatchObject({ line: 21 });
+
+    for (const line of [20, 0, 21.5, "21"]) {
+      const invalid = parseAddonRuleReviewOutput(JSON.stringify({
+        findings: [{ ...finding, line }],
+      }), lineContexts);
+      expect(invalid.findings[0]).not.toHaveProperty("line");
+    }
+
+    const unavailable = parseAddonRuleReviewOutput(JSON.stringify({
+      findings: [{
+        ...finding,
+        path: "plugin.video.foo/without-patch.py",
+        line: 21,
+      }],
+    }), lineContexts);
+    expect(unavailable.findings[0]).not.toHaveProperty("line");
   });
 
   test("rejects an overlong summary while retaining safe findings", () => {
