@@ -117,6 +117,46 @@ Result: exit 0; 832 modules bundled, producing a 5.85 MB `index.js` in the tempo
 
 Before the implementation commit, `git diff --check` exited 0. After the report commit, the requested base-to-HEAD and worktree checks were rerun and recorded in the final handoff.
 
+## Independent Review Fix: Chunk-Local Coordinates
+
+Independent review found that each structured chunk was validated against all added coordinates in the PR. A model response could therefore cite a real added line from another chunk even though that line was absent from its prompt.
+
+Fix commit: `ee76ac19504447cf1b7ad7a9742acf600691a2ca` (`fix: validate addon findings per evidence chunk`).
+
+The validator now accepts an explicit evidence-coordinate allowlist. The original PR contexts remain authoritative for add-on/path metadata, while review orchestration passes only the current chunk for line-coordinate validation. The same chunk-local validator is supplied to the structured generator, so Haiku and the one Sonnet fallback share identical grounding. Direct compatibility callers continue to default to the complete projected input.
+
+### Review-fix RED
+
+```text
+bun test src/lib/addon-rule-review.test.ts --test-name-pattern "atomically rejects a chunk"
+```
+
+Result before the fix: `0 pass, 1 fail`. The rejected chunk incorrectly returned both line 121 from its own evidence and line 1 from the first chunk, proving whole-PR coordinate validation.
+
+### Review-fix GREEN and regressions
+
+The same targeted command passed after the fix: `1 pass, 0 fail, 2 expect() calls`.
+
+```text
+bun test src/lib/addon-rule-evidence.test.ts src/lib/addon-rule-llm.test.ts src/lib/addon-rule-review.test.ts src/llm/structured-generate.test.ts
+```
+
+Result: `56 pass, 0 fail, 303 expect() calls`.
+
+```text
+bun test src/handlers/addon-check.test.ts
+```
+
+Result: `34 pass, 0 fail, 167 expect() calls`.
+
+```text
+bunx eslint src/lib/addon-rule-llm.ts src/lib/addon-rule-review.ts src/lib/addon-rule-review.test.ts
+```
+
+Result: exit 0, no diagnostics.
+
+`bunx tsc --noEmit` continued to report only the unrelated `src/jobs/aca-launcher.test.ts(344,70)` TS2493 baseline. A fresh temporary-directory Bun build passed with 832 modules and a 5.85 MB bundle. `git diff --check` passed. No deployment was performed.
+
 ## Touched Files
 
 - `src/lib/addon-rule-evidence.ts`
