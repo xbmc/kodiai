@@ -176,7 +176,7 @@ describe("generateStructuredWithFallback", () => {
     })).rejects.toMatchObject({ kind: "timeout", retryable: true });
   });
 
-  test("does not retry a domain-grounding rejection on Sonnet", async () => {
+  test("uses one Sonnet fallback when Haiku output fails domain grounding", async () => {
     const capturedModels: string[] = [];
     const trackAgentSdkCall = mock(() => Promise.resolve());
     let loadCount = 0;
@@ -202,9 +202,10 @@ describe("generateStructuredWithFallback", () => {
       ...baseOptions({
         repo: "xbmc/repo-plugins",
         costTracker: { trackAgentSdkCall } as never,
-        validate: (_value: unknown) => {
+        validate: (value: unknown) => {
           validationCount++;
-          throw new Error("invalid grounded output");
+          if (validationCount === 1) throw new Error("invalid grounded output");
+          return value as ReviewOutput;
         },
       }),
       loadQuery: async () => {
@@ -213,14 +214,52 @@ describe("generateStructuredWithFallback", () => {
       },
     });
 
-    await expect(result).rejects.toMatchObject({
-      kind: "domain-grounding-rejection",
-      retryable: false,
+    await expect(result).resolves.toMatchObject({
+      usedFallback: true,
+      fallbackReason: "domain-grounding-rejection",
+      model: "claude-sonnet-4-5-20250929",
     });
-    expect(capturedModels).toEqual(["claude-haiku-4-5-20251001"]);
-    expect(loadCount).toBe(1);
-    expect(trackAgentSdkCall).toHaveBeenCalledTimes(1);
-    expect(validationCount).toBe(1);
+    expect(capturedModels).toEqual([
+      "claude-haiku-4-5-20251001",
+      "claude-sonnet-4-5-20250929",
+    ]);
+    expect(loadCount).toBe(2);
+    expect(trackAgentSdkCall).toHaveBeenCalledTimes(2);
+    expect(trackAgentSdkCall).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      usedFallback: false,
+      fallbackReason: undefined,
+    }));
+    expect(trackAgentSdkCall).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      usedFallback: true,
+      fallbackReason: "domain-grounding-rejection",
+    }));
+    expect(validationCount).toBe(2);
+  });
+
+  test("stops after exactly two domain-grounding rejections", async () => {
+    const capturedModels: string[] = [];
+    const query = ((input: { options: { model: string } }) => {
+      capturedModels.push(input.options.model);
+      return (async function* () {
+        yield successResult({ summary: "Reviewed.", findings: [] });
+      })();
+    }) as never;
+
+    await expect(generateStructuredWithFallback({
+      ...baseOptions({
+        validate: () => {
+          throw new Error("ungrounded");
+        },
+      }),
+      loadQuery: async () => query,
+    })).rejects.toMatchObject({
+      kind: "domain-grounding-rejection",
+      retryable: true,
+    });
+    expect(capturedModels).toEqual([
+      "claude-haiku-4-5-20251001",
+      "claude-sonnet-4-5-20250929",
+    ]);
   });
 
   test("cost-tracks a retryable primary result and successful fallback result", async () => {
@@ -271,12 +310,16 @@ describe("generateStructuredWithFallback", () => {
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
       model: "claude-haiku-4-5-20251001",
       deliveryId: "delivery-fallback",
+      usedFallback: false,
+      fallbackReason: undefined,
     }));
     expect(trackAgentSdkCall).toHaveBeenNthCalledWith(2, expect.objectContaining({
       repo: "xbmc/repo-plugins",
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
       model: "claude-sonnet-4-5-20250929",
       deliveryId: "delivery-fallback",
+      usedFallback: true,
+      fallbackReason: "execution-error",
     }));
   });
 
@@ -383,6 +426,8 @@ describe("generateStructuredWithFallback", () => {
       cacheWriteTokens: 2,
       durationMs: 12,
       costUsd: 0,
+      usedFallback: false,
+      fallbackReason: undefined,
       deliveryId: "delivery",
     });
     expect(logger.info).toHaveBeenCalledTimes(1);

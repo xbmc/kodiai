@@ -50,6 +50,8 @@ export type CostTracker = {
     cacheWriteTokens?: number;
     durationMs: number;
     costUsd?: number;
+    usedFallback?: boolean;
+    fallbackReason?: string;
     deliveryId?: string;
     error?: string;
   }): Promise<void>;
@@ -129,7 +131,10 @@ export function createCostTracker(deps: {
           cacheWriteTokens: params.cacheWriteTokens,
           estimatedCostUsd,
           durationMs: params.durationMs,
-          usedFallback: false,
+          usedFallback: params.usedFallback ?? false,
+          ...(params.fallbackReason === undefined
+            ? {}
+            : { fallbackReason: params.fallbackReason }),
           error: params.error,
         };
 

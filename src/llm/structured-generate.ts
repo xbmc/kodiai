@@ -227,6 +227,8 @@ async function runStructuredAgentAttempt<T>(
         cacheWriteTokens: usage.cacheWriteTokens,
         durationMs,
         costUsd: resultMessage.total_cost_usd,
+        usedFallback,
+        fallbackReason,
         deliveryId: options.deliveryId,
       });
     }
@@ -248,7 +250,7 @@ async function runStructuredAgentAttempt<T>(
       throw new StructuredGenerationError(
         "domain-grounding-rejection",
         "Structured output failed domain validation",
-        false,
+        true,
         { cause: error },
       );
     }
