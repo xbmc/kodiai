@@ -1,4 +1,6 @@
 import type { AddonRuleAddonContext } from "./addon-rule-context.ts";
+import type { AddonRuleEvidenceContext } from "./addon-rule-evidence.ts";
+import { projectAddonRuleEvidence } from "./addon-rule-evidence.ts";
 import type { AddonRuleSource } from "./addon-rule-source.ts";
 import type { AddonRuleFinding } from "./addon-rule-types.ts";
 
@@ -22,7 +24,36 @@ const MAX_FINDINGS = 20;
 const MAX_MESSAGE_CHARS = 400;
 const MAX_RULE_CHARS = 80;
 
-export function buildAddonRuleReviewPrompt(params: AddonRuleLlmInput): string {
+export const ADDON_RULE_REVIEW_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "findings"],
+  properties: {
+    summary: { type: "string", minLength: 1, maxLength: MAX_SUMMARY_CHARS },
+    findings: {
+      type: "array",
+      maxItems: MAX_FINDINGS,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["addonId", "path", "line", "rule", "level", "message"],
+        properties: {
+          addonId: { type: "string", minLength: 1 },
+          path: { type: "string", minLength: 1 },
+          line: { type: "integer", minimum: 1 },
+          rule: { type: "string", minLength: 1, maxLength: MAX_RULE_CHARS },
+          level: { type: "string", enum: ["ERROR", "WARN"] },
+          message: { type: "string", minLength: 1, maxLength: MAX_MESSAGE_CHARS },
+        },
+      },
+    },
+  },
+};
+
+export function buildAddonRuleReviewPrompt(
+  params: AddonRuleLlmInput,
+  evidenceContexts: readonly AddonRuleEvidenceContext[],
+): string {
   return [
     `Review Kodi addon submission rules for ${params.repo}#${params.prNumber}.`,
     `Target branch: ${params.baseBranch}`,
@@ -33,147 +64,121 @@ export function buildAddonRuleReviewPrompt(params: AddonRuleLlmInput): string {
     params.rules.text,
     "",
     "Exclusive review scope:",
-    "- Review only the supplied diff patches and changed-path metadata.",
+    "- Review only the supplied added-line evidence and changed-path metadata.",
     "- Do not review Python or JavaScript correctness, syntax, logic, style, architecture, or maintainability.",
-    "- Review content only for addon.xml, Python, and web-interface JavaScript patches.",
+    "- Review content only for addon.xml, Python, and web-interface JavaScript added lines.",
     "- Check only Kodi addon submission rules: target branch, development artifacts, obfuscation, binaries, licenses, translations, addon.xml metadata, filesystem boundaries, user consent for downloads, executable execution, addon installation or modification, direct database access, forced skin view/sort modes, and analytics.",
-    "- Ground every statement and finding in the supplied target branch, changed paths, or patch text.",
-    "- Use the new-file/right-side added-line number from a supplied patch. The line is required for every finding about a specific added code line; omit it only for file-level findings or when no added-line coordinate is available.",
+    "- Ground every statement and finding in the supplied target branch, changed paths, or added-line evidence.",
+    "- Every finding must identify an exact path and line from the supplied added-line evidence. Branch and file-level rules are handled deterministically.",
     "- Use only ERROR or WARN finding levels. Omit uncertain claims unless a WARN clearly states what a human must confirm.",
     "- Do not include an approval, rejection, or merge verdict.",
     "- Do not mention reviewer handles, prior PR backlinks, raw prompts, hidden context, or unverifiable claims.",
     "- Summary must be one to three factual sentences and at most 600 characters.",
     "- Return at most 20 findings; each message must be at most 400 characters.",
     "",
-    "Return only JSON with this shape:",
-    '{ "summary": "Factual changed-evidence summary.", "findings": [{ "addonId": "plugin.video.example", "path": "plugin.video.example/default.py", "line": 42, "rule": "skin-view-mode", "level": "ERROR", "message": "Specific rule issue grounded in the patch." }] }',
+    "Return the result using the supplied JSON schema.",
     "",
-    "Changed addon patch context JSON:",
-    JSON.stringify(params.contexts, null, 2),
+    "Changed add-on added-line evidence JSON:",
+    JSON.stringify(evidenceContexts),
   ].join("\n");
+}
+
+export function validateAddonRuleReviewOutput(
+  value: unknown,
+  originalContexts: readonly AddonRuleAddonContext[],
+): AddonRuleLlmResult {
+  try {
+    const record = requireExactRecord(value, ["summary", "findings"]);
+    const summary = requireBoundedSafeString(record.summary, MAX_SUMMARY_CHARS);
+    if (!Array.isArray(record.findings) || record.findings.length > MAX_FINDINGS) {
+      throw new Error();
+    }
+
+    const pathsByAddon = new Map(
+      originalContexts.map((context) => [context.addonId, new Set(context.allChangedPaths)] as const),
+    );
+    const addedLinesByPath = collectAddedLinesByPath(originalContexts);
+    const findings: AddonRuleFinding[] = record.findings.map((item) => {
+      const finding = requireExactRecord(item, [
+        "addonId",
+        "path",
+        "line",
+        "rule",
+        "level",
+        "message",
+      ]);
+      const addonId = requireBoundedSafeString(finding.addonId);
+      const path = requireBoundedSafeString(finding.path);
+      const rule = requireBoundedSafeString(finding.rule, MAX_RULE_CHARS);
+      const message = requireBoundedSafeString(finding.message, MAX_MESSAGE_CHARS);
+      const line = finding.line;
+      const level = finding.level;
+
+      if ((level !== "ERROR" && level !== "WARN")
+        || typeof line !== "number"
+        || !Number.isInteger(line)
+        || line < 1
+        || !pathsByAddon.get(addonId)?.has(path)
+        || !addedLinesByPath.get(addonPathKey(addonId, path))?.has(line)) {
+        throw new Error();
+      }
+
+      return { addonId, path, line, rule, level, source: "llm", message };
+    });
+
+    return { summary, findings };
+  } catch {
+    throw new Error("Structured addon review output failed domain validation");
+  }
 }
 
 export function parseAddonRuleReviewOutput(
   text: string,
   contexts: readonly AddonRuleAddonContext[],
 ): AddonRuleLlmResult {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(extractJsonObject(text));
+    return validateAddonRuleReviewOutput(JSON.parse(extractJsonObject(text)), contexts);
   } catch {
     return { findings: [], rejectedOutput: true };
   }
-
-  if (!parsed || typeof parsed !== "object") {
-    return { findings: [], rejectedOutput: true };
-  }
-
-  const record = parsed as Record<string, unknown>;
-  if (!Array.isArray(record.findings) || record.findings.length > MAX_FINDINGS) {
-    return { findings: [], rejectedOutput: true };
-  }
-
-  const result: AddonRuleLlmResult = { findings: [] };
-  const summary = typeof record.summary === "string" ? record.summary.trim() : "";
-  if (summary && summary.length <= MAX_SUMMARY_CHARS && !isUnsafeText(summary)) {
-    result.summary = summary;
-  } else if (record.summary !== undefined) {
-    result.rejectedSummary = true;
-  }
-
-  const pathsByAddon = new Map(
-    contexts.map((context) => [context.addonId, new Set(context.allChangedPaths)] as const),
-  );
-  const addedLinesByPath = collectAddedLinesByPath(contexts);
-
-  for (const item of record.findings) {
-    if (!item || typeof item !== "object") continue;
-    const finding = item as Record<string, unknown>;
-    const addonId = safeString(finding.addonId);
-    const path = safeString(finding.path);
-    const rule = safeString(finding.rule);
-    const level = finding.level;
-    const message = safeString(finding.message);
-    const addonPaths = pathsByAddon.get(addonId);
-    const requestedLine = finding.line;
-    const line = typeof requestedLine === "number"
-      && Number.isInteger(requestedLine)
-      && requestedLine > 0
-      && path
-      && addedLinesByPath.get(addonPathKey(addonId, path))?.has(requestedLine)
-      ? requestedLine
-      : undefined;
-
-    if (!addonPaths
-      || !rule
-      || rule.length > MAX_RULE_CHARS
-      || (level !== "ERROR" && level !== "WARN")
-      || !message
-      || message.length > MAX_MESSAGE_CHARS
-      || isUnsafeText(rule)
-      || isUnsafeText(message)
-      || (path && !addonPaths.has(path))) {
-      continue;
-    }
-
-    result.findings.push({
-      addonId,
-      ...(path ? { path } : {}),
-      ...(line !== undefined ? { line } : {}),
-      rule,
-      level,
-      source: "llm",
-      message,
-    });
-  }
-
-  return result;
 }
 
 function collectAddedLinesByPath(
   contexts: readonly AddonRuleAddonContext[],
 ): Map<string, Set<number>> {
   const result = new Map<string, Set<number>>();
-  for (const context of contexts) {
+  for (const context of projectAddonRuleEvidence(contexts)) {
     for (const file of context.files) {
-      if (file.patch === undefined) continue;
-      result.set(addonPathKey(context.addonId, file.path), collectAddedRightSideLines(file.patch));
+      result.set(
+        addonPathKey(context.addonId, file.path),
+        new Set(file.addedLines.map(({ line }) => line)),
+      );
     }
   }
   return result;
-}
-
-function collectAddedRightSideLines(patch: string): Set<number> {
-  const lines = new Set<number>();
-  let rightLine: number | undefined;
-
-  for (const patchLine of patch.split("\n")) {
-    const hunk = patchLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-    if (hunk) {
-      rightLine = Number.parseInt(hunk[1]!, 10);
-      continue;
-    }
-    if (rightLine === undefined || patchLine.startsWith("\\ No newline at end of file")) {
-      continue;
-    }
-    if (patchLine.startsWith("-") && !patchLine.startsWith("---")) {
-      continue;
-    }
-    if (patchLine.startsWith("+") && !patchLine.startsWith("+++")) {
-      lines.add(rightLine);
-    }
-    rightLine += 1;
-  }
-
-  return lines;
 }
 
 function addonPathKey(addonId: string, path: string): string {
   return `${addonId}\u0000${path}`;
 }
 
-function safeString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+function requireExactRecord(value: unknown, keys: readonly string[]): Record<string, unknown> {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) throw new Error();
+  const record = value as Record<string, unknown>;
+  const actualKeys = Object.keys(record);
+  if (actualKeys.length !== keys.length || keys.some((key) => !actualKeys.includes(key))) {
+    throw new Error();
+  }
+  return record;
+}
+
+function requireBoundedSafeString(value: unknown, maxLength?: number): string {
+  if (typeof value !== "string") throw new Error();
+  const result = value.trim();
+  if (!result || (maxLength !== undefined && result.length > maxLength) || isUnsafeText(result)) {
+    throw new Error();
+  }
+  return result;
 }
 
 function extractJsonObject(text: string): string {
