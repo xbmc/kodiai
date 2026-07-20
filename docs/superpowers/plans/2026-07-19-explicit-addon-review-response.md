@@ -13,6 +13,7 @@
 - Explicit `addon_rule_review.requested` events use `kodiai:addon-review-request:<synthetic-delivery-id>` markers.
 - Automatic `pull_request.opened` and `pull_request.synchronize` events retain `kodiai:addon-check:<owner>/<repo>:<pr-number>` markers.
 - A retry of one explicit delivery updates its prior response; a later explicit delivery creates a separate response.
+- The marker-idempotent publication transaction retries transient GitHub failures before returning a non-fatal handler error.
 - The per-file patch cap is exactly 80,000 characters; larger patches remain explicitly incomplete.
 - A finding line is published only when it is a positive integer matching an added right-side line in that finding's supplied patch.
 - File-level or unverifiable findings remain path-only.

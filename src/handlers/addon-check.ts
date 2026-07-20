@@ -44,6 +44,7 @@ import {
 import { mapWithConcurrency } from "../lib/concurrency.ts";
 import { fetchAllPullRequestFiles } from "../lib/github-pr-files.ts";
 import { findIssueCommentByMarkerPaged } from "../lib/github-issue-comments.ts";
+import { retryGitHubTransient } from "../lib/github-retry.ts";
 import {
   createIssueCommentWithPublicationPipeline,
   updateIssueCommentWithPublicationPipeline,
@@ -99,34 +100,37 @@ export async function upsertAddonCheckComment(params: {
   const { octokit, owner, repo, prNumber, marker, body, botHandles } = params;
 
   try {
-    const existing = await findIssueCommentByMarkerPaged(octokit, {
-      owner,
-      repo,
-      issueNumber: prNumber,
-      marker,
-    });
-
-    if (existing) {
-      const updated = await updateIssueCommentWithPublicationPipeline(octokit as never, {
+    const status = await retryGitHubTransient(async (): Promise<AddonCheckCommentUpsertStatus> => {
+      const existing = await findIssueCommentByMarkerPaged(octokit, {
         owner,
         repo,
-        comment_id: existing.id,
+        issueNumber: prNumber,
+        marker,
+      });
+
+      if (existing) {
+        const updated = await updateIssueCommentWithPublicationPipeline(octokit as never, {
+          owner,
+          repo,
+          comment_id: existing.id,
+          body,
+          botHandles,
+          preserveKodiaiMarkers: true,
+        });
+        return { action: "updated", commentId: updated.data.id };
+      }
+
+      const created = await createIssueCommentWithPublicationPipeline(octokit as never, {
+        owner,
+        repo,
+        issue_number: prNumber,
         body,
         botHandles,
         preserveKodiaiMarkers: true,
       });
-      return resultOk({ action: "updated", commentId: updated.data.id });
-    }
-
-    const created = await createIssueCommentWithPublicationPipeline(octokit as never, {
-      owner,
-      repo,
-      issue_number: prNumber,
-      body,
-      botHandles,
-      preserveKodiaiMarkers: true,
+      return { action: "created", commentId: created.data.id };
     });
-    return resultOk({ action: "created", commentId: created.data.id });
+    return resultOk(status);
   } catch (err) {
     return resultErr(toError(err));
   }

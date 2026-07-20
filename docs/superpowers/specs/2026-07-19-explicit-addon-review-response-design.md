@@ -52,7 +52,7 @@ The formatter will render a validated location as `path:line`. File-level findin
 
 ## Error Handling
 
-Comment lookup, creation, and update retain the existing sanitized publication pipeline and result-based error handling. A failed response publication remains a logged non-fatal add-on handler failure; automatic canonical publication behavior is unchanged.
+Comment lookup, creation, and update retain the existing sanitized publication pipeline and result-based error handling. The complete marker-idempotent upsert transaction retries transient GitHub failures so a temporary 5xx response does not permanently lose the review before ingress delivery deduplication takes effect. An exhausted response publication remains a logged non-fatal add-on handler failure; automatic canonical publication behavior is unchanged.
 
 ## Testing
 

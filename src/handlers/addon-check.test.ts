@@ -413,6 +413,36 @@ describe("createAddonCheckHandler", () => {
     expect(octokit._createCommentMock).not.toHaveBeenCalled();
   });
 
+  it("retries a transient GitHub failure while publishing an idempotent response", async () => {
+    const marker = "<!-- kodiai:addon-review-request:delivery-mention-1:addon-rule-review -->";
+    const octokit = createMockOctokitWithIssues([], []);
+    let attempts = 0;
+    octokit.rest.issues.listComments = mock(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw Object.assign(new Error("GitHub unavailable"), { status: 503 });
+      }
+      return { data: [] };
+    }) as typeof octokit.rest.issues.listComments;
+
+    const result = await upsertAddonCheckComment({
+      octokit: octokit as Parameters<typeof upsertAddonCheckComment>[0]["octokit"],
+      owner: "xbmc",
+      repo: "repo-plugins",
+      prNumber: 42,
+      marker,
+      body: `${marker}\nresponse`,
+      botHandles: ["kodiai", "claude"],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { action: "created", commentId: 9999 },
+    });
+    expect(attempts).toBe(2);
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+  });
+
   // ── Registration ──────────────────────────────────────────────────────
 
   it("registers on pull_request.opened, pull_request.synchronize, and addon_rule_review.requested", () => {
