@@ -38,7 +38,7 @@ export function buildAddonRuleReviewPrompt(params: AddonRuleLlmInput): string {
     "- Review content only for addon.xml, Python, and web-interface JavaScript patches.",
     "- Check only Kodi addon submission rules: target branch, development artifacts, obfuscation, binaries, licenses, translations, addon.xml metadata, filesystem boundaries, user consent for downloads, executable execution, addon installation or modification, direct database access, forced skin view/sort modes, and analytics.",
     "- Ground every statement and finding in the supplied target branch, changed paths, or patch text.",
-    "- For a line-specific finding, include line as the new-file/right-side added-line number from a supplied patch. Omit line for file-level findings or when no added-line coordinate is available.",
+    "- Use the new-file/right-side added-line number from a supplied patch. The line is required for every finding about a specific added code line; omit it only for file-level findings or when no added-line coordinate is available.",
     "- Use only ERROR or WARN finding levels. Omit uncertain claims unless a WARN clearly states what a human must confirm.",
     "- Do not include an approval, rejection, or merge verdict.",
     "- Do not mention reviewer handles, prior PR backlinks, raw prompts, hidden context, or unverifiable claims.",

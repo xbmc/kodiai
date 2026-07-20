@@ -50,7 +50,7 @@ The live PR #2861 review marked one patch truncated because `script.module.pyrol
 
 The formatter will render a validated location as `path:line`. File-level findings, path-only deterministic findings, and findings based on metadata without a usable patch will remain `path`-only.
 
-Complete evidence sets that would form an oversized single model prompt are partitioned on file boundaries into requests containing at most 60,000 patch characters, except when one already-accepted file patch is larger. Up to three chunks run concurrently and their grounded findings are aggregated into the same response. A failed chunk retains findings from successful chunks and marks the model review incomplete instead of discarding useful evidence.
+Complete evidence sets that would form an oversized single model prompt are partitioned on file boundaries into requests containing at most 60,000 patch characters, except when one already-accepted file patch is larger. Up to three chunks run concurrently, and a failed or rejected chunk gets one bounded retry. Grounded findings are aggregated into the same response; a chunk that fails both attempts retains findings from successful chunks and marks the model review incomplete instead of discarding useful evidence.
 
 Rules that are explicit and mechanically provable do not depend on model availability. A changed license-like path must be named `LICENSE.txt`, and CRLF on an added text line produces a deterministic `path:line` finding derived from the unified diff's right-side coordinate.
 

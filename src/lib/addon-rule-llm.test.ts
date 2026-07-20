@@ -51,6 +51,7 @@ describe("buildAddonRuleReviewPrompt", () => {
     expect(prompt).toContain('"path"');
     expect(prompt).toContain('"line"');
     expect(prompt).toContain("new-file/right-side added-line number");
+    expect(prompt).toContain("line is required for every finding about a specific added code line");
     expect(prompt).toContain("Container.SetViewMode");
     expect(prompt).not.toContain("Full changed files are provided");
     expect(prompt).not.toContain("Prefer Kodi addon submission-rule findings");

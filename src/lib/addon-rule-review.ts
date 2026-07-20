@@ -28,6 +28,7 @@ type GenerateAddonRuleChunk = (params: AddonRuleLlmInput) => Promise<string>;
 
 export const MAX_ADDON_RULE_LLM_CHUNK_PATCH_CHARS = 60_000;
 const ADDON_RULE_LLM_CHUNK_CONCURRENCY = 3;
+const ADDON_RULE_LLM_CHUNK_ATTEMPTS = 2;
 const MAX_AGGREGATED_ADDON_RULE_FINDINGS = 20;
 
 export async function runDefaultAddonRuleLlm(
@@ -40,21 +41,48 @@ export async function runDefaultAddonRuleLlm(
   const chunkResults = await mapWithConcurrency(
     chunks,
     ADDON_RULE_LLM_CHUNK_CONCURRENCY,
-    async (contexts, chunkIndex) => {
-      const chunkInput = { ...input, contexts };
-      try {
-        const text = await generateChunk(chunkInput);
-        return parseAddonRuleReviewOutput(text, contexts);
-      } catch (err) {
-        logger.warn(
-          { err, chunkIndex: chunkIndex + 1, chunkCount: chunks.length },
-          "Addon rule model chunk failed",
-        );
-        return { findings: [], rejectedOutput: true } satisfies AddonRuleLlmResult;
-      }
-    },
+    (contexts, chunkIndex) => reviewAddonRuleChunk({
+      input: { ...input, contexts },
+      generateChunk,
+      logger,
+      chunkIndex,
+      chunkCount: chunks.length,
+    }),
   );
   return aggregateAddonRuleChunkResults(input, chunks.length, chunkResults);
+}
+
+async function reviewAddonRuleChunk(params: {
+  input: AddonRuleLlmInput;
+  generateChunk: GenerateAddonRuleChunk;
+  logger: Logger;
+  chunkIndex: number;
+  chunkCount: number;
+}): Promise<AddonRuleLlmResult> {
+  let retained: AddonRuleLlmResult | undefined;
+  for (let attempt = 1; attempt <= ADDON_RULE_LLM_CHUNK_ATTEMPTS; attempt += 1) {
+    try {
+      const text = await params.generateChunk(params.input);
+      const parsed = parseAddonRuleReviewOutput(text, params.input.contexts);
+      if (!parsed.rejectedOutput && !parsed.rejectedSummary) return parsed;
+      if (!retained || parsed.findings.length > retained.findings.length) retained = parsed;
+      params.logger.warn(
+        { attempt, chunkIndex: params.chunkIndex + 1, chunkCount: params.chunkCount },
+        "Addon rule model chunk returned rejected output",
+      );
+    } catch (err) {
+      params.logger.warn(
+        { err, attempt, chunkIndex: params.chunkIndex + 1, chunkCount: params.chunkCount },
+        "Addon rule model chunk failed",
+      );
+    }
+  }
+  return {
+    ...(retained?.summary ? { summary: retained.summary } : {}),
+    findings: retained?.findings ?? [],
+    ...(retained?.rejectedSummary ? { rejectedSummary: true } : {}),
+    rejectedOutput: true,
+  };
 }
 
 function createDefaultChunkGenerator(logger: Logger): GenerateAddonRuleChunk {

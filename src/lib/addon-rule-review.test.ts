@@ -157,7 +157,7 @@ describe("runDefaultAddonRuleLlm", () => {
   });
 
   test("retains successful chunk findings while marking a failed chunk incomplete", async () => {
-    let call = 0;
+    const attemptsByPath = new Map<string, number>();
     const result = await runDefaultAddonRuleLlm({
       repo: "xbmc/repo-scripts",
       prNumber: 42,
@@ -173,9 +173,9 @@ describe("runDefaultAddonRuleLlm", () => {
         })),
       }],
     }, logger, async (chunkInput) => {
-      call += 1;
-      if (call === 2) throw new Error("model timeout");
       const file = chunkInput.contexts[0]!.files[0]!;
+      attemptsByPath.set(file.path, (attemptsByPath.get(file.path) ?? 0) + 1);
+      if (file.path.endsWith("two.py")) throw new Error("model timeout");
       return JSON.stringify({
         summary: "The first chunk adds a restricted call.",
         findings: [{
@@ -195,5 +195,35 @@ describe("runDefaultAddonRuleLlm", () => {
       rule: "executable-execution",
     })]);
     expect(result.rejectedOutput).toBe(true);
+    expect(attemptsByPath.get("script.example/two.py")).toBe(2);
+  });
+
+  test("retries a transient failed chunk once without marking the review incomplete", async () => {
+    let attempts = 0;
+    const result = await runDefaultAddonRuleLlm({
+      repo: "xbmc/repo-scripts",
+      prNumber: 42,
+      baseBranch: "matrix",
+      rules,
+      contexts: [{
+        addonId: "script.example",
+        allChangedPaths: ["script.example/default.py"],
+        files: [{
+          path: "script.example/default.py",
+          status: "modified",
+          patch: "@@ -1 +1 @@\n-old()\n+new()",
+        }],
+      }],
+    }, logger, async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("model timeout");
+      return JSON.stringify({ summary: "The retry reviewed the Python change.", findings: [] });
+    });
+
+    expect(attempts).toBe(2);
+    expect(result).toEqual({
+      summary: "The retry reviewed the Python change.",
+      findings: [],
+    });
   });
 });
