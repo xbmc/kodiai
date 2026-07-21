@@ -341,7 +341,9 @@ describe("launchAcaJob", () => {
         logger: logger as unknown as Logger,
       });
 
-      const infoPayloads = logger.info.mock.calls.map((call) => call[0]);
+      const infoPayloads = logger.info.mock.calls.map(
+        (call) => (call as unknown as readonly [unknown])[0],
+      );
       const serialized = JSON.stringify(infoPayloads);
       expect(serialized).not.toContain("kodiairegistry.azurecr.io");
       expect(serialized).not.toContain("kodiai-agent:latest");
