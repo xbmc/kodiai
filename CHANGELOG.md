@@ -4,11 +4,35 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v0.49 (2026-07-20)
+
+Concise, submission-rule-focused Kodi addon reviews with complete model coverage, concrete line references, and live validation on `xbmc/repo-scripts#2861`.
+
+### Added
+
+- Specialized addon review output with a brief Summary, concrete Findings, and Verdict instead of the generic Python code-quality review.
+- Deterministic addon checks plus eight contextual model-backed rule checks, with exact added-line evidence for actionable findings.
+- Immediate eyes acknowledgement for explicit addon review mentions, followed by a separate idempotent review response that does not overwrite the canonical review comment.
+
 ### Changed
 
-- Make Kodi add-on rule reviews use schema-backed Haiku output and bounded line-numbered diff evidence, preventing large Python submissions from silently losing model coverage.
-- Add-on submissions now receive one concise, diff-grounded Summary/Findings/Verdict review; configured add-on repositories no longer run the generic Python code-quality reviewer.
-- Explicit add-on review mentions now receive an eyes acknowledgement before the specialized review is dispatched.
+- Addon model review uses schema-backed, tool-free structured output with Haiku/Sonnet fallback and bounded evidence chunks capped at 22,000 characters and 120 changed lines.
+- Every evidence chunk must complete before the model-backed rule pass is reported complete; summaries now state the true reviewed patch, chunk, and contextual-finding counts.
+- Configured addon repositories no longer run the generic Python code-quality reviewer for addon submissions.
+- Conversational PR requests that summarize risk now receive the prefetched PR diff as grounding context.
+
+### Fixed
+
+- Large addon submissions no longer silently lose model-backed rule coverage or report an incomplete review as complete.
+- Model findings now resolve to concrete added-line locations instead of file-only references where the diff provides a valid position.
+
+### Verification
+
+- `bun run test:unit` passed with `6825 pass`, `0 fail`.
+- The database lane passed with `44 pass`, `150 skip`, `0 fail` in its documented no-test-database configuration.
+- `bunx tsc --noEmit`, `bun run lint`, and the production Bun bundle passed.
+- Pre-release revision `ca-kodiai--deploy-569304602b72-20260719-222404` served 100% of traffic and passed `/healthz` and `/readiness`.
+- Live acceptance response `xbmc/repo-scripts#2861` comment `5019112641` reviewed 23 scoped patches across 17 evidence chunks, reported 19 model-backed contextual findings, and emitted no incomplete-review caveat.
 
 ## v0.48 (2026-07-13)
 

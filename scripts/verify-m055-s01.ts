@@ -5,9 +5,16 @@ const COMMAND_NAME = "verify:m055:s01" as const;
 const README_PATH = path.resolve(import.meta.dir, "../README.md");
 const CHANGELOG_PATH = path.resolve(import.meta.dir, "../CHANGELOG.md");
 const PACKAGE_JSON_PATH = path.resolve(import.meta.dir, "../package.json");
-const EXPECTED_SHIPPED_COUNT_LINE = "48 milestones shipped (v0.1 through v0.48).";
+const EXPECTED_SHIPPED_COUNT_LINE = "49 milestones shipped (v0.1 through v0.49).";
 const EXPECTED_PACKAGE_SCRIPT = "bun scripts/verify-m055-s01.ts";
 const REQUIRED_RECENT_FEATURE_MARKERS = [
+  "v0.49",
+  "concise addon reviews",
+  "Summary/Findings/Verdict",
+  "exact added-line grounding",
+  "complete model-backed rule coverage",
+  "truthful finding counts",
+  "ca-kodiai--deploy-569304602b72-20260719-222404",
   "v0.48",
   "review-publication correctness",
   "blocked candidate findings",
@@ -50,6 +57,7 @@ const REQUIRED_NIGHTLY_WORKFLOW_MARKERS = [
   "GitHub Actions workflow run status",
 ] as const;
 const REQUIRED_CHANGELOG_RELEASE_MARKERS = [
+  "## v0.49",
   "## v0.47",
   "## v0.48",
   "## v0.46",
@@ -288,7 +296,7 @@ function buildReadmeRecentFeaturesCheck(readmeContent: string): Check {
   return passCheck(
     "M055-S01-README-RECENT-FEATURES",
     "readme_recent_features_ok",
-    `README.md covers v0.48, v0.47, v0.46, and recent milestones M073-M074 while retaining M051-M054/M066 shipped feature markers.`,
+    `README.md covers v0.49, v0.48, v0.47, v0.46, and recent milestones M073-M074 while retaining M051-M054/M066 shipped feature markers.`,
   );
 }
 
@@ -328,7 +336,7 @@ function buildChangelogRecentReleasesCheck(changelogContent: string): Check {
   return passCheck(
     "M055-S01-CHANGELOG-RECENT-RELEASES",
     "changelog_recent_releases_ok",
-    "CHANGELOG.md includes v0.29 through v0.31 and current v0.36 through v0.48 release entries.",
+    "CHANGELOG.md includes v0.29 through v0.31 and current v0.36 through v0.49 release entries.",
   );
 }
 

@@ -21,10 +21,11 @@ const PASSING_README = `# Kodiai
 
 Kodiai is an installable GitHub App that delivers AI-powered code review, conversational assistance, issue intelligence, and Slack integration. One installation replaces per-repo workflow YAML — configure behavior with an optional .kodiai.yml file.
 
-48 milestones shipped (v0.1 through v0.48). See [CHANGELOG.md](CHANGELOG.md) for release history.
+49 milestones shipped (v0.1 through v0.49). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Recent Shipped Milestones
 
+- **v0.49 — concise addon reviews:** concise addon reviews with Summary/Findings/Verdict, exact added-line grounding, complete model-backed rule coverage, and truthful finding counts shipped in ca-kodiai--deploy-569304602b72-20260719-222404.
 - **v0.48 — review-publication correctness:** review-publication correctness fixes for blocked candidate findings, complete approval evidence, and accuracy-first guidance shipped in ca-kodiai--deploy-656c76dcade2-20260713-103748.
 - **v0.47 — addon-rule review routing:** addon-rule review routing, generated-rule store fixes, and MCP server module bundling are shipped with live proof on xbmc/xbmc#28172.
 - **v0.46 — review/deployment reliability:** MCP auth fallback, PR-file retry pagination, and cluster candidate lookup cleanup are shipped with live proof on xbmc/xbmc#28172.
@@ -48,6 +49,10 @@ Both workflows also support manual workflow_dispatch runs for testing, and any f
 `;
 
 const PASSING_CHANGELOG = `# Changelog
+
+## v0.49 (2026-07-20)
+
+Concise addon reviews.
 
 ## v0.48 (2026-07-13)
 
@@ -207,7 +212,7 @@ describe("verify m055 s01 docs truth harness", () => {
       readTextFile: async (filePath: string) => {
         if (filePath.endsWith("README.md")) {
           return PASSING_README
-            .replace("48 milestones shipped (v0.1 through v0.48).", "47 milestones shipped (v0.1 through v0.47).")
+            .replace("49 milestones shipped (v0.1 through v0.49).", "48 milestones shipped (v0.1 through v0.48).")
             .replace("MCP auth fallback", "MCP compatibility")
             .replace("Slack webhook relay", "Slack integration")
             .replace("nightly-reaction-sync runs bun scripts/sync-triage-reactions.ts shortly after issue sync.", "Nightly workflows keep things current.");
@@ -253,10 +258,11 @@ describe("verify m055 s01 docs truth harness", () => {
         status_code: "package_wiring_missing",
       }),
     ]);
-    expect(report.checks[0]?.detail).toContain("48 milestones shipped");
+    expect(report.checks[0]?.detail).toContain("49 milestones shipped");
     expect(report.checks[1]?.detail).toContain("MCP auth fallback");
     expect(report.checks[1]?.detail).toContain("Slack webhook relay");
     expect(report.checks[2]?.detail).toContain("nightly-reaction-sync");
+    expect(report.checks[3]?.detail).toContain("v0.49");
     expect(report.checks[3]?.detail).toContain("v0.48");
     expect(report.checks[3]?.detail).toContain("v0.47");
     expect(report.checks[3]?.detail).toContain("v0.45");
