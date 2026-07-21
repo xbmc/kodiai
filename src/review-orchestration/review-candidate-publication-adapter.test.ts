@@ -327,6 +327,54 @@ describe("review candidate publication adapter", () => {
     expect(JSON.stringify(adapted.summary.detailsOnlyFindings)).not.toContain("safe replacement that must not appear");
   });
 
+  test("projects approved findings without replacement text into bounded details-only findings", () => {
+    const candidates = candidateResult([
+      candidateInput("src/without-fix.ts", "Finding without generated fix", {
+        startLine: 12,
+        endLine: 12,
+        severity: "major",
+        category: "correctness",
+        body: "The implementation can return stale data after the cache key changes.",
+        fixReplacementText: undefined,
+      }),
+    ]);
+    const candidate = candidates.findings[0]!;
+    const visibleFinding = reducerFinding(1, candidate, { candidateFingerprint: candidate.fingerprint });
+    const approval = coordinateReviewCandidateApproval({
+      candidates,
+      reducer: reducerResult({ findings: [visibleFinding], visibleFindings: [visibleFinding] }),
+    });
+
+    const adapted = adaptApprovedCandidatesForInlinePublication({
+      approval,
+      reducer: reducerResult({ visibleFindings: [visibleFinding] }),
+      prDiffText: PR_DIFF,
+    });
+
+    expect(adapted.payloads).toEqual([]);
+    expect(adapted.summary.counts).toMatchObject({
+      publishable: 0,
+      detailsOnlyFindings: 1,
+      movedToDetails: 1,
+      detailsOnlyOmitted: 0,
+    });
+    expect(adapted.summary.movedToDetails).toMatchObject({
+      counts: { total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 },
+      reasonCounts: { "missing-replacement": 1 },
+    });
+    expect(adapted.summary.detailsOnlyFindings).toEqual([
+      expect.objectContaining({
+        fingerprint: candidate.fingerprint,
+        severity: "major",
+        category: "correctness",
+        title: "Finding without generated fix",
+        location: { path: "src/without-fix.ts", line: 12 },
+        reason: "missing-replacement",
+        excerpt: "The implementation can return stale data after the cache key changes.",
+      }),
+    ]);
+  });
+
   test("does not promote malformed, missing-line, or unsafe-path candidates to details-only findings", () => {
     const candidates = candidateResult([
       candidateInput("src/missing-line.ts", "Missing line", { startLine: undefined, endLine: undefined }),

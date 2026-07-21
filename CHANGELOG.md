@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Regular PR reviews now surface bounded, sanitized file/line findings immediately when an approved finding has no safe auto-generated patch, instead of replacing the finding text with publication-gate diagnostics.
+
 ## v0.49 (2026-07-20)
 
 Concise, submission-rule-focused Kodi addon reviews with complete model coverage, concrete line references, and live validation on `xbmc/repo-scripts#2861`.

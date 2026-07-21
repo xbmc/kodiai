@@ -17969,7 +17969,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     }));
   });
 
-  test("missing-replacement candidates are expected policy blocks with reason-aware Review Details", async () => {
+  test("missing-replacement candidates surface concrete findings before bounded Review Details", async () => {
     const { updatedSummaryBody, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
       executorPublished: false,
       exposeSummaryComment: true,
@@ -17988,7 +17988,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
             severity: "major",
             category: "correctness",
             title: "Candidate without replacement",
-            body: "This candidate has no safe replacement text and must stay private.",
+            body: "This candidate has no generated replacement, but the concrete risk needs author attention.",
           },
         ],
         rejections: [],
@@ -18028,27 +18028,32 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
     expect(updatedSummaryBody).toContain("Decision: NOT APPROVED");
     expect(updatedSummaryBody).not.toContain("Decision: APPROVE");
-    expect(updatedSummaryBody).toContain("Kodiai found 1 unpublished finding that requires human review.");
-    expect(detailsBlock).toContain("Review candidate publication: mode=blocked");
+    expect(updatedSummaryBody).toContain("- **MAJOR** `README.md:2` — Candidate without replacement");
+    expect(updatedSummaryBody).toContain("This candidate has no generated replacement, but the concrete risk needs author attention.");
+    expect(updatedSummaryBody).not.toContain("Kodiai found 1 unpublished finding that requires human review.");
+    expect(updatedSummaryBody).not.toContain("Raw finding text was kept private");
+    expect(detailsBlock).toContain("Review candidate publication: mode=moved-to-details");
     expect(detailsBlock).toContain("approved=1");
     expect(detailsBlock).toContain("publishable=0");
     expect(detailsBlock).toContain("nonPublishable=1");
     expect(detailsBlock).toContain("fixBlocked=1");
-    expect(detailsBlock).toContain("reasons=fix-eligibility-blocked");
-    expect(detailsBlock).toContain("buckets=blocked:1:fix-eligibility-blocked+missing-replacement");
-    expect(detailsBlock).not.toContain("This candidate has no safe replacement text");
+    expect(detailsBlock).toContain("reasons=candidate-moved-to-details,fix-eligibility-blocked");
+    expect(detailsBlock).toContain("movedToDetails=1");
+    expect(detailsBlock).toContain("Moved review candidates preserved in details:");
+    expect(detailsBlock).toContain("reason=missing-replacement");
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
     expect(publicationLog?.level).toBe("info");
-    expect(publicationLog?.message).toBe("Review candidate publication completed with expected policy block");
+    expect(publicationLog?.message).toBe("Review candidate publication completed");
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       approvedReferences: 1,
       candidatePublishable: 0,
       candidatePublished: 0,
+      candidateMovedToDetails: 1,
       fixEligibilityBlocked: 1,
       nonPublishableReferences: 1,
     }));
-    expect(publicationLog?.data?.reasons).toEqual(["fix-eligibility-blocked"]);
+    expect(publicationLog?.data?.reasons).toEqual(["candidate-moved-to-details", "fix-eligibility-blocked"]);
   });
 
   test("candidate draft prioritization respects maxComments before inline publication", async () => {

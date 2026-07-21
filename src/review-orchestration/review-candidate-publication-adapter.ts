@@ -36,6 +36,7 @@ export type ReviewCandidatePublicationSkipReason =
   | "missing-rewrite-visible-finding";
 
 export type ReviewCandidateMovedToDetailsReason =
+  | "missing-replacement"
   | "line-not-commentable"
   | "line-not-commentable-in-pr-diff";
 
@@ -298,8 +299,9 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
 
   fixEligibility.outcomes.forEach((outcome, index) => {
     const eligibleInput = eligibleInputs[index];
-    if (outcome.reason === "line-not-commentable" && eligibleInput) {
-      detailsProjection.add(fromEligibleInputDetailsFinding(eligibleInput, outcome, "line-not-commentable"), "fromFixEligibility");
+    const detailsReason = toMovedToDetailsReason(outcome.reason);
+    if (detailsReason && eligibleInput) {
+      detailsProjection.add(fromEligibleInputDetailsFinding(eligibleInput, outcome, detailsReason), "fromFixEligibility");
       return;
     }
     if (outcome.reason !== "eligible") return;
@@ -341,6 +343,13 @@ export function adaptApprovedCandidatesForInlinePublication(input: {
   };
 
   return { payloads, summary };
+}
+
+function toMovedToDetailsReason(
+  reason: SamePrFixEligibilityOutcome["reason"],
+): ReviewCandidateMovedToDetailsReason | undefined {
+  if (reason === "missing-replacement" || reason === "line-not-commentable") return reason;
+  return undefined;
 }
 
 export function adaptApprovedCandidatesForInlinePublicationResult(

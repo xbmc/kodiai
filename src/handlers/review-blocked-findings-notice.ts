@@ -5,6 +5,7 @@ import { buildReviewOutputMarker } from "../review-orchestration/review-idempote
 import { upsertCanonicalReviewSurface } from "../review-orchestration/review-canonical-surface.ts";
 import type { ReviewCandidatePublicationRuntimeResult } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import type { ReviewFindingLifecyclePublicProjection } from "../review-lifecycle/finding-lifecycle.ts";
+import { sanitizeContent, scanOutgoingForSecrets } from "../lib/sanitizer.ts";
 
 type SeverityCounts = {
   critical: number;
@@ -39,6 +40,69 @@ function boundedReasons(reasons: readonly string[]): string[] {
     .map((reason) => reason.trim())
     .filter((reason) => /^[a-z0-9][a-z0-9-]{0,63}$/i.test(reason))
     .slice(0, 6);
+}
+
+const MAX_VISIBLE_FINDINGS = 5;
+const MAX_VISIBLE_TITLE_LENGTH = 120;
+const MAX_VISIBLE_EXCERPT_LENGTH = 240;
+
+function formatVisibleFindingLines(runtime: ReviewCandidatePublicationRuntimeResult): string[] {
+  if (!hasSafeDetailsProjection(runtime)) return [];
+
+  return runtime.detailsOnlyFindings
+    .slice(0, MAX_VISIBLE_FINDINGS)
+    .flatMap((finding) => {
+      const path = sanitizePath(finding.location.path);
+      const line = readPositiveInteger(finding.location.line);
+      const title = sanitizeVisibleText(finding.title, MAX_VISIBLE_TITLE_LENGTH);
+      if (!path || !line || !title) return [];
+      const excerpt = sanitizeVisibleText(finding.excerpt, MAX_VISIBLE_EXCERPT_LENGTH);
+      return [
+        `- **${finding.severity.toUpperCase()}** \`${path}:${line}\` — ${title}`,
+        ...(excerpt ? [`  ${excerpt}`] : []),
+      ];
+    });
+}
+
+function hasSafeDetailsProjection(runtime: ReviewCandidatePublicationRuntimeResult): boolean {
+  const redaction = runtime.movedToDetails?.redaction;
+  return Boolean(
+    redaction
+    && redaction.rawCandidatePayloadsIncluded === false
+    && redaction.rawPromptsIncluded === false
+    && redaction.rawModelOutputIncluded === false
+    && redaction.diffsIncluded === false
+    && redaction.replacementTextIncluded === false
+    && redaction.githubResponsePayloadsIncluded === false
+    && redaction.secretLikeValuesIncluded === false
+    && redaction.bounded === true,
+  );
+}
+
+function sanitizePath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().replace(/\\/g, "/").replace(/^b\//, "").slice(0, 160);
+  if (!normalized || normalized.startsWith("/") || normalized.includes("..") || /^[a-zA-Z]:\//.test(normalized)) {
+    return null;
+  }
+  return normalized.replace(/`/g, "");
+}
+
+function sanitizeVisibleText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  const normalized = sanitizeContent(value)
+    .replace(/```suggestion[\s\S]*?```/gi, "[automatic fix omitted]")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized || scanOutgoingForSecrets(normalized).blocked) return null;
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function readPositiveInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 1
+    ? Math.trunc(value)
+    : null;
 }
 
 export function resolveBlockedReviewFindingsNotice(params: {
@@ -76,14 +140,27 @@ export function resolveBlockedReviewFindingsNotice(params: {
     ?.replace(buildReviewOutputMarker(params.reviewOutputKey), "")
     .trim();
   const issueLine = `Kodiai found ${findingCount} unpublished ${pluralize(findingCount, "finding")} that ${findingCount === 1 ? "requires" : "require"} human review.`;
+  const visibleFindingLines = formatVisibleFindingLines(runtime);
+  const omittedVisibleFindings = Math.max(0, findingCount - visibleFindingLines.filter((line) => line.startsWith("- **")).length);
   const body = [
     "Decision: NOT APPROVED",
     "",
     "Issues:",
-    `- ${issueLine}`,
-    `- Bounded severity summary: ${formatSeveritySummary(severityCounts)}.`,
-    `- Review output did not publish these findings inline${reasons.length > 0 ? `: ${reasons.join(", ")}` : "."}`,
-    "- Raw finding text was kept private; see Review Details for bounded counts and publication diagnostics.",
+    ...(visibleFindingLines.length > 0
+      ? [
+          ...visibleFindingLines,
+          ...(omittedVisibleFindings > 0
+            ? [`- ...and ${omittedVisibleFindings} additional ${pluralize(omittedVisibleFindings, "finding")} omitted from this bounded summary.`]
+            : []),
+          "",
+          "The findings need attention even though Kodiai could not produce safe automatic patches for them.",
+        ]
+      : [
+          `- ${issueLine}`,
+          `- Bounded severity summary: ${formatSeveritySummary(severityCounts)}.`,
+          `- Review output did not publish these findings inline${reasons.length > 0 ? `: ${reasons.join(", ")}` : "."}`,
+          "- Raw finding text was kept private; see Review Details for bounded counts and publication diagnostics.",
+        ]),
     ...(reviewDetailsBlock ? ["", reviewDetailsBlock] : []),
     "",
     buildReviewOutputMarker(params.reviewOutputKey),
