@@ -55,6 +55,8 @@ describe("mention retrieval intent helpers", () => {
   test("classifies code and diff seeking requests", () => {
     expect(isCodeSeekingMentionRequest("where is the handler in src/handlers/review.ts")).toBe(true);
     expect(isDiffSeekingMentionRequest("show me the diff for this PR")).toBe(true);
+    expect(isDiffSeekingMentionRequest("can you summarize the main risk here in one paragraph?")).toBe(true);
+    expect(isDiffSeekingMentionRequest("how do you repent?")).toBe(false);
   });
 
   test("builds retrieval body for explicit review vs diff inspection", () => {

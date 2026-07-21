@@ -157,8 +157,11 @@ export function isDiffSeekingMentionRequest(question: string): boolean {
   const diffNoun = /\b(diff|patch|changes|changed files|delta|hunk|stat|files changed)\b/;
   const diffVerb = /\b(show|inspect|review|analyze|walk\s+through|summarize|explain|compare|check)\b/;
   const comparePhrase = /\bwhat\s+changed\b/;
+  const riskSummaryPhrase = /\b(?:summarize|explain|analyze)\b.{0,80}\brisk(?:s)?\b/;
 
-  return comparePhrase.test(normalized) || (diffNoun.test(normalized) && diffVerb.test(normalized));
+  return comparePhrase.test(normalized)
+    || riskSummaryPhrase.test(normalized)
+    || (diffNoun.test(normalized) && diffVerb.test(normalized));
 }
 
 export function buildMentionRetrievalBody(params: {
