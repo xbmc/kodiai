@@ -14,6 +14,7 @@ All notable changes to this project are documented in this file.
 - The Language-Specific Guidance prompt section now discloses when languages are omitted past the 5-language cap instead of silently dropping them.
 - Duplicate GitHub comments: a review run no longer posts a redundant telemetry-only comment alongside (or instead of) the real verdict comment when findings are blocked or moved to details.
 - Unified the automatic push-triggered review pipeline and the explicit `@kodiai review` mention flow onto one canonical GitHub verdict surface per PR/commit, so the two triggers can no longer post contradictory verdicts (e.g. a stale automatic "NOT APPROVED" comment left standing next to a later mention-triggered "APPROVE" review, as seen on `xbmc/xbmc#28648`). Both paths now resolve the same trigger-agnostic surface key and publish through the same canonical create/update primitives; a new reconciliation step also annotates any pre-existing surface of the other kind (comment vs. formal review) as superseded when a new verdict lands.
+- A mention-triggered NOT-APPROVED verdict now always publishes through the canonical marker system, even when the model's free-text result doesn't match the expected finding-line format; previously it silently fell back to an unmarked plain reply in that case (found via a live smoke test on `xbmc/xbmc#28172`).
 
 ## v0.49 (2026-07-20)
 

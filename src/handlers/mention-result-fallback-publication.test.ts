@@ -147,6 +147,72 @@ describe("publishMentionSuccessFallback", () => {
     expect(createdBody).toContain("- (1) [major] src/a.ts (10): Some issue");
     expect(createdBody).toContain("<!-- kodiai:review-output-key:canonical-review-key -->");
   });
+
+  test("publishes a NOT-APPROVED notice through the canonical marker system even when findingLines failed to parse", async () => {
+    // Regression test for a live smoke test on xbmc/xbmc#28172: the model's free-text
+    // result used a bold-numbered format the findingLines parser didn't recognize, so
+    // findingLines came back empty even though the model reported real blocking issues.
+    // hasUnpublishedFindings alone must be enough to route through the canonical marker
+    // system -- it must not silently fall back to an unmarked plain reply in that case.
+    const postMentionReply = mock(async (_body: string) => undefined);
+    let createdBody: string | undefined;
+    const createComment = mock(async (args: { body: string }) => {
+      createdBody = args.body;
+      return { data: { id: 99 } };
+    });
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment,
+          updateComment: mock(async () => ({ data: { id: 99 } })),
+        },
+        pulls: {
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    } as never;
+
+    const resultText = [
+      "I've analyzed the diff and found several critical issues in this PR.",
+      "",
+      "**1. Compilation Error (CRITICAL)** - `xbmc/addons/AddonManager.cpp:151`",
+      "- Variable name mismatch: uses `addonId` but the loop variable is `id`",
+    ].join("\n");
+
+    const result = await publishMentionSuccessFallback({
+      explicitReviewRequest: true,
+      hasUnpublishedFindings: true,
+      findingLines: [],
+      resultText,
+      skipReason: undefined,
+      reviewOutputKey: "review-output-key",
+      canonicalReviewSurfaceKey: "canonical-review-key",
+      owner: "octo-org",
+      repo: "widget",
+      prNumber: 42,
+      getOctokit: async () => octokit,
+      botHandles: ["kodiai"],
+      setReviewWorkPhase: () => {},
+      canPublishExplicitReviewOutput: () => true,
+      postMentionReply,
+      logger: { info: () => {}, warn: () => {} },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        published: true,
+        resolution: "success-fallback",
+        fallbackDelivery: null,
+      },
+    });
+    expect(postMentionReply).not.toHaveBeenCalled();
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(createdBody).toContain("Decision: NOT APPROVED");
+    expect(createdBody).toContain("Compilation Error (CRITICAL)");
+    expect(createdBody).toContain("<!-- kodiai:review-output-key:canonical-review-key -->");
+  });
 });
 
 describe("publishMentionHandlerFailureError", () => {

@@ -9078,7 +9078,7 @@ describe("createMentionHandler review command", () => {
           listComments: async () => ({ data: [] }),
           createComment: async ({ body }: { body: string }) => {
             issueReplies.push(body);
-            return { data: {} };
+            return { data: { id: issueReplies.length } };
           },
         },
       },

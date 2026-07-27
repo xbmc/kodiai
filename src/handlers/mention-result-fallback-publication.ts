@@ -18,6 +18,7 @@ import {
   type MentionPublishResolution,
 } from "./mention-publication-state.ts";
 import { postMentionHandlerError } from "./mention-publication.ts";
+import { buildExplicitReviewTextFallbackLines } from "../review-orchestration/explicit-mention-review-publish.ts";
 import {
   buildMentionErrorFallbackBody,
   buildMentionSuccessFallbackBody,
@@ -87,22 +88,28 @@ export async function publishMentionSuccessFallback(params: {
     });
   }
 
-  // A NOT-APPROVED verdict with concrete findings must go through the same canonical
-  // marker system the automatic pipeline and the mention approval path use -- not a
-  // plain unmarked reply -- so it can be found/reconciled instead of leaving a second,
-  // disconnected surface for the same commit (see xbmc/xbmc#28648).
+  // A NOT-APPROVED verdict must go through the same canonical marker system the
+  // automatic pipeline and the mention approval path use -- not a plain unmarked
+  // reply -- so it can be found/reconciled instead of leaving a second, disconnected
+  // surface for the same commit (see xbmc/xbmc#28648). This must not depend on
+  // findingLines having successfully parsed out of the model's free-text result --
+  // that parser (extractExplicitReviewResultFindingLines) is brittle to phrasing
+  // variance and can legitimately return zero lines even when there ARE findings, in
+  // which case the raw result text is used as the body instead (same content the old
+  // unmarked-reply path would have shown).
   if (
     params.explicitReviewRequest
     && params.hasUnpublishedFindings
-    && params.findingLines.length > 0
     && params.canonicalReviewSurfaceKey
     && params.prNumber !== undefined
   ) {
+    const findingsSection = params.findingLines.length > 0
+      ? ["Issues:", ...params.findingLines]
+      : buildExplicitReviewTextFallbackLines(params.resultText).slice(2);
     const body = [
       "Decision: NOT APPROVED",
       "",
-      "Issues:",
-      ...params.findingLines,
+      ...findingsSection,
       "",
       buildReviewOutputMarker(params.canonicalReviewSurfaceKey),
     ].join("\n");
