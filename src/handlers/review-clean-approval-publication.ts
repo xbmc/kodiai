@@ -7,6 +7,7 @@ import { err as resultErr, ok, type Result } from "../lib/result.ts";
 import type { VisibleBudgetProjection } from "../review-visible-budget/visible-budget-behavior.ts";
 import {
   type CanonicalSurfaceKind,
+  reconcileSupersededCanonicalSurface,
   upsertCanonicalReviewSurface,
   upsertDegradedReviewDetailsFallbackComment,
 } from "../review-orchestration/review-canonical-surface.ts";
@@ -40,7 +41,7 @@ export async function publishCleanReviewApproval(params: {
   authorSearchEnrichmentDegraded: boolean;
   reviewBoundedness: ReviewBoundednessContract | null;
   mergeConfidence?: MergeConfidence | null;
-  logger: Pick<Logger, "info" | "error">;
+  logger: Pick<Logger, "info" | "error" | "warn">;
   canPublishVisibleOutput: (reason: string) => boolean;
   setReviewWorkPhase: (phase: ReviewWorkPhase) => void;
   refreshVisibleBudgetProjection: () => VisibleBudgetProjection | null;
@@ -130,6 +131,19 @@ export async function publishCleanReviewApproval(params: {
       ...(params.autoApprove ? { pullReviewEvent: "APPROVE" as const } : {}),
       recheckCanPublish: () => params.canPublishVisibleOutput(cleanReviewPublicationReason),
     });
+
+    if (canonicalApprovalReview) {
+      await reconcileSupersededCanonicalSurface({
+        octokit,
+        owner: params.owner,
+        repo: params.repo,
+        prNumber: params.prNumber,
+        reviewOutputKey: params.reviewOutputKey,
+        newSurfaceKind: cleanReviewSurfaceKind,
+        botHandles,
+        logger: params.logger,
+      });
+    }
 
     params.finalizePublicationPhaseTiming();
 

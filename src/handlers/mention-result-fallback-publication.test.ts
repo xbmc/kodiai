@@ -7,6 +7,21 @@ import {
   publishMentionSuccessFallback,
 } from "./mention-result-fallback-publication.ts";
 
+function noopOctokit(): never {
+  return {
+    rest: {
+      issues: {
+        listComments: async () => ({ data: [] }),
+        createComment: async () => ({ data: { id: 1 } }),
+        updateComment: async () => ({ data: { id: 1 } }),
+      },
+      pulls: {
+        listReviews: async () => ({ data: [] }),
+      },
+    },
+  } as never;
+}
+
 describe("publishMentionSuccessFallback", () => {
   test("posts a success fallback and returns a successful Result", async () => {
     const postMentionReply = mock(async (_body: string) => undefined);
@@ -18,8 +33,16 @@ describe("publishMentionSuccessFallback", () => {
       resultText: "Done",
       skipReason: undefined,
       reviewOutputKey: "review-output-key",
+      canonicalReviewSurfaceKey: "canonical-review-key",
+      owner: "octo-org",
+      repo: "widget",
+      prNumber: 42,
+      getOctokit: async () => noopOctokit(),
+      botHandles: ["kodiai"],
+      setReviewWorkPhase: () => {},
       canPublishExplicitReviewOutput: () => true,
       postMentionReply,
+      logger: { info: () => {}, warn: () => {} },
     });
 
     expect(result).toEqual({
@@ -43,8 +66,16 @@ describe("publishMentionSuccessFallback", () => {
       resultText: "Done",
       skipReason: undefined,
       reviewOutputKey: "review-output-key",
+      canonicalReviewSurfaceKey: "canonical-review-key",
+      owner: "octo-org",
+      repo: "widget",
+      prNumber: 42,
+      getOctokit: async () => noopOctokit(),
+      botHandles: ["kodiai"],
+      setReviewWorkPhase: () => {},
       canPublishExplicitReviewOutput: () => false,
       postMentionReply,
+      logger: { info: () => {}, warn: () => {} },
     });
 
     expect(result).toEqual({
@@ -56,6 +87,65 @@ describe("publishMentionSuccessFallback", () => {
       },
     });
     expect(postMentionReply).not.toHaveBeenCalled();
+  });
+
+  test("publishes a NOT-APPROVED findings notice through the canonical marker system instead of a plain reply", async () => {
+    const postMentionReply = mock(async (_body: string) => undefined);
+    let createdBody: string | undefined;
+    const createComment = mock(async (args: { body: string }) => {
+      createdBody = args.body;
+      return { data: { id: 99 } };
+    });
+    const updateComment = mock(async (args: { body: string }) => {
+      createdBody = args.body;
+      return { data: { id: 99 } };
+    });
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment,
+          updateComment,
+        },
+        pulls: {
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    } as never;
+
+    const result = await publishMentionSuccessFallback({
+      explicitReviewRequest: true,
+      hasUnpublishedFindings: true,
+      findingLines: ["- (1) [major] src/a.ts (10): Some issue"],
+      resultText: "Done",
+      skipReason: undefined,
+      reviewOutputKey: "review-output-key",
+      canonicalReviewSurfaceKey: "canonical-review-key",
+      owner: "octo-org",
+      repo: "widget",
+      prNumber: 42,
+      getOctokit: async () => octokit,
+      botHandles: ["kodiai"],
+      setReviewWorkPhase: () => {},
+      canPublishExplicitReviewOutput: () => true,
+      postMentionReply,
+      logger: { info: () => {}, warn: () => {} },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        published: true,
+        resolution: "success-fallback",
+        fallbackDelivery: null,
+      },
+    });
+    expect(postMentionReply).not.toHaveBeenCalled();
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(updateComment).not.toHaveBeenCalled();
+    expect(createdBody).toContain("Decision: NOT APPROVED");
+    expect(createdBody).toContain("- (1) [major] src/a.ts (10): Some issue");
+    expect(createdBody).toContain("<!-- kodiai:review-output-key:canonical-review-key -->");
   });
 });
 

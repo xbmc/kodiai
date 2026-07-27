@@ -21,6 +21,7 @@ import { executeMentionWithFormatterRecovery } from "./mention-execution-dispatc
 export type MentionExecutorDispatchPhaseResult = {
   executorPlan: MentionExecutorPlan;
   reviewOutputKey: string | undefined;
+  canonicalReviewSurfaceKey: string | undefined;
   result: ExecutionResult;
 };
 
@@ -104,6 +105,7 @@ export async function runMentionExecutorDispatchPhase(params: {
   return {
     executorPlan,
     reviewOutputKey: executorPlan.reviewOutputKey,
+    canonicalReviewSurfaceKey: executorPlan.canonicalReviewSurfaceKey,
     result,
   };
 }

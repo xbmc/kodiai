@@ -14,7 +14,7 @@ import {
   type ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
 import { createMentionHandler } from "./mention.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
+import { buildReviewOutputKey, buildCanonicalReviewSurfaceKey, buildReviewOutputMarker, extractReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type {
   ContributorProfile,
@@ -2375,7 +2375,14 @@ describe("createReviewHandler review_requested idempotency", () => {
       headSha: "abcdef1234567890",
     });
 
-    const marker = buildReviewOutputMarker(expectedReviewOutputKey);
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      headSha: "abcdef1234567890",
+    });
+    const canonicalMarker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
 
     const approvalBody = createdReviews[0]?.body ?? "";
     expect(approvalBody).toContain("Decision: APPROVE");
@@ -2385,7 +2392,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(approvalBody).toContain("<summary>Review Details</summary>");
     expect(approvalBody).not.toContain("Merge Confidence:");
     expect(extractReviewOutputKey(approvalBody)).toBe(expectedReviewOutputKey);
-    expect(approvalBody).toContain(marker);
+    expect(approvalBody).toContain(canonicalMarker);
 
     const reviewDetailsBlock = extractReviewDetailsBlock(approvalBody);
     expect(reviewDetailsBlock).toContain("<summary>Review Details</summary>");
@@ -2529,13 +2536,11 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdIssueComments[0]).toContain("Review scope note: output was scoped by prompt budget limits; Review Details include bounded counts only.");
     expect(createdIssueComments[0]).toContain("Budget behavior: scoped (prompt-budget-limited).");
     expect(createdIssueComments[0]).toContain("<summary>Review Details</summary>");
-    expect(createdIssueComments[0]).toContain(buildReviewOutputMarker(buildReviewOutputKey({
+    expect(createdIssueComments[0]).toContain(buildReviewOutputMarker(buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     })));
   });
@@ -2546,16 +2551,14 @@ describe("createReviewHandler review_requested idempotency", () => {
 
     let issueCommentCreateCount = 0;
     let updatedReviewId: number | undefined;
-    const reviewOutputKey = buildReviewOutputKey({
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
-    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
     const existingApprovalReview = {
       id: 777,
       body: `<details>\n<summary>kodiai response</summary>\n\nDecision: APPROVE\nIssues: none\n\nEvidence:\n- Agent-published clean approval.\n\n</details>\n\n${marker}`,
@@ -2671,16 +2674,14 @@ describe("createReviewHandler review_requested idempotency", () => {
 
     let issueCommentCreateCount = 0;
     let updatedReviewId: number | undefined;
-    const reviewOutputKey = buildReviewOutputKey({
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
-    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
     const existingApprovalReview = {
       id: 778,
       body: `<details>\n<summary>kodiai response</summary>\n\nDecision: APPROVE\nIssues: none\n\nEvidence:\n- Agent-published clean approval.\n\n</details>\n\n${marker}`,
@@ -2957,16 +2958,14 @@ describe("createReviewHandler review_requested idempotency", () => {
     let createReviewCount = 0;
     let updateReviewCount = 0;
 
-    const reviewOutputKey = buildReviewOutputKey({
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
-    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
 
     const issueCommentBodiesByCall = [
       [{ id: 901, body: `existing issue comment\n\n${marker}` }],
@@ -6546,6 +6545,13 @@ describe("createReviewHandler finding extraction", () => {
       deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      headSha: "abcdef1234567890",
+    });
     const marker = buildReviewOutputMarker(reviewOutputKey);
 
     const octokit = {
@@ -6686,7 +6692,7 @@ describe("createReviewHandler finding extraction", () => {
     const detailsAttemptLog = entries.find((entry) =>
       entry.data?.gate === "review-details-output" && entry.data?.gateResult === "attempt"
     );
-    expect(detailsAttemptLog?.data?.reviewOutputKey).toBe(reviewOutputKey);
+    expect(detailsAttemptLog?.data?.reviewOutputKey).toBe(canonicalReviewSurfaceKey);
     expect(detailsAttemptLog?.data?.owner).toBe("acme");
     expect(detailsAttemptLog?.data?.repo).toBe("repo");
     expect(detailsAttemptLog?.data?.prNumber).toBe(101);
@@ -6984,13 +6990,11 @@ describe("createReviewHandler finding extraction", () => {
     let allowPublish = true;
     const completedAttemptIds: string[] = [];
 
-    const reviewOutputKey = buildReviewOutputKey({
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
 
@@ -7002,7 +7006,7 @@ describe("createReviewHandler finding extraction", () => {
       "",
       "</details>",
       "",
-      buildReviewOutputMarker(reviewOutputKey),
+      buildReviewOutputMarker(canonicalReviewSurfaceKey),
     ].join("\n");
 
     const eventRouter: EventRouter = {
@@ -15234,16 +15238,14 @@ describe("createReviewHandler author-tier search cache integration", () => {
       cleanupStale: async () => 0,
     };
 
-    const reviewOutputKey = buildReviewOutputKey({
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
-    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
     const summaryBody = [
       "<details>",
       "<summary>Kodiai Review Summary</summary>",
@@ -17108,6 +17110,13 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      headSha: "abcdef1234567890",
+    });
     const summaryBody = [
       "<details>",
       "<summary>Kodiai Review Summary</summary>",
@@ -17117,7 +17126,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       "",
       "</details>",
       "",
-      buildReviewOutputMarker(reviewOutputKey),
+      buildReviewOutputMarker(canonicalReviewSurfaceKey),
     ].join("\n");
 
     const eventRouter: EventRouter = {
@@ -17169,7 +17178,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
           createComment: async (commentParams: Record<string, unknown>) => {
             const id = 992 + createdIssueComments.length;
             createdIssueComments.push({ ...commentParams, id });
-            if (!String(commentParams.body ?? "").includes(buildReviewOutputMarker(reviewOutputKey))) {
+            if (!String(commentParams.body ?? "").includes(buildReviewOutputMarker(canonicalReviewSurfaceKey))) {
               forbiddenSideEffects.unexpectedPublicCommentCount += 1;
             }
             return { data: { id, body: commentParams.body } };
@@ -18721,13 +18730,11 @@ describe("createReviewHandler Review Details phase timing publication", () => {
 
     let updatedSummaryBody: string | undefined;
 
-    const reviewOutputKey = buildReviewOutputKey({
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
 
@@ -18747,7 +18754,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
       "",
       "</details>",
       "",
-      buildReviewOutputMarker(reviewOutputKey),
+      buildReviewOutputMarker(canonicalReviewSurfaceKey),
     ].join("\n");
 
     const eventRouter: EventRouter = {
@@ -18849,6 +18856,13 @@ describe("createReviewHandler Review Details phase timing publication", () => {
       deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      headSha: "abcdef1234567890",
+    });
 
     const summaryBody = [
       "<details>",
@@ -18859,7 +18873,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
       "",
       "</details>",
       "",
-      buildReviewOutputMarker(reviewOutputKey),
+      buildReviewOutputMarker(canonicalReviewSurfaceKey),
     ].join("\n");
 
     const eventRouter: EventRouter = {
@@ -18971,7 +18985,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     expect(updatedSummaryBody?.indexOf("<summary>Kodiai Review Summary</summary>")).toBeLessThan(
       updatedSummaryBody?.indexOf("<summary>Review Details</summary>") ?? Number.POSITIVE_INFINITY,
     );
-    expect(updatedSummaryBody).toContain(buildReviewOutputMarker(reviewOutputKey));
+    expect(updatedSummaryBody).toContain(buildReviewOutputMarker(canonicalReviewSurfaceKey));
     expect(createdCommentBodies).toHaveLength(0);
 
     const completedLog = entries.find((entry) =>
@@ -19007,6 +19021,13 @@ describe("createReviewHandler Review Details phase timing publication", () => {
       deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      headSha: "abcdef1234567890",
+    });
 
     const summaryBody = [
       "<details>",
@@ -19016,7 +19037,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
       "",
       "</details>",
       "",
-      buildReviewOutputMarker(reviewOutputKey),
+      buildReviewOutputMarker(canonicalReviewSurfaceKey),
     ].join("\n");
 
     const eventRouter: EventRouter = {
@@ -19201,16 +19222,14 @@ describe("createReviewHandler bounded review disclosure", () => {
       cleanupStale: async () => 0,
     };
 
-    const reviewOutputKey = buildReviewOutputKey({
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     });
-    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
     const summaryBody = `${LARGE_PR_SUMMARY_BODY}\n\n${marker}`;
 
     const octokit = {

@@ -14,6 +14,7 @@ function mention(overrides: Partial<MentionEvent> = {}): MentionEvent {
     commentAuthor: "keith",
     commentCreatedAt: "2026-07-06T00:00:00Z",
     headRef: undefined,
+    headSha: undefined,
     baseRef: undefined,
     headRepoOwner: undefined,
     headRepoName: undefined,
@@ -53,7 +54,7 @@ describe("resolveMentionClonePlan", () => {
     });
     const pullsGet = mock(async () => ({
       data: {
-        head: { ref: "feature-branch", repo: { owner: { login: "contributor" }, name: "kodiai-fork" } },
+        head: { ref: "feature-branch", sha: "feature-branch-sha", repo: { owner: { login: "contributor" }, name: "kodiai-fork" } },
         base: { ref: "main" },
       },
     }));
@@ -71,6 +72,7 @@ describe("resolveMentionClonePlan", () => {
     });
     expect(prMention).toMatchObject({
       headRef: "feature-branch",
+      headSha: "feature-branch-sha",
       baseRef: "main",
       headRepoOwner: "contributor",
       headRepoName: "kodiai-fork",

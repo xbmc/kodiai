@@ -297,6 +297,75 @@ export async function upsertCanonicalReviewSurface(params: {
   });
 }
 
+const SUPERSEDE_NOTE_MARKER = "<!-- kodiai:superseded -->";
+
+function buildSupersedeNote(): string {
+  return [
+    "",
+    "---",
+    "_Superseded by a newer kodiai review decision on this commit -- see the latest review comment/review for the current verdict._",
+    SUPERSEDE_NOTE_MARKER,
+  ].join("\n");
+}
+
+/**
+ * GitHub has no way to convert an issue comment into a pull-request review (or vice
+ * versa), so when a new verdict of one kind is published, an existing canonical
+ * surface of the OTHER kind for the same reviewOutputKey can't be merged into --
+ * only annotated. Without this, a stale NOT-APPROVED issue comment can sit
+ * unacknowledged next to a later APPROVE pull-request review (or vice versa),
+ * which is exactly what happened on xbmc/xbmc#28648. Best-effort: failures here
+ * must never block the caller's own successful publish.
+ */
+export async function reconcileSupersededCanonicalSurface(params: {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  reviewOutputKey: string;
+  newSurfaceKind: CanonicalSurfaceKind;
+  botHandles: string[];
+  logger?: { warn: (fields: unknown, message?: string) => void };
+}): Promise<void> {
+  const staleKind: CanonicalSurfaceKind = params.newSurfaceKind === "issue_comment" ? "pull_review" : "issue_comment";
+
+  try {
+    const staleSurface = await findCanonicalReviewSurface({
+      octokit: params.octokit,
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      reviewOutputKey: params.reviewOutputKey,
+      surfaceKind: staleKind,
+    });
+
+    if (!staleSurface || staleSurface.body.includes(SUPERSEDE_NOTE_MARKER)) {
+      return;
+    }
+
+    await updateCanonicalReviewSurface({
+      octokit: params.octokit,
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      surface: staleSurface,
+      body: `${staleSurface.body.trimEnd()}\n${buildSupersedeNote()}`,
+      botHandles: params.botHandles,
+    });
+  } catch (err) {
+    params.logger?.warn(
+      {
+        prNumber: params.prNumber,
+        reviewOutputKey: params.reviewOutputKey,
+        gate: "canonical-surface-reconcile",
+        gateResult: "failed",
+        err,
+      },
+      "Failed to annotate stale cross-kind canonical surface (non-blocking)",
+    );
+  }
+}
+
 export async function upsertDegradedReviewDetailsFallbackComment(params: {
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
   owner: string;

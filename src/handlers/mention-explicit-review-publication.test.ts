@@ -80,6 +80,7 @@ function baseParams(overrides: Partial<Parameters<typeof publishExplicitMentionR
     deliveryId: "delivery-1",
     installationId: 123,
     reviewOutputKey: "review-key",
+    canonicalReviewSurfaceKey: "review-key",
     appSlug: "kodiai",
     autoApprove: true,
     usedRepoInspectionTools: true,

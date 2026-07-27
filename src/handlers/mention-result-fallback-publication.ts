@@ -1,11 +1,16 @@
+import type { Octokit } from "@octokit/rest";
+import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { GuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
+import type { ReviewWorkPhase } from "../jobs/review-work-coordinator.ts";
 import { classifyError } from "../lib/errors.ts";
 import { err, ok, type Result } from "../lib/result.ts";
+import { buildReviewOutputMarker } from "../review-orchestration/review-idempotency.ts";
 import type {
   ExplicitMentionReviewPublishSkipReason,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
 import type { MentionEvent } from "./mention-types.ts";
+import { publishBlockedReviewFindingsNotice } from "./review-blocked-findings-notice.ts";
 import {
   mentionErrorDeliveryFromResult,
   type MentionErrorDelivery,
@@ -60,8 +65,16 @@ export async function publishMentionSuccessFallback(params: {
   resultText: string | undefined;
   skipReason: ExplicitMentionReviewPublishSkipReason | undefined;
   reviewOutputKey: string | undefined;
+  canonicalReviewSurfaceKey: string | undefined;
+  owner: string;
+  repo: string;
+  prNumber: number | undefined;
+  getOctokit: () => Promise<Octokit>;
+  botHandles: string[];
+  setReviewWorkPhase: (phase: ReviewWorkPhase) => void;
   canPublishExplicitReviewOutput: (reason: string, reviewOutputKey: string | undefined) => boolean;
   postMentionReply: (replyBody: string) => Promise<void>;
+  logger: Pick<Logger, "info" | "warn">;
 }): Promise<MentionSuccessFallbackPublicationStatus> {
   if (
     params.explicitReviewRequest &&
@@ -70,6 +83,45 @@ export async function publishMentionSuccessFallback(params: {
     return ok({
       published: false,
       resolution: "skipped",
+      fallbackDelivery: null,
+    });
+  }
+
+  // A NOT-APPROVED verdict with concrete findings must go through the same canonical
+  // marker system the automatic pipeline and the mention approval path use -- not a
+  // plain unmarked reply -- so it can be found/reconciled instead of leaving a second,
+  // disconnected surface for the same commit (see xbmc/xbmc#28648).
+  if (
+    params.explicitReviewRequest
+    && params.hasUnpublishedFindings
+    && params.findingLines.length > 0
+    && params.canonicalReviewSurfaceKey
+    && params.prNumber !== undefined
+  ) {
+    const body = [
+      "Decision: NOT APPROVED",
+      "",
+      "Issues:",
+      ...params.findingLines,
+      "",
+      buildReviewOutputMarker(params.canonicalReviewSurfaceKey),
+    ].join("\n");
+    const published = await publishBlockedReviewFindingsNotice({
+      octokit: await params.getOctokit(),
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      reviewOutputKey: params.canonicalReviewSurfaceKey,
+      body,
+      botHandles: params.botHandles,
+      logger: params.logger,
+      canPublishVisibleOutput: (reason) =>
+        params.canPublishExplicitReviewOutput(reason, params.canonicalReviewSurfaceKey),
+      setReviewWorkPhase: params.setReviewWorkPhase,
+    });
+    return ok({
+      published,
+      resolution: published ? "success-fallback" : "skipped",
       fallbackDelivery: null,
     });
   }

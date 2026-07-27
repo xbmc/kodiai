@@ -6,7 +6,6 @@ import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import {
   createIssueCommentWithPublicationPipeline,
-  createPullReviewWithPublicationPipeline,
   createReviewReplyWithPublicationPipeline,
   prepareGitHubPublication,
 } from "../lib/github-publication.ts";
@@ -22,43 +21,6 @@ export type MentionPublisher = {
   ): Promise<void>;
   postMentionError(errorBody: string): Promise<MentionErrorPostResult>;
 };
-
-export type ExplicitMentionReviewApprovalResolution =
-  | "approval-bridge"
-  | "comment-approval";
-
-export async function publishExplicitMentionReviewApproval(params: {
-  octokit: Octokit;
-  owner: string;
-  repo: string;
-  prNumber: number;
-  body: string;
-  autoApprove: boolean;
-  botHandles: string[];
-}): Promise<ExplicitMentionReviewApprovalResolution> {
-  if (params.autoApprove) {
-    await createPullReviewWithPublicationPipeline(params.octokit, {
-      owner: params.owner,
-      repo: params.repo,
-      pull_number: params.prNumber,
-      event: "APPROVE",
-      body: params.body,
-      botHandles: params.botHandles,
-      preserveKodiaiMarkers: true,
-    });
-    return "approval-bridge";
-  }
-
-  await createIssueCommentWithPublicationPipeline(params.octokit, {
-    owner: params.owner,
-    repo: params.repo,
-    issue_number: params.prNumber,
-    body: params.body,
-    botHandles: params.botHandles,
-    preserveKodiaiMarkers: true,
-  });
-  return "comment-approval";
-}
 
 export function createMentionPublisher(params: {
   octokit: Octokit;

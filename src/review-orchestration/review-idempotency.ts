@@ -162,6 +162,38 @@ export function buildReviewOutputKey(input: ReviewOutputKeyInput): string {
   ].join(":");
 }
 
+export type CanonicalReviewSurfaceKeyInput = {
+  installationId: number;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+};
+
+/**
+ * A trigger-agnostic identity for the canonical GitHub verdict surface: the same
+ * (installation, PR, head SHA) always yields the same key regardless of whether the
+ * review was triggered automatically (push/webhook) or via an explicit @mention
+ * re-review. This is what lets both triggers find/update the same comment or PR
+ * review instead of each creating its own, unlike `buildReviewOutputKey`, whose
+ * `action`/`delivery` segments intentionally differ per trigger and per webhook
+ * delivery for other bookkeeping purposes (candidate keys, telemetry, checkpoints).
+ */
+export function buildCanonicalReviewSurfaceKey(input: CanonicalReviewSurfaceKeyInput): string {
+  const owner = normalizeSegment(input.owner);
+  const repo = normalizeSegment(input.repo);
+  const headSha = normalizeSegment(input.headSha);
+
+  return [
+    KEY_PREFIX,
+    KEY_VERSION,
+    `inst-${input.installationId}`,
+    `${owner}/${repo}`,
+    `pr-${input.prNumber}`,
+    `head-${headSha}`,
+  ].join(":");
+}
+
 export function extractReviewOutputKey(body: string | null | undefined): string | null {
   if (typeof body !== "string") {
     return null;

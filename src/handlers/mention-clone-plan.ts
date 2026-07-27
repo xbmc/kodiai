@@ -18,13 +18,14 @@ export async function resolveMentionClonePlan(params: {
   const { mention, payload, octokit } = params;
 
   if (mention.prNumber !== undefined) {
-    if (!mention.baseRef || !mention.headRef) {
+    if (!mention.baseRef || !mention.headRef || !mention.headSha) {
       const { data: pr } = await octokit.rest.pulls.get({
         owner: mention.owner,
         repo: mention.repo,
         pull_number: mention.prNumber,
       });
       mention.headRef = pr.head.ref;
+      mention.headSha = pr.head.sha;
       mention.baseRef = pr.base.ref;
       mention.headRepoOwner = pr.head.repo?.owner.login;
       mention.headRepoName = pr.head.repo?.name;

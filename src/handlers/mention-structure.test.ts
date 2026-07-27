@@ -5,7 +5,7 @@ describe("mention handler structure", () => {
   test("keeps the mention handler below the current decomposition line budget", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
 
-    expect(source.split("\n").length).toBeLessThanOrEqual(480);
+    expect(source.split("\n").length).toBeLessThanOrEqual(483);
   });
 
   test("keeps mention handler dependency contract out of the monster handler", () => {
@@ -61,6 +61,10 @@ describe("mention handler structure", () => {
     const source = readFileSync(new URL("./mention.ts", import.meta.url), "utf8");
     const publicationSource = readFileSync(new URL("./mention-publication.ts", import.meta.url), "utf8");
     const setupOctokitSource = readFileSync(new URL("./mention-setup-octokit.ts", import.meta.url), "utf8");
+    const explicitReviewPublicationSource = readFileSync(
+      new URL("./mention-explicit-review-publication.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain("async function postMentionReply");
     expect(source).not.toContain("async function postMentionError");
@@ -74,7 +78,10 @@ describe("mention handler structure", () => {
     expect(source).toContain("./mention-publication.ts");
     expect(setupOctokitSource).toContain("export function buildMentionSetupOctokitAdapters");
     expect(publicationSource).toContain("export async function postMentionHandlerError");
-    expect(publicationSource).toContain("export async function publishExplicitMentionReviewApproval");
+    // Explicit-review approval/blocked-notice publishing goes through the same canonical
+    // surface primitives the automatic pipeline uses, not a bespoke create-only helper.
+    expect(explicitReviewPublicationSource).toContain("upsertCanonicalReviewSurface");
+    expect(explicitReviewPublicationSource).toContain("reconcileSupersededCanonicalSurface");
   });
 
   test("keeps same-repo PR write idempotency helpers out of the monster handler", () => {

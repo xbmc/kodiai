@@ -1,8 +1,15 @@
-import { buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
+import { buildCanonicalReviewSurfaceKey, buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import type { MentionEvent } from "./mention-types.ts";
 
 export type MentionExecutorPlan = {
   reviewOutputKey: string | undefined;
+  /**
+   * Trigger-agnostic identity for the GitHub-visible verdict surface -- the same
+   * key an automatic push-triggered review of this PR/commit would use, so an
+   * explicit @mention re-review finds/updates the same comment or PR review
+   * instead of creating its own (see buildCanonicalReviewSurfaceKey).
+   */
+  canonicalReviewSurfaceKey: string | undefined;
   maxTurnsOverride: number | undefined;
   taskType: string;
   eventType: string;
@@ -13,7 +20,7 @@ export type MentionExecutorPlan = {
 };
 
 export function resolveMentionExecutorPlan(params: {
-  mention: Pick<MentionEvent, "owner" | "repo" | "prNumber" | "commentBody" | "headRef">;
+  mention: Pick<MentionEvent, "owner" | "repo" | "prNumber" | "commentBody" | "headRef" | "headSha">;
   installationId: number;
   deliveryId: string;
   eventName: string;
@@ -38,6 +45,15 @@ export function resolveMentionExecutorPlan(params: {
         headSha: params.mention.headRef ?? "unknown-head-sha",
       })
     : undefined;
+  const canonicalReviewSurfaceKey = params.explicitReviewRequest && params.mention.prNumber !== undefined
+    ? buildCanonicalReviewSurfaceKey({
+        installationId: params.installationId,
+        owner: params.mention.owner,
+        repo: params.mention.repo,
+        prNumber: params.mention.prNumber,
+        headSha: params.mention.headSha ?? "unknown-head-sha",
+      })
+    : undefined;
 
   const maxTurnsOverride = params.explicitReviewRequest
     ? params.explicitReviewMaxTurnsOverride
@@ -47,6 +63,7 @@ export function resolveMentionExecutorPlan(params: {
 
   return {
     reviewOutputKey,
+    canonicalReviewSurfaceKey,
     maxTurnsOverride,
     taskType: params.explicitReviewRequest ? params.explicitReviewTaskType : "mention.response",
     eventType: `${params.eventName}.${params.eventAction ?? ""}`.replace(/\.$/, ""),

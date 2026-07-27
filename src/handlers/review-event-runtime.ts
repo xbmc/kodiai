@@ -12,7 +12,7 @@ import {
   type ReviewWorkCoordinator,
 } from "../jobs/review-work-coordinator.ts";
 import type { WebhookEvent } from "../webhook/types.ts";
-import { buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
+import { buildCanonicalReviewSurfaceKey, buildReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import { createReviewWorkRuntime } from "./review-work-runtime.ts";
 import { evaluateNoReviewSkipGate } from "./review-no-review-skip.ts";
 import { evaluateReviewRequestedGate } from "./review-requested-gate.ts";
@@ -56,6 +56,7 @@ export async function resolveReviewEventRuntime(params: {
     owner: apiOwner,
     repo: apiRepo,
   };
+  const headSha = pr.head.sha ?? "unknown-head-sha";
   const reviewOutputKey = buildReviewOutputKey({
     installationId: event.installationId,
     owner: apiOwner,
@@ -63,7 +64,18 @@ export async function resolveReviewEventRuntime(params: {
     prNumber: pr.number,
     action,
     deliveryId: event.id,
-    headSha: pr.head.sha ?? "unknown-head-sha",
+    headSha,
+  });
+  // Trigger-agnostic identity for the GitHub-visible verdict surface: the automatic
+  // pipeline and an explicit @mention re-review of the same PR/commit converge on
+  // this same key, so they find/update the same comment or PR review instead of
+  // each creating their own (see buildCanonicalReviewSurfaceKey for why).
+  const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+    installationId: event.installationId,
+    owner: apiOwner,
+    repo: apiRepo,
+    prNumber: pr.number,
+    headSha,
   });
 
   const { isDraft } = resolveReviewDraftToneContext({
@@ -165,6 +177,7 @@ export async function resolveReviewEventRuntime(params: {
     eventAction: action,
     baseLog,
     reviewOutputKey,
+    canonicalReviewSurfaceKey,
     isDraft,
     apiOwner,
     apiRepo,

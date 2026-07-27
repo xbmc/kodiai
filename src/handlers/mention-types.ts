@@ -23,6 +23,8 @@ export interface MentionEvent {
   commentCreatedAt: string;
   /** PR head branch ref (for clone). Needs fetch for issue_comment on PR. */
   headRef: string | undefined;
+  /** PR head commit SHA (for the canonical review-surface key). Needs fetch for issue_comment on PR. */
+  headSha: string | undefined;
   /** PR base branch ref (for diff) */
   baseRef: string | undefined;
   /** Fork clone target owner */
@@ -65,6 +67,7 @@ export function normalizeIssueComment(
     commentAuthor: payload.comment.user.login,
     commentCreatedAt: payload.comment.created_at,
     headRef: undefined,
+    headSha: undefined,
     baseRef: undefined,
     headRepoOwner: undefined,
     headRepoName: undefined,
@@ -98,6 +101,7 @@ export function normalizeReviewComment(
     commentAuthor: payload.comment.user.login,
     commentCreatedAt: payload.comment.created_at,
     headRef: payload.pull_request.head.ref,
+    headSha: payload.pull_request.head.sha,
     baseRef: payload.pull_request.base.ref,
     headRepoOwner: payload.pull_request.head.repo?.owner.login,
     headRepoName: payload.pull_request.head.repo?.name,
@@ -130,6 +134,7 @@ export function normalizeReviewBody(
     commentAuthor: payload.review.user.login,
     commentCreatedAt: payload.review.submitted_at ?? payload.pull_request.updated_at,
     headRef: payload.pull_request.head.ref,
+    headSha: payload.pull_request.head.sha,
     baseRef: payload.pull_request.base.ref,
     headRepoOwner: payload.pull_request.head.repo?.owner.login,
     headRepoName: payload.pull_request.head.repo?.name,

@@ -15,6 +15,7 @@ const mention: MentionEvent = {
   commentAuthor: "mona",
   commentCreatedAt: "2026-07-07T00:00:00Z",
   headRef: "feature",
+  headSha: "feature",
   baseRef: "main",
   headRepoOwner: "octo",
   headRepoName: "repo",

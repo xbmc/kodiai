@@ -8,6 +8,11 @@ import {
   ensureReviewOutputNotPublished,
 } from "../review-orchestration/review-idempotency.ts";
 import {
+  type CanonicalSurfaceKind,
+  reconcileSupersededCanonicalSurface,
+  upsertCanonicalReviewSurface,
+} from "../review-orchestration/review-canonical-surface.ts";
+import {
   buildExplicitMentionReviewPublishFailureBody,
   buildExplicitReviewLifecycleEvidenceLine,
 } from "../review-orchestration/explicit-mention-review-publish.ts";
@@ -17,7 +22,6 @@ import {
   type MentionErrorPostResult,
   type MentionPublishResolution,
 } from "./mention-publication-state.ts";
-import { publishExplicitMentionReviewApproval } from "./mention-publication.ts";
 
 export type ExplicitMentionReviewPublicationResult = {
   outputPublished: boolean;
@@ -40,6 +44,15 @@ export async function publishExplicitMentionReviewResult(params: {
   deliveryId: string;
   installationId: number;
   reviewOutputKey: string;
+  /**
+   * Trigger-agnostic identity for the GitHub-visible verdict surface (see
+   * buildCanonicalReviewSurfaceKey). All idempotency checks and the actual
+   * GitHub write use this key -- not `reviewOutputKey` -- so an explicit
+   * mention re-review finds/updates the same comment or PR review an
+   * automatic push-triggered review of this commit would use, instead of
+   * creating a second, contradictory one.
+   */
+  canonicalReviewSurfaceKey: string;
   appSlug: string;
   autoApprove: boolean;
   usedRepoInspectionTools: boolean;
@@ -57,7 +70,7 @@ export async function publishExplicitMentionReviewResult(params: {
       owner: params.owner,
       repo: params.repo,
       prNumber: params.prNumber,
-      reviewOutputKey: params.reviewOutputKey,
+      reviewOutputKey: params.canonicalReviewSurfaceKey,
     });
 
     if (!idempotencyCheck.shouldPublish) {
@@ -121,7 +134,7 @@ export async function publishExplicitMentionReviewResult(params: {
       explicitReviewLifecycleEvidenceLine,
     ].filter((line): line is string => Boolean(line));
 
-    if (!params.canPublishExplicitReviewOutput("explicit mention review publish", params.reviewOutputKey)) {
+    if (!params.canPublishExplicitReviewOutput("explicit mention review publish", params.canonicalReviewSurfaceKey)) {
       params.logger.info(
         {
           surface: params.surface,
@@ -144,18 +157,35 @@ export async function publishExplicitMentionReviewResult(params: {
 
     params.setReviewWorkPhase("publish");
     const cleanReviewBody = buildApprovedReviewBody({
-      reviewOutputKey: params.reviewOutputKey,
+      reviewOutputKey: params.canonicalReviewSurfaceKey,
       evidence: approvalEvidence,
     });
-    const resolution = await publishExplicitMentionReviewApproval({
+    const botHandles = [params.appSlug, "claude", "kodai"];
+    const cleanReviewSurfaceKind: CanonicalSurfaceKind = params.autoApprove ? "pull_review" : "issue_comment";
+    await upsertCanonicalReviewSurface({
       octokit: params.octokit,
       owner: params.owner,
       repo: params.repo,
       prNumber: params.prNumber,
+      reviewOutputKey: params.canonicalReviewSurfaceKey,
+      preferredKind: cleanReviewSurfaceKind,
       body: cleanReviewBody,
-      autoApprove: params.autoApprove,
-      botHandles: [params.appSlug, "claude", "kodai"],
+      botHandles,
+      ...(params.autoApprove ? { pullReviewEvent: "APPROVE" as const } : {}),
+      recheckCanPublish: () =>
+        params.canPublishExplicitReviewOutput("explicit mention review publish", params.canonicalReviewSurfaceKey),
     });
+    await reconcileSupersededCanonicalSurface({
+      octokit: params.octokit,
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      reviewOutputKey: params.canonicalReviewSurfaceKey,
+      newSurfaceKind: cleanReviewSurfaceKind,
+      botHandles,
+      logger: params.logger,
+    });
+    const resolution: MentionPublishResolution = params.autoApprove ? "approval-bridge" : "comment-approval";
     params.logger.info(
       {
         evidenceType: "review",
@@ -202,7 +232,7 @@ export async function publishExplicitMentionReviewResult(params: {
         owner: params.owner,
         repo: params.repo,
         prNumber: params.prNumber,
-        reviewOutputKey: params.reviewOutputKey,
+        reviewOutputKey: params.canonicalReviewSurfaceKey,
       });
 
       if (!recheck.shouldPublish) {
@@ -246,7 +276,7 @@ export async function publishExplicitMentionReviewResult(params: {
       });
     }
 
-    if (!params.canPublishExplicitReviewOutput("explicit mention review fallback comment", params.reviewOutputKey)) {
+    if (!params.canPublishExplicitReviewOutput("explicit mention review fallback comment", params.canonicalReviewSurfaceKey)) {
       params.logger.info(
         {
           surface: params.surface,

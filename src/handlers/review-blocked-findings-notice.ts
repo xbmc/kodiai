@@ -2,7 +2,10 @@ import type { Logger } from "pino";
 import type { Octokit } from "@octokit/rest";
 import type { ReviewWorkPhase } from "../jobs/review-work-coordinator.ts";
 import { buildReviewOutputMarker } from "../review-orchestration/review-idempotency.ts";
-import { upsertCanonicalReviewSurface } from "../review-orchestration/review-canonical-surface.ts";
+import {
+  reconcileSupersededCanonicalSurface,
+  upsertCanonicalReviewSurface,
+} from "../review-orchestration/review-canonical-surface.ts";
 import type { ReviewCandidatePublicationRuntimeResult } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import type { ReviewFindingLifecyclePublicProjection } from "../review-lifecycle/finding-lifecycle.ts";
 import { sanitizeContent, scanOutgoingForSecrets } from "../lib/sanitizer.ts";
@@ -202,7 +205,7 @@ export async function publishBlockedReviewFindingsNotice(params: {
   reviewOutputKey: string;
   body: string;
   botHandles: string[];
-  logger: Pick<Logger, "info">;
+  logger: Pick<Logger, "info" | "warn">;
   canPublishVisibleOutput: (reason: string) => boolean;
   setReviewWorkPhase: (phase: ReviewWorkPhase) => void;
 }): Promise<boolean> {
@@ -221,6 +224,16 @@ export async function publishBlockedReviewFindingsNotice(params: {
     body: params.body,
     botHandles: params.botHandles,
     recheckCanPublish: () => params.canPublishVisibleOutput("blocked findings notice"),
+  });
+  await reconcileSupersededCanonicalSurface({
+    octokit: params.octokit,
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    reviewOutputKey: params.reviewOutputKey,
+    newSurfaceKind: "issue_comment",
+    botHandles: params.botHandles,
+    logger: params.logger,
   });
   params.logger.info(
     {
@@ -246,7 +259,7 @@ export async function publishBlockedReviewFindingsNoticeForRuntime(params: {
   processedFindingCount: number;
   handlerPublishedReviewOutput: boolean;
   botHandles: string[];
-  logger: Pick<Logger, "info">;
+  logger: Pick<Logger, "info" | "warn">;
   canPublishVisibleOutput: (reason: string) => boolean;
   setReviewWorkPhase: (phase: ReviewWorkPhase) => void;
 }): Promise<

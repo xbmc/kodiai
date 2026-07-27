@@ -25,6 +25,7 @@ export async function publishExplicitMentionReviewIfEligible(params: {
   eventName: WebhookEvent["name"];
   mention: MentionEvent;
   reviewOutputKey: string | undefined;
+  canonicalReviewSurfaceKey: string | undefined;
   deliveryId: string;
   installationId: number;
   headSha?: string | null;
@@ -81,6 +82,7 @@ export async function publishExplicitMentionReviewIfEligible(params: {
   if (
     explicitReviewPublishDecision.eligible
     && params.reviewOutputKey
+    && params.canonicalReviewSurfaceKey
     && params.mention.prNumber !== undefined
   ) {
     explicitReviewPublication = await publishReview({
@@ -92,6 +94,7 @@ export async function publishExplicitMentionReviewIfEligible(params: {
       deliveryId: params.deliveryId,
       installationId: params.installationId,
       reviewOutputKey: params.reviewOutputKey,
+      canonicalReviewSurfaceKey: params.canonicalReviewSurfaceKey,
       appSlug: params.appSlug,
       autoApprove: params.autoApprove,
       usedRepoInspectionTools: params.result.usedRepoInspectionTools === true,

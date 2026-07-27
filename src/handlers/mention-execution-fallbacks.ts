@@ -1,5 +1,7 @@
+import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { ok, type Result } from "../lib/result.ts";
+import type { ReviewWorkPhase } from "../jobs/review-work-coordinator.ts";
 import type { ExplicitMentionReviewPublishSkipReason } from "../review-orchestration/explicit-mention-review-publish.ts";
 import {
   type MentionErrorDelivery,
@@ -39,8 +41,15 @@ export async function publishMentionExecutionFallbacks(params: MentionExecutionF
   skipReason: ExplicitMentionReviewPublishSkipReason | undefined;
   routingReason: string | undefined;
   reviewOutputKey: string | undefined;
+  canonicalReviewSurfaceKey: string | undefined;
   surface: string;
+  owner: string;
+  repo: string;
+  prNumber: number | undefined;
   issueNumber: number;
+  getOctokit: () => Promise<Octokit>;
+  botHandles: string[];
+  setReviewWorkPhase: (phase: ReviewWorkPhase) => void;
   canPublishExplicitReviewOutput: (reason: string, reviewOutputKey: string | undefined) => boolean;
   postMentionReply: (replyBody: string) => Promise<void>;
   postMentionError: (errorBody: string) => Promise<MentionErrorPostResult>;
@@ -64,8 +73,16 @@ export async function publishMentionExecutionFallbacks(params: MentionExecutionF
       resultText: params.result.resultText,
       skipReason: params.skipReason,
       reviewOutputKey: params.reviewOutputKey,
+      canonicalReviewSurfaceKey: params.canonicalReviewSurfaceKey,
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      getOctokit: params.getOctokit,
+      botHandles: params.botHandles,
+      setReviewWorkPhase: params.setReviewWorkPhase,
       canPublishExplicitReviewOutput: params.canPublishExplicitReviewOutput,
       postMentionReply: params.postMentionReply,
+      logger: params.logger,
     });
     if (successFallbackPublication.ok && successFallbackPublication.value.resolution !== "skipped") {
       mentionOutputPublished = successFallbackPublication.value.published;
