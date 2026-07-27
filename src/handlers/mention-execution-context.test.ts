@@ -104,6 +104,7 @@ describe("buildMentionExecutionContext", () => {
       prompt: "prompt",
       promptSections,
       reviewOutputKey: "review-output-key",
+      canonicalReviewOutputKey: "canonical-review-output-key",
       maxTurnsOverride: 12,
       dynamicTimeoutSeconds: 90,
       knowledgeStore,

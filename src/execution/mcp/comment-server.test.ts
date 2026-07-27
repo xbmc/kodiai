@@ -196,6 +196,98 @@ describe("createCommentServer", () => {
     expect(publishCalled).toBe(true);
   });
 
+  test("stamps the trigger-agnostic canonical key, not the per-delivery reviewOutputKey, when both are provided", async () => {
+    // Regression test: the model's own direct create_comment/create_review calls
+    // must embed the canonical (action/delivery-agnostic) marker so a later
+    // mention-triggered re-review of the same PR/commit can find and reconcile
+    // with it -- not the per-delivery reviewOutputKey used for candidate/telemetry
+    // correlation elsewhere.
+    let createReviewParams: Record<string, unknown> | undefined;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+          listComments: async () => ({ data: [] }),
+        },
+        pulls: {
+          createReview: async (params: Record<string, unknown>) => {
+            createReviewParams = params;
+            return { data: { id: 100 } };
+          },
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const perDeliveryKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-42:action-opened:delivery-d1:head-sha1";
+    const canonicalKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-42:head-sha1";
+    const body = buildSharedApprovalBody(["Reviewed 1 changed file with no actionable issues."]);
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      [],
+      perDeliveryKey,
+      undefined,
+      42,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      canonicalKey,
+    );
+    const { create } = getToolHandlers(server);
+
+    const result = await create({ issueNumber: 42, body });
+    expect(result.isError).toBeUndefined();
+    expect(createReviewParams).toBeDefined();
+    expect(extractReviewOutputKey(String(createReviewParams!.body))).toBe(canonicalKey);
+    expect(String(createReviewParams!.body)).not.toContain(perDeliveryKey);
+  });
+
+  test("falls back to the per-delivery reviewOutputKey when no canonical key is passed (back-compat)", async () => {
+    let createCommentParams: Record<string, unknown> | undefined;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async (params: Record<string, unknown>) => {
+            createCommentParams = params;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+          listComments: async () => ({ data: [] }),
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const reviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-7:action-opened:delivery-d1:head-sha1";
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      [],
+      reviewOutputKey,
+      undefined,
+      7,
+    );
+    const { create } = getToolHandlers(server);
+
+    const result = await create({ issueNumber: 7, body: "Some findings summary" });
+    expect(result.isError).toBeUndefined();
+    expect(createCommentParams).toBeDefined();
+    expect(extractReviewOutputKey(String(createCommentParams!.body))).toBe(reviewOutputKey);
+  });
+
   test("replayed create_comment call is blocked when the first call may have been accepted before erroring", async () => {
     const reviewOutputKey = "mcp-comment-accepted-before-timeout";
     const marker = `<!-- kodiai:review-output-key:${reviewOutputKey} -->`;

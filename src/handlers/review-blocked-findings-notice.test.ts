@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { willBlockedReviewFindingsNoticePublish } from "./review-blocked-findings-notice.ts";
+import {
+  publishBlockedReviewFindingsNotice,
+  willBlockedReviewFindingsNoticePublish,
+} from "./review-blocked-findings-notice.ts";
 import type {
   ReviewCandidatePublicationRuntimeCounts,
   ReviewCandidatePublicationRuntimeResult,
@@ -76,5 +79,92 @@ describe("willBlockedReviewFindingsNoticePublish", () => {
       findingLifecycle: { counts: { severity: { critical: 0, major: 1, medium: 0, minor: 0 } } } as never,
       handlerPublishedReviewOutput: true,
     })).toBe(false);
+  });
+});
+
+describe("publishBlockedReviewFindingsNotice", () => {
+  test("returns false and does not reconcile a stale surface when publish rights are lost during the write", async () => {
+    // Regression test: if upsertCanonicalReviewSurface's own recheckCanPublish
+    // aborts mid-write (a superseded review-work race), the function must not
+    // report success or run the (now unwarranted) supersede-reconciliation step.
+    let updateReviewCalled = false;
+    const octokit = {
+      rest: {
+        issues: { listComments: async () => ({ data: [] }) },
+        pulls: {
+          listReviews: async () => ({
+            data: [{ id: 1, body: "Decision: APPROVE\n<!-- kodiai:review-output-key:review-key -->" }],
+          }),
+        },
+      },
+      request: async () => {
+        updateReviewCalled = true;
+        return { data: {} };
+      },
+    };
+
+    let calls = 0;
+    const published = await publishBlockedReviewFindingsNotice({
+      octokit: octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      reviewOutputKey: "review-key",
+      body: "Decision: NOT APPROVED\n\nIssues:\n- finding",
+      botHandles: ["kodiai"],
+      logger: { info: () => {}, warn: () => {} },
+      // First call (inside upsertCanonicalReviewSurface's recheckCanPublish) allows
+      // the write to proceed only far enough to hit the recheck, then denies it.
+      canPublishVisibleOutput: () => {
+        calls += 1;
+        return calls === 1;
+      },
+      setReviewWorkPhase: () => {},
+    });
+
+    expect(published).toBe(false);
+    expect(updateReviewCalled).toBe(false);
+  });
+
+  test("returns true and reconciles a stale opposite-kind surface on a normal successful write", async () => {
+    let createdBody: string | undefined;
+    let reconciledBody: string | undefined;
+    const octokit = {
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            createdBody = params.body;
+            return { data: { id: 5 } };
+          },
+        },
+        pulls: {
+          listReviews: async () => ({
+            data: [{ id: 1, body: "Decision: APPROVE\n<!-- kodiai:review-output-key:review-key -->" }],
+          }),
+        },
+      },
+      request: async (_route: string, params: { body: string }) => {
+        reconciledBody = params.body;
+        return { data: {} };
+      },
+    };
+
+    const published = await publishBlockedReviewFindingsNotice({
+      octokit: octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      reviewOutputKey: "review-key",
+      body: "Decision: NOT APPROVED\n\nIssues:\n- finding",
+      botHandles: ["kodiai"],
+      logger: { info: () => {}, warn: () => {} },
+      canPublishVisibleOutput: () => true,
+      setReviewWorkPhase: () => {},
+    });
+
+    expect(published).toBe(true);
+    expect(createdBody).toContain("Decision: NOT APPROVED");
+    expect(reconciledBody).toContain("Superseded by a newer kodiai review decision");
   });
 });

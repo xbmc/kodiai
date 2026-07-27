@@ -136,6 +136,14 @@ export function createReviewOutputPublicationGate(params: {
   repo: string;
   prNumber: number;
   reviewOutputKey: string;
+  /**
+   * Trigger-agnostic key used only for the idempotency check (see
+   * ExecutionContext.canonicalReviewOutputKey). Defaults to reviewOutputKey so
+   * callers that don't pass it keep their prior (per-delivery) behavior.
+   * `reviewOutputKey` itself keeps its existing job for candidate-policy
+   * correlation/evidence metadata below -- that must not change.
+   */
+  canonicalReviewOutputKey?: string;
   candidatePublicationPolicy?: CandidatePublicationPolicy;
   candidateVerificationContext?: CandidateVerificationContext;
   candidateVerificationPublicationEvidenceSink?: CandidateVerificationPublicationEvidenceSink;
@@ -275,7 +283,7 @@ export function createReviewOutputPublicationGate(params: {
           owner: params.owner,
           repo: params.repo,
           prNumber: params.prNumber,
-          reviewOutputKey: params.reviewOutputKey,
+          reviewOutputKey: params.canonicalReviewOutputKey ?? params.reviewOutputKey,
         }).then((status) => {
           cachedStatus = status;
           return status;

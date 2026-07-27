@@ -80,6 +80,8 @@ type McpBuilderDeps = {
   commentId?: number;
   botHandles?: string[];
   reviewOutputKey?: string;
+  /** Trigger-agnostic key for the GitHub-visible marker/idempotency check only (see ExecutionContext.canonicalReviewOutputKey). */
+  canonicalReviewOutputKey?: string;
   deliveryId?: string;
   logger?: Logger;
   onPublish?: () => void;
@@ -267,6 +269,7 @@ export function buildMcpServerFactoriesWithLoaders(
           repo: deps.repo,
           prNumber: deps.prNumber,
           reviewOutputKey: deps.reviewOutputKey,
+          canonicalReviewOutputKey: deps.canonicalReviewOutputKey ?? deps.reviewOutputKey,
           candidateVerificationContext: deps.candidateVerificationContext,
           candidateVerificationPublicationEvidenceSink: deps.candidateVerificationPublicationEvidenceSink,
         })
@@ -291,6 +294,7 @@ export function buildMcpServerFactoriesWithLoaders(
         reviewOutputPublicationGate,
         commentPublicationState,
         candidateVerificationRequired,
+        deps.canonicalReviewOutputKey ?? deps.reviewOutputKey,
       ) as McpSdkServerConfigWithInstance;
   }
 
@@ -314,6 +318,7 @@ export function buildMcpServerFactoriesWithLoaders(
         prNumber: deps.prNumber!,
         botHandles: deps.botHandles ?? DEFAULT_BOT_HANDLES,
         reviewOutputKey: deps.reviewOutputKey,
+        canonicalReviewOutputKey: deps.canonicalReviewOutputKey ?? deps.reviewOutputKey,
         deliveryId: deps.deliveryId,
         logger: deps.logger,
         onPublish: deps.onPublish,

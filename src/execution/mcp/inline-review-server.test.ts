@@ -157,6 +157,59 @@ describe("publishInlineReviewComment", () => {
   });
 });
 
+describe("createInlineReviewServer canonical marker", () => {
+  test("stamps the trigger-agnostic canonical key, not the per-delivery reviewOutputKey, when both are provided", async () => {
+    // Regression test: the model's own direct inline-comment publish must embed
+    // the canonical (action/delivery-agnostic) marker so a later mention-triggered
+    // re-review of the same PR/commit can find and reconcile with it.
+    const perDeliveryKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-opened:delivery-d1:head-abcdef1234";
+    const canonicalKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:head-abcdef1234";
+    let persistedBody: string | undefined;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async ({ body }: { body: string }) => {
+            persistedBody = body;
+            return {
+              data: {
+                id: 1,
+                html_url: "https://example.test/comment",
+                path: "src/file.ts",
+                line: 10,
+                original_line: 10,
+              },
+            };
+          },
+        },
+        issues: { listComments: async () => ({ data: [] }) },
+      },
+    };
+
+    const server = createInlineReviewServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      botHandles: [],
+      reviewOutputKey: perDeliveryKey,
+      canonicalReviewOutputKey: canonicalKey,
+      deliveryId: "delivery-123",
+    });
+    const handler = getToolHandler(server);
+
+    const result = await handler({ path: "src/file.ts", body: "Finding body", line: 10, side: "RIGHT" });
+
+    expect(result.content[0]?.text).toContain("\"success\":true");
+    expect(persistedBody).toBeDefined();
+    expect(persistedBody).toContain(`<!-- kodiai:review-output-key:${canonicalKey} -->`);
+    expect(persistedBody).not.toContain(perDeliveryKey);
+  });
+});
+
 describe("createInlineReviewServer output idempotency", () => {
   test("second publication attempt with same reviewOutputKey skips create", async () => {
     const reviewOutputKey = "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef1234";

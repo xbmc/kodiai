@@ -162,7 +162,7 @@ export async function publishExplicitMentionReviewResult(params: {
     });
     const botHandles = [params.appSlug, "claude", "kodai"];
     const cleanReviewSurfaceKind: CanonicalSurfaceKind = params.autoApprove ? "pull_review" : "issue_comment";
-    await upsertCanonicalReviewSurface({
+    const canonicalSurface = await upsertCanonicalReviewSurface({
       octokit: params.octokit,
       owner: params.owner,
       repo: params.repo,
@@ -175,6 +175,25 @@ export async function publishExplicitMentionReviewResult(params: {
       recheckCanPublish: () =>
         params.canPublishExplicitReviewOutput("explicit mention review publish", params.canonicalReviewSurfaceKey),
     });
+    if (!canonicalSurface) {
+      params.logger.info(
+        {
+          surface: params.surface,
+          owner: params.owner,
+          repo: params.repo,
+          prNumber: params.prNumber,
+          gate: "explicit-review-publish",
+          gateResult: "skipped",
+          skipReason: "publish-rights-lost-during-write",
+        },
+        "Skipping explicit mention review publish because publish rights were superseded mid-write",
+      );
+      return ok({
+        outputPublished: false,
+        resolution: "none",
+        fallbackDelivery: null,
+      });
+    }
     await reconcileSupersededCanonicalSurface({
       octokit: params.octokit,
       owner: params.owner,

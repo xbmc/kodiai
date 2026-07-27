@@ -595,6 +595,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
             reviewPrompt,
             reviewPromptSections,
             reviewOutputKey,
+            canonicalReviewOutputKey: canonicalReviewSurfaceKey,
             deliveryId: event.id,
             candidateVerificationContext,
             knowledgeStore,

@@ -40,6 +40,7 @@ export function buildMentionExecutionContext(params: {
     prompt: params.prompt,
     promptSections: params.promptSections,
     reviewOutputKey: params.executorPlan.reviewOutputKey,
+    canonicalReviewOutputKey: params.executorPlan.canonicalReviewSurfaceKey,
     maxTurnsOverride: params.executorPlan.maxTurnsOverride,
     dynamicTimeoutSeconds: params.explicitReviewDynamicTimeoutSeconds,
     knowledgeStore: params.knowledgeStore,

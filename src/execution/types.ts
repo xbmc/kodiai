@@ -56,6 +56,16 @@ export type ExecutionContext = {
   prompt?: string;
   /** Deterministic idempotency key for one review output batch. */
   reviewOutputKey?: string;
+  /**
+   * Trigger-agnostic identity for the GitHub-visible verdict marker (see
+   * buildCanonicalReviewSurfaceKey). Used only for the marker embedded when the
+   * model directly publishes via MCP tools and the idempotency check that gates
+   * it, so an automatic review and a mention-triggered re-review of the same
+   * PR/commit find and update the same comment/PR-review. `reviewOutputKey`
+   * keeps its existing job everywhere else (candidate correlation, checkpoints,
+   * telemetry).
+   */
+  canonicalReviewOutputKey?: string;
   /** Webhook delivery identifier for correlation logging. */
   deliveryId?: string;
 

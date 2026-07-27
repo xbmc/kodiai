@@ -3,9 +3,36 @@ import type { CandidateVerificationContext } from "../execution/mcp/review-outpu
 import type { KnowledgeStore } from "../knowledge/types.ts";
 import type { TimeoutBudgetDetails } from "../lib/review-details-formatting.ts";
 import { buildShadowSpecialistCorrelationKey } from "../review-orchestration/review-specialist-publication-log.ts";
+import {
+  buildCanonicalReviewSurfaceKey,
+  parseReviewOutputKey,
+} from "../review-orchestration/review-idempotency.ts";
 
 export function buildReviewBotHandles(appSlug: string): string[] {
   return [appSlug, "claude"];
+}
+
+/**
+ * A retry's reviewOutputKey is the original delivery's full key with a `-retry-N`
+ * suffix, so it embeds the same owner/repo/prNumber/headSha as the original --
+ * safe to re-derive the canonical (trigger-agnostic) key straight from it rather
+ * than threading a separate parameter through the whole retry-continuation chain.
+ */
+function deriveCanonicalReviewOutputKeyFromRetryKey(retryReviewOutputKey: string): string {
+  const parsed = parseReviewOutputKey(retryReviewOutputKey);
+  if (!parsed) {
+    // Malformed/unparseable key: fall back to the retry key itself rather than
+    // throwing -- this only affects the model's own direct-publish marker on a
+    // retry attempt, not idempotency correctness for the retry mechanism itself.
+    return retryReviewOutputKey;
+  }
+  return buildCanonicalReviewSurfaceKey({
+    installationId: parsed.installationId,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    prNumber: parsed.prNumber,
+    headSha: parsed.headSha,
+  });
 }
 
 export function buildReviewExecutionContext(params: {
@@ -20,6 +47,7 @@ export function buildReviewExecutionContext(params: {
   reviewPrompt: string;
   reviewPromptSections: ExecutionContext["promptSections"];
   reviewOutputKey: string;
+  canonicalReviewOutputKey: string;
   deliveryId: string;
   candidateVerificationContext: CandidateVerificationContext | undefined;
   knowledgeStore: KnowledgeStore | undefined;
@@ -43,6 +71,7 @@ export function buildReviewExecutionContext(params: {
     prompt: params.reviewPrompt,
     promptSections: params.reviewPromptSections,
     reviewOutputKey: params.reviewOutputKey,
+    canonicalReviewOutputKey: params.canonicalReviewOutputKey,
     deliveryId: params.deliveryId,
     candidateVerificationContext: params.candidateVerificationContext,
     knowledgeStore: params.knowledgeStore,
@@ -88,6 +117,7 @@ export function buildReviewRetryExecutionContext(params: {
     prompt: params.retryPrompt,
     promptSections: params.retryPromptSections,
     reviewOutputKey: params.retryReviewOutputKey,
+    canonicalReviewOutputKey: deriveCanonicalReviewOutputKeyFromRetryKey(params.retryReviewOutputKey),
     deliveryId: params.retryDeliveryId,
     candidateVerificationContext: {
       docsConfigTruth: null,

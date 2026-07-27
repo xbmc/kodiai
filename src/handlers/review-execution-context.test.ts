@@ -46,6 +46,7 @@ describe("buildReviewExecutionContext", () => {
       reviewPrompt: "prompt body",
       reviewPromptSections: promptSections,
       reviewOutputKey: "review-output-key",
+      canonicalReviewOutputKey: "canonical-review-output-key",
       deliveryId: "delivery-1",
       candidateVerificationContext,
       knowledgeStore,
@@ -70,6 +71,7 @@ describe("buildReviewExecutionContext", () => {
       prompt: "prompt body",
       promptSections,
       reviewOutputKey: "review-output-key",
+      canonicalReviewOutputKey: "canonical-review-output-key",
       deliveryId: "delivery-1",
       candidateVerificationContext,
       knowledgeStore,
@@ -95,6 +97,7 @@ describe("buildReviewExecutionContext", () => {
       reviewPrompt: "prompt body",
       reviewPromptSections: [],
       reviewOutputKey: "review-output-key",
+      canonicalReviewOutputKey: "canonical-review-output-key",
       deliveryId: "delivery-1",
       candidateVerificationContext: undefined,
       knowledgeStore: undefined,
@@ -158,6 +161,9 @@ describe("buildReviewExecutionContext", () => {
       prompt: "retry prompt body",
       promptSections: retryPromptSections,
       reviewOutputKey: "retry-output-key",
+      // "retry-output-key" isn't a well-formed reviewOutputKey (see the dedicated
+      // parse test below for the real-format derivation), so it falls back to itself.
+      canonicalReviewOutputKey: "retry-output-key",
       deliveryId: "delivery-1-retry-1",
       candidateVerificationContext: {
         docsConfigTruth: null,
@@ -173,5 +179,40 @@ describe("buildReviewExecutionContext", () => {
       prDiffCommentabilityIndex,
       enableCommentTools: false,
     });
+  });
+
+  test("derives the canonical key from a well-formed retry reviewOutputKey (same PR/commit as the original)", () => {
+    const workspace: ExecutionContext["workspace"] = {
+      dir: "/tmp/retry-review-workspace",
+      cleanup: async () => undefined,
+    };
+    const retryReviewOutputKey =
+      "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-synchronize:delivery-abc123:head-deadbeef-retry-1";
+
+    const context = buildReviewRetryExecutionContext({
+      workspace,
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      appSlug: "kodiai",
+      taskType: "review.full",
+      retryPrompt: "retry prompt body",
+      retryPromptSections: [],
+      retryReviewOutputKey,
+      retryDeliveryId: "delivery-abc123-retry-1",
+      retryTimeoutSeconds: 450,
+      reviewMaxTurnsOverride: undefined,
+      knowledgeStore: undefined,
+      timeoutTotalFiles: 0,
+      retryCheckpointEnabled: false,
+      prDiffCommentabilityIndex: undefined,
+    });
+
+    // No action/delivery segments -- so a mention-triggered re-review of the same
+    // PR/commit resolves the exact same canonical key.
+    expect(context.canonicalReviewOutputKey).toBe(
+      "kodiai-review-output:v1:inst-42:acme/repo:pr-101:head-deadbeef",
+    );
   });
 });

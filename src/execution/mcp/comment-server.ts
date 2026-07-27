@@ -35,12 +35,22 @@ export function createCommentServer(
   publicationGate?: ReviewOutputPublicationGate,
   publicationState: CommentPublicationState = { createCommentPublished: false },
   candidateVerificationRequired = false,
+  // Trigger-agnostic key for the GitHub-visible marker/idempotency check only (see
+  // ExecutionContext.canonicalReviewOutputKey). Falls back to reviewOutputKey so
+  // existing callers that don't pass it keep their prior (per-delivery) behavior.
+  canonicalReviewOutputKey: string | undefined = reviewOutputKey,
 ) {
-  const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
+  const marker = canonicalReviewOutputKey ? buildReviewOutputMarker(canonicalReviewOutputKey) : null;
   const reviewOutputPublicationGate = publicationGate
     ?? (
       reviewOutputKey && prNumber !== undefined
-        ? createReviewOutputPublicationGate({ owner, repo, prNumber, reviewOutputKey })
+        ? createReviewOutputPublicationGate({
+            owner,
+            repo,
+            prNumber,
+            reviewOutputKey,
+            canonicalReviewOutputKey,
+          })
         : undefined
     );
 

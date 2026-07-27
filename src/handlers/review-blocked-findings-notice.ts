@@ -214,7 +214,7 @@ export async function publishBlockedReviewFindingsNotice(params: {
   }
 
   params.setReviewWorkPhase("publish");
-  await upsertCanonicalReviewSurface({
+  const canonicalSurface = await upsertCanonicalReviewSurface({
     octokit: params.octokit,
     owner: params.owner,
     repo: params.repo,
@@ -225,6 +225,19 @@ export async function publishBlockedReviewFindingsNotice(params: {
     botHandles: params.botHandles,
     recheckCanPublish: () => params.canPublishVisibleOutput("blocked findings notice"),
   });
+  if (!canonicalSurface) {
+    params.logger.info(
+      {
+        prNumber: params.prNumber,
+        reviewOutputKey: params.reviewOutputKey,
+        gate: "blocked-findings-notice",
+        gateResult: "skipped",
+        skipReason: "publish-rights-lost-during-write",
+      },
+      "Skipped blocked review findings notice because publish rights were superseded mid-write",
+    );
+    return false;
+  }
   await reconcileSupersededCanonicalSurface({
     octokit: params.octokit,
     owner: params.owner,

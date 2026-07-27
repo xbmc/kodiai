@@ -646,6 +646,7 @@ export function createExecutor(deps: {
           commentId: context.commentId,
           botHandles: context.botHandles,
           reviewOutputKey: context.reviewOutputKey,
+          canonicalReviewOutputKey: context.canonicalReviewOutputKey,
           deliveryId: context.deliveryId,
           logger,
           onPublish: () => {
