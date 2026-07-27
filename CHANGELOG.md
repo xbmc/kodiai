@@ -7,6 +7,12 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Regular PR reviews now surface bounded, sanitized file/line findings immediately when an approved finding has no safe auto-generated patch, instead of replacing the finding text with publication-gate diagnostics.
+- A blocked-candidate findings notice can no longer overwrite an already-published review verdict (e.g. flipping a published APPROVE to NOT APPROVED) when an unrelated candidate-finding sub-pipeline had nothing to publish.
+- The moved-to-details Review Details finalize step now merges into the existing canonical comment instead of overwriting it, so the Decision/summary text is no longer silently wiped after a successful publish.
+- A superseded review attempt can no longer keep posting inline candidate comments after a newer attempt takes over; publish rights are now rechecked before every comment, not just once at the start.
+- Delta re-review context (changed files and prior findings) no longer bypasses the prompt size budget, preventing it from starving other prompt sections on large re-reviews.
+- The Language-Specific Guidance prompt section now discloses when languages are omitted past the 5-language cap instead of silently dropping them.
+- Duplicate GitHub comments: a review run no longer posts a redundant telemetry-only comment alongside (or instead of) the real verdict comment when findings are blocked or moved to details.
 
 ## v0.49 (2026-07-20)
 

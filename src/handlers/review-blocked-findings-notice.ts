@@ -105,12 +105,32 @@ function readPositiveInteger(value: unknown): number | null {
     : null;
 }
 
+export function willBlockedReviewFindingsNoticePublish(params: {
+  candidatePublicationRuntime: ReviewCandidatePublicationRuntimeResult;
+  findingLifecycle: ReviewFindingLifecyclePublicProjection | null;
+  handlerPublishedReviewOutput: boolean;
+}): boolean {
+  return resolveBlockedReviewFindingsNotice({
+    reviewOutputKey: "",
+    reviewDetailsBlock: null,
+    candidatePublicationRuntime: params.candidatePublicationRuntime,
+    findingLifecycle: params.findingLifecycle,
+    handlerPublishedReviewOutput: params.handlerPublishedReviewOutput,
+  }) !== null;
+}
+
 export function resolveBlockedReviewFindingsNotice(params: {
   reviewOutputKey: string;
   reviewDetailsBlock: string | null;
   candidatePublicationRuntime: ReviewCandidatePublicationRuntimeResult;
   findingLifecycle: ReviewFindingLifecyclePublicProjection | null;
+  handlerPublishedReviewOutput: boolean;
 }): BlockedReviewFindingsNotice | null {
+  // The handler's own primary output already published a full verdict (APPROVE or
+  // NOT APPROVED) under the same canonical marker; a secondary blocked-candidate notice
+  // must never overwrite that already-visible decision.
+  if (params.handlerPublishedReviewOutput) return null;
+
   const severity = params.findingLifecycle?.counts.severity;
   const severityCounts: SeverityCounts = {
     critical: readCount(severity?.critical),

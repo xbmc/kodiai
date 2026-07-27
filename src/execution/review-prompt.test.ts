@@ -1543,6 +1543,13 @@ test("buildLanguageGuidanceSection caps at 5 languages", () => {
   // Count the number of ### headings -- should be exactly 5
   const headings = section.match(/^### /gm) ?? [];
   expect(headings.length).toBe(5);
+  // 7 eligible languages, 5 kept -- the 2 sliced off must be disclosed, not silently dropped.
+  expect(section).toContain("2 additional language(s)");
+});
+
+test("buildLanguageGuidanceSection has no omission note when under the cap", () => {
+  const section = buildLanguageGuidanceSection({ Python: ["a.py"], Go: ["a.go"] });
+  expect(section).not.toContain("additional language(s)");
 });
 
 test("buildLanguageGuidanceSection sorts by file count (most files first)", () => {

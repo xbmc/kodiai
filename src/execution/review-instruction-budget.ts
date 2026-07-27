@@ -41,6 +41,7 @@ const REVIEW_INSTRUCTION_SECTIONS = [
   { id: "suppression-rules", retention: "low" },
   { id: "confidence-threshold", retention: "high" },
   { id: "summary-enhanced-mode", retention: "high" },
+  { id: "delta-review-context", retention: "medium" },
   { id: "summary-delta-mode", retention: "high" },
   { id: "summary-standard-mode", retention: "high" },
   { id: "after-review-enhanced", retention: "high" },

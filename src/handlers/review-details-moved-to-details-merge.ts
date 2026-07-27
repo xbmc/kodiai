@@ -64,7 +64,7 @@ export async function publishMovedToDetailsReviewDetailsMerge(params: {
       canonicalSurface: params.acceptedCanonicalSurface?.kind === "issue_comment"
         ? params.acceptedCanonicalSurface
         : undefined,
-      body: params.fullDetailsBody,
+      reviewDetailsBlock: params.fullDetailsBody,
       botHandles: params.botHandles,
       requireDegradationDisclosure: params.authorSearchEnrichmentDegraded,
       reviewBoundedness: params.reviewBoundedness,
@@ -128,8 +128,9 @@ export async function publishMovedToDetailsReviewDetailsMerge(params: {
       reviewOutputKey: params.reviewOutputKey,
       preferredKind: "issue_comment",
       canonicalSurface: movedDetailsSurface,
-      body: params.renderReviewDetailsBody(),
+      reviewDetailsBlock: params.renderReviewDetailsBody(),
       botHandles: params.botHandles,
+      summaryBody: movedDetailsSurface.body,
       requireDegradationDisclosure: params.authorSearchEnrichmentDegraded,
       reviewBoundedness: params.reviewBoundedness,
       recheckCanPublish: () =>

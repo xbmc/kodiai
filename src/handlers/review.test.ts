@@ -18324,7 +18324,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
     expect(recordFindingEntries).toHaveLength(0);
-    expect(createdIssueComments.length).toBeGreaterThanOrEqual(1);
+    // Exactly one comment: the blocked-findings notice folds the Review Details block in directly,
+    // so no separate telemetry-only "review-details-output" comment is posted for the same run.
+    expect(createdIssueComments).toHaveLength(1);
 
     const movedDetailsBody = createdIssueComments
       .map((comment) => String(comment.body ?? ""))
@@ -18386,12 +18388,13 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       reasonCounts: { "line-not-commentable": 1 },
     }));
 
+    // The blocked-findings notice owns the canonical surface for this run, so the first-pass
+    // Review Details publisher defers to it instead of posting a separate comment.
     const detailsLog = logEntries.find((entry) => entry.data?.gate === "review-details-output" && entry.data?.gateResult === "completed");
-    expect(detailsLog?.data).toEqual(expect.objectContaining({
-      reviewDetailsPublished: true,
-      publicationMode: "canonical",
-      surfaceKind: "issue_comment",
-    }));
+    expect(detailsLog).toBeUndefined();
+
+    const blockedNoticeLog = logEntries.find((entry) => entry.data?.gate === "blocked-findings-notice");
+    expect(blockedNoticeLog?.data?.gateResult).toBe("published");
 
     const configSnapshot = JSON.parse(recordReviewEntries[0]?.configSnapshot as string) as Record<string, unknown>;
     expect((configSnapshot.reviewCandidatePublication as Record<string, unknown>).mode).toBe("moved-to-details");

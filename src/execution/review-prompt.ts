@@ -69,6 +69,7 @@ export const LANGUAGE_GUIDANCE: Record<string, string[]> = {
     "Raw pointer ownership without RAII or smart pointers (`unique_ptr`/`shared_ptr`).",
     "Missing virtual destructor on base classes with virtual methods -- causes undefined behavior on delete.",
     "Buffer overflow risk in array/pointer arithmetic -- prefer bounds-checked containers.",
+    "Kodi naming conventions (not enforced by clang-format/CI, so still worth flagging): classes need a `C` prefix (`CFoo`), interfaces need an `I` prefix (`IFoo`), non-static member variables need `m_`, static members need `ms_`, globals need `g_`.",
   ],
   C: [
     "Buffer overflow risk from unchecked array indexing or string operations (`strcpy`, `sprintf`).",
@@ -344,7 +345,7 @@ function buildCandidateFindingCaptureSection(params: {
 // ---------------------------------------------------------------------------
 // Helper: Noise suppression rules (always included)
 // ---------------------------------------------------------------------------
-function buildNoiseSuppressionRules(): string {
+function buildNoiseSuppressionRules(hasNamingConventionGuidance = false): string {
   return [
     "## Noise Suppression",
     "",
@@ -358,7 +359,13 @@ function buildNoiseSuppressionRules(): string {
     "",
     "Decorative separator comments, banner comments, and comments that only restate the following function are maintainability findings, not style-only preferences. Flag them when they add noise without explaining non-obvious intent.",
     "",
-    "Focus exclusively on: correctness, security, performance, error handling, resource management, concurrency safety.",
+    ...(hasNamingConventionGuidance
+      ? [
+          "Exception: naming-convention violations called out under Language-Specific Guidance are not style-only -- automated formatters (clang-format/CI) do not catch them. Flag them as MINOR.",
+          "",
+        ]
+      : []),
+    `Focus exclusively on: correctness, security, performance, error handling, resource management, concurrency safety${hasNamingConventionGuidance ? ", and the naming-convention exception above" : ""}.`,
     "",
     "If custom instructions below conflict with the noise suppression rules above, follow the custom instructions.",
   ].join("\n");
@@ -1302,10 +1309,11 @@ export function formatUnifiedContext(params: {
 export function buildLanguageGuidanceSection(
   filesByLanguage: Record<string, string[]>,
 ): string {
-  const entries = Object.entries(filesByLanguage)
+  const eligible = Object.entries(filesByLanguage)
     .filter(([lang]) => lang in LANGUAGE_GUIDANCE)
-    .sort((a, b) => b[1].length - a[1].length)
-    .slice(0, MAX_LANGUAGE_GUIDANCE_ENTRIES);
+    .sort((a, b) => b[1].length - a[1].length);
+  const entries = eligible.slice(0, MAX_LANGUAGE_GUIDANCE_ENTRIES);
+  const omittedCount = eligible.length - entries.length;
 
   if (entries.length === 0) return "";
 
@@ -1317,6 +1325,13 @@ export function buildLanguageGuidanceSection(
       lines.push(`- ${rule}`);
     }
     lines.push("");
+  }
+
+  if (omittedCount > 0) {
+    lines.push(
+      `_Note: ${omittedCount} additional language(s) with fewer changed files were omitted from this section._`,
+      "",
+    );
   }
 
   lines.push(
@@ -1809,8 +1824,6 @@ function buildDeltaSummaryInstructionLines(params: {
   const deltaSha7 = params.deltaContext.lastReviewedHeadSha.slice(0, 7);
 
   return [
-    buildDeltaReviewContext(params.deltaContext),
-    "",
     "## Summary comment",
     "",
     "This is a re-review. Use the DELTA template below instead of the standard five-section template.",
@@ -2396,7 +2409,7 @@ export function buildReviewPromptDetails(context: {
     "",
     buildModeInstructions(mode),
     "",
-    buildNoiseSuppressionRules(),
+    buildNoiseSuppressionRules(Boolean(context.filesByLanguage?.["C++"]?.length)),
     "",
     buildPrIntentScopingSection(
       titleTruncated.text,
@@ -2548,6 +2561,7 @@ export function buildReviewPromptDetails(context: {
       "If NO issues found: do nothing.",
     ]);
   } else if (context.deltaContext) {
+    pushInstructionSection("delta-review-context", [buildDeltaReviewContext(context.deltaContext)]);
     pushInstructionSection("summary-delta-mode", buildDeltaSummaryInstructionLines({
       deltaContext: context.deltaContext,
       prNumber: context.prNumber,

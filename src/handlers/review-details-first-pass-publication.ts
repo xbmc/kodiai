@@ -37,6 +37,7 @@ export async function publishFirstPassReviewDetails(params: {
   resultPublished: boolean;
   resultConclusion: string;
   candidateMovedToDetailsCount: number;
+  blockedFindingsNoticeWillPublish: boolean;
   octokit: Octokit;
   owner: string;
   repo: string;
@@ -107,7 +108,7 @@ export async function publishFirstPassReviewDetails(params: {
       return ok({ canonicalReviewDetailsBody: fullDetailsBody });
     }
 
-    if (params.candidateMovedToDetailsCount > 0) {
+    if (params.candidateMovedToDetailsCount > 0 && !params.blockedFindingsNoticeWillPublish) {
       const publishMovedToDetails =
         params.publishMovedToDetailsReviewDetailsMergeFn ?? publishMovedToDetailsReviewDetailsMerge;
       const movedToDetailsMerge = await publishMovedToDetails({
@@ -138,8 +139,9 @@ export async function publishFirstPassReviewDetails(params: {
       return ok({ canonicalReviewDetailsBody: fullDetailsBody });
     }
 
-    const approvalWillOwnCanonicalSurface = params.resultConclusion === "success";
-    if (!approvalWillOwnCanonicalSurface) {
+    const canonicalSurfaceOwnedElsewhere =
+      params.resultConclusion === "success" || params.blockedFindingsNoticeWillPublish;
+    if (!canonicalSurfaceOwnedElsewhere) {
       const publishStandalone =
         params.publishStandaloneReviewDetailsFallbackFn ?? publishStandaloneReviewDetailsFallback;
       const standaloneFallback = await publishStandalone({

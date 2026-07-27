@@ -82,7 +82,10 @@ import { removeFilteredInlineCommentsForSuccessfulReview } from "./review-filter
 import { buildReviewDetailsAttemptLogFields } from "./review-details-attempt-log-fields.ts";
 import { registerReviewHandlerEvents } from "./review-event-registration.ts";
 import { buildReviewGithubAppAdapters } from "./review-github-app-adapters.ts";
-import { publishBlockedReviewFindingsNoticeForRuntime } from "./review-blocked-findings-notice.ts";
+import {
+  publishBlockedReviewFindingsNoticeForRuntime,
+  willBlockedReviewFindingsNoticePublish,
+} from "./review-blocked-findings-notice.ts";
 import { shouldSkipGenericReviewForAddonRepo } from "./review-addon-repo-gate.ts";
 
 /**
@@ -833,6 +836,11 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           resultPublished: handlerPublishedReviewOutput,
           resultConclusion: result.conclusion,
           candidateMovedToDetailsCount: reviewCandidatePublicationRuntime.counts.candidateMovedToDetails,
+          blockedFindingsNoticeWillPublish: willBlockedReviewFindingsNoticePublish({
+            candidatePublicationRuntime: reviewCandidatePublicationRuntime,
+            findingLifecycle: reviewFindingLifecycleResult.projection,
+            handlerPublishedReviewOutput,
+          }),
           octokit: extractionOctokit,
           owner: apiOwner,
           repo: apiRepo,
