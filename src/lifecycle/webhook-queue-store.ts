@@ -71,7 +71,7 @@ export function createWebhookQueueStore(opts: {
           UPDATE webhook_queue
           SET status = 'pending'
           WHERE status = 'processing'
-            AND queued_at < NOW() - INTERVAL '60 seconds'
+            AND (claimed_at IS NULL OR claimed_at < NOW() - INTERVAL '60 seconds')
           RETURNING id
         `;
         if (recovered.length > 0) {
