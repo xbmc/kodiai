@@ -401,8 +401,9 @@ function toValidationTruthProjection(
     if (record.revalidation.passed) counts.revalidated += 1;
     if (record.status !== "suggested") counts[record.status] += 1;
     if (record.validation.present || record.revalidation.present) {
-      if (record.validation.fresh || record.revalidation.fresh) evidenceFreshness.fresh += 1;
-      if ((record.validation.present && !record.validation.fresh) || (record.revalidation.present && !record.revalidation.fresh)) {
+      if (record.validation.fresh || record.revalidation.fresh) {
+        evidenceFreshness.fresh += 1;
+      } else {
         evidenceFreshness.stale += 1;
       }
     }

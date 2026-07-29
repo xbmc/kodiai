@@ -113,6 +113,22 @@ describe("reduceValidationTruth", () => {
     expect(result.projection.evidenceFreshness).toMatchObject({ fresh: 1, stale: 0, missingValidation: 0, missingRevalidation: 0 });
   });
 
+  test("counts a record as fresh (not both fresh and stale) when validation is fresh but revalidation is present and stale", () => {
+    const lifecycle = record();
+    const result = reduceValidationTruth({
+      reviewOutputKey: baseCorrelation.reviewOutputKey,
+      deliveryId: baseCorrelation.deliveryId,
+      requireRevalidation: true,
+      findings: [lifecycle],
+      samePrFixes: [fixFor(lifecycle)],
+      validations: [validationFor(lifecycle, { evidenceFresh: true })],
+      revalidations: [validationFor(lifecycle, { evidenceFresh: false })],
+    });
+
+    expect(result.projection.evidenceFreshness).toMatchObject({ fresh: 1, stale: 0 });
+    expect(result.projection.evidenceFreshness.fresh + result.projection.evidenceFreshness.stale).toBe(1);
+  });
+
   test("requires matching finding identity before validation can close a finding", () => {
     const lifecycle = record();
     const other = record({ title: "Different finding identity" });
