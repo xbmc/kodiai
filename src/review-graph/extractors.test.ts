@@ -178,4 +178,24 @@ describe("extractReviewGraph", () => {
       && edge.attributes?.resolution === "cpp-local-include"
     )).toBe(true);
   });
+
+  test("does not guess a cross-file cpp call target when multiple local includes are ambiguous", () => {
+    const result = extractReviewGraph({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      path: "src/service.cpp",
+      content: [
+        '#include "a.h"',
+        '#include "b.h"',
+        "",
+        "void runService() {",
+        "  helper();",
+        "}",
+      ].join("\n"),
+      language: "cpp",
+    });
+
+    const callEdges = result.edges.filter((edge) => edge.edgeKind === "calls");
+    expect(callEdges.some((edge) => edge.sourceStableKey.includes("runService->helper"))).toBe(false);
+  });
 });

@@ -251,13 +251,17 @@ function extractPython(input: ExtractReviewGraphInput): ReviewGraphExtraction {
         const aliasMatch = part.match(/^([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/);
         const importedName = aliasMatch?.[1] ?? part;
         const localName = aliasMatch?.[2] ?? importedName;
+        const partStart = line.indexOf(part);
+        // Span the alias itself (not the full "y as z" clause) so spanEndCol
+        // (computed elsewhere as col + importName.length) covers exactly localName.
+        const localNameOffset = localName === importedName ? 0 : part.indexOf(localName, importedName.length);
         importRecords.push({
           stableKey: buildImportStableKey(input.path, lineNo, `${moduleName}.${importedName}`),
           importName: localName,
           target: moduleName,
           targetSymbol: importedName,
           line: lineNo,
-          col: line.indexOf(part) + 1,
+          col: partStart + Math.max(0, localNameOffset) + 1,
           kind: "import",
         });
       }
@@ -683,21 +687,23 @@ function extractCpp(input: ExtractReviewGraphInput): ReviewGraphExtraction {
         confidence: call.confidence,
         attributes: { callerStableKey: call.callerStableKey },
       });
-    } else {
-      const includeTargetPath = localIncludePaths[0];
-      if (includeTargetPath) {
-        edges.push({
-          edgeKind: "calls",
-          sourceStableKey: call.stableKey,
-          targetStableKey: buildSymbolStableKey(includeTargetPath, call.calleeName),
-          confidence: Math.min(call.confidence, 0.58),
-          attributes: {
-            callerStableKey: call.callerStableKey,
-            crossFile: true,
-            resolution: "cpp-local-include",
-          },
-        });
-      }
+    } else if (localIncludePaths.length === 1) {
+      // Only guess a cross-file target when there's exactly one local #include candidate --
+      // with multiple candidates we have no way to tell which one actually declares the
+      // callee (unlike Python's `from x import y`, a #include doesn't name its symbols),
+      // so picking the first would silently wire the edge to the wrong file.
+      const includeTargetPath = localIncludePaths[0]!;
+      edges.push({
+        edgeKind: "calls",
+        sourceStableKey: call.stableKey,
+        targetStableKey: buildSymbolStableKey(includeTargetPath, call.calleeName),
+        confidence: Math.min(call.confidence, 0.58),
+        attributes: {
+          callerStableKey: call.callerStableKey,
+          crossFile: true,
+          resolution: "cpp-local-include",
+        },
+      });
     }
   }
 

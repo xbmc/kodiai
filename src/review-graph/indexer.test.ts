@@ -375,6 +375,39 @@ describe("createReviewGraphIndexer", () => {
     expect(cppFile).toBeNull();
   });
 
+  test("skips an oversized file instead of failing the whole build", async () => {
+    const store = new InMemoryReviewGraphStore();
+    const workspaceDir = await createWorkspaceFixture({
+      "src/service.py": `def helper(value):\n    return value\n`,
+      "src/huge.cpp": `void helper() {}\n`,
+    });
+
+    const indexer = createReviewGraphIndexer({
+      store,
+      logger: mockLogger,
+      readWorkspaceFile: async (absolutePath) => {
+        if (absolutePath.endsWith("huge.cpp")) {
+          throw new Error("review_graph_file_too_large:1048576");
+        }
+        return await Bun.file(absolutePath).text();
+      },
+    });
+
+    const result = await indexer.indexWorkspace({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      workspaceDir,
+      commitSha: "sha-oversized",
+    });
+
+    expect(result.metrics.indexed).toBe(1);
+    expect(result.metrics.skipped).toBe(1);
+    expect(result.metrics.failed).toBe(0);
+    expect(result.files.skipped).toEqual(["src/huge.cpp"]);
+    expect(result.files.failed).toEqual([]);
+    expect(result.build.status).toBe("completed");
+  });
+
   test("indexes forward cross-file Python calls after target file nodes are available", async () => {
     const store = new InMemoryReviewGraphStore();
     const workspaceDir = await createWorkspaceFixture({

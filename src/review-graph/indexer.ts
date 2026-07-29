@@ -266,6 +266,20 @@ export function createReviewGraphIndexer(opts: ReviewGraphIndexerOptions): Revie
             });
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            if (message.startsWith(REVIEW_GRAPH_FILE_TOO_LARGE_PREFIX)) {
+              metrics.skipped += 1;
+              files.skipped.push(repoPath);
+              opts.logger.debug(
+                {
+                  repo: input.repo,
+                  workspaceKey: input.workspaceKey,
+                  path: repoPath,
+                  sizeBytes: Number(message.slice(REVIEW_GRAPH_FILE_TOO_LARGE_PREFIX.length)),
+                },
+                "Skipped review graph index for oversized file",
+              );
+              continue;
+            }
             metrics.failed += 1;
             files.failed.push({ path: repoPath, error: message });
             opts.logger.warn(
