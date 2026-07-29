@@ -86,4 +86,17 @@ describe("deploy.sh", () => {
     expect(deployScript).toContain("ACA_CPU=${ACA_CPU:-1.75}");
     expect(deployScript).toContain("ACA_MEMORY=${ACA_MEMORY:-3.5Gi}");
   });
+
+  test("waits for the running revision to drain in-flight jobs before triggering a revision swap", () => {
+    const showIndex = deployScript.indexOf('if az containerapp show --name "$APP_NAME"');
+    const drainCheckIndex = deployScript.indexOf("/internal/drain-status");
+    const revisionSuffixIndex = deployScript.indexOf('REVISION_SUFFIX="deploy-${SOURCE_COMMIT_SHORT}-$(date +%Y%m%d-%H%M%S)"');
+
+    expect(showIndex).toBeGreaterThan(-1);
+    expect(drainCheckIndex).toBeGreaterThan(showIndex);
+    expect(revisionSuffixIndex).toBeGreaterThan(drainCheckIndex);
+    expect(deployScript).toContain('active_total=$(python3 -c');
+    expect(deployScript).toContain("Refusing to deploy -- the running revision still reports in-flight work");
+    expect(deployScript).toContain("DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS=${DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS:-900}");
+  });
 });

@@ -816,6 +816,63 @@ az containerapp job secret set \
 # -- Deploy Container App -----------------------------------------------------
 echo "==> Deploying container app: $APP_NAME..."
 if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+  # Single-revision mode means updating the app sends SIGTERM to the currently
+  # running revision. If jobs are still in flight when that happens, the
+  # process only gets a bounded grace window (SHUTDOWN_GRACE_MS +
+  # SHUTDOWN_MAX_TOTAL_GRACE_MS) before it force-exits and abandons them
+  # (see src/lifecycle/shutdown-manager.ts). Refuse to trigger the swap until
+  # the running revision reports zero in-flight work, so a deploy never kills
+  # in-flight jobs -- it waits, or it fails loudly and lets the operator retry.
+  DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS=${DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS:-900}
+  DEPLOY_DRAIN_POLL_INTERVAL_SECONDS=${DEPLOY_DRAIN_POLL_INTERVAL_SECONDS:-10}
+  EXISTING_FQDN=$(az containerapp show \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query properties.configuration.ingress.fqdn \
+    --output tsv 2>/dev/null || true)
+  if [[ -z "$EXISTING_FQDN" ]]; then
+    echo "WARNING: Could not resolve the running revision's ingress FQDN; skipping the in-flight-job drain check." >&2
+  else
+    echo "==> Checking https://${EXISTING_FQDN}/internal/drain-status for in-flight jobs before deploying..."
+    waited_seconds=0
+    while true; do
+      drain_http_code=$(curl -sS -m 5 -o /tmp/kodiai-drain-status.json -w '%{http_code}' "https://${EXISTING_FQDN}/internal/drain-status" 2>/dev/null || echo 000)
+      if [[ "$drain_http_code" == "404" ]]; then
+        echo "WARNING: Running revision does not expose /internal/drain-status (pre-dates this check); proceeding without an in-flight-job guarantee." >&2
+        break
+      fi
+      if [[ "$drain_http_code" == "200" ]]; then
+        drain_status_json=$(cat /tmp/kodiai-drain-status.json 2>/dev/null || echo '{}')
+        active_total=$(python3 -c '
+import json, sys
+try:
+    print(int(json.loads(sys.argv[1]).get("activeTotal", 0)))
+except Exception:
+    print(-1)
+' "$drain_status_json" 2>/dev/null || echo -1)
+      else
+        active_total=-1
+      fi
+      rm -f /tmp/kodiai-drain-status.json
+      if [[ "$active_total" == "0" ]]; then
+        echo "==> Running revision is idle. Safe to deploy."
+        break
+      fi
+      if (( waited_seconds >= DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS )); then
+        echo "ERROR: Refusing to deploy -- the running revision still reports in-flight work (or was unreachable) after waiting ${DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS}s (last HTTP status: ${drain_http_code})." >&2
+        echo "        Re-run deploy.sh once the running revision is idle, or raise DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS if long-running jobs are expected." >&2
+        exit 1
+      fi
+      if [[ "$active_total" == "-1" ]]; then
+        echo "    Could not read drain-status from the running revision yet (HTTP ${drain_http_code}, ${waited_seconds}s/${DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS}s); retrying..."
+      else
+        echo "    Waiting for ${active_total} in-flight job(s)/request(s) to finish before deploying (${waited_seconds}s/${DEPLOY_DRAIN_WAIT_TIMEOUT_SECONDS}s)..."
+      fi
+      sleep "$DEPLOY_DRAIN_POLL_INTERVAL_SECONDS"
+      waited_seconds=$((waited_seconds + DEPLOY_DRAIN_POLL_INTERVAL_SECONDS))
+    done
+  fi
+
   REVISION_SUFFIX="deploy-${SOURCE_COMMIT_SHORT}-$(date +%Y%m%d-%H%M%S)"
   echo "==> Updating existing container app (revision: $REVISION_SUFFIX)..."
   APP_YAML=$(mktemp --suffix=.yaml)

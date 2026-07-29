@@ -650,7 +650,7 @@ app.route("/webhooks/slack/commands", createSlackCommandRoutes({
   logger,
   profileStore: contributorProfileStore,
 }));
-app.route("/", createHealthRoutes({ githubApp, logger, sql }));
+app.route("/", createHealthRoutes({ githubApp, logger, sql, requestTracker }));
 
 // MCP HTTP routes — internal endpoint for ACA agent jobs to call MCP tools
 app.route("/", createMcpHttpRoutes(mcpJobRegistry, logger));
