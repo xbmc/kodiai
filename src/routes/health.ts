@@ -2,12 +2,14 @@ import { Hono } from "hono";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { Sql } from "../db/client.ts";
+import type { RequestTracker } from "../lifecycle/types.ts";
 import { raceWithTimeout } from "../lib/with-timeout.ts";
 
 interface HealthRouteDeps {
   githubApp: GitHubApp;
   logger: Logger;
   sql: Sql;
+  requestTracker: RequestTracker;
   readinessDependencyTimeoutMs?: number;
   readinessDependencyCacheTtlMs?: number;
 }
@@ -64,6 +66,7 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
   const {
     githubApp,
     logger,
+    requestTracker,
     readinessDependencyTimeoutMs = 1_000,
     readinessDependencyCacheTtlMs = DEFAULT_READINESS_DEPENDENCY_CACHE_TTL_MS,
   } = deps;
@@ -145,6 +148,19 @@ export function createHealthRoutes(deps: HealthRouteDeps): Hono {
           reason: "GitHub API connectivity check degraded",
         });
     }
+  });
+
+  // Drain status: exposes in-flight request/job counts so a deploy can wait
+  // for this revision to go idle before triggering a swap, instead of ever
+  // sending SIGTERM while work is still running. See deploy.sh's pre-deploy
+  // drain check.
+  app.get("/internal/drain-status", (c) => {
+    const counts = requestTracker.activeCount();
+    return c.json({
+      activeRequests: counts.requests,
+      activeJobs: counts.jobs,
+      activeTotal: counts.total,
+    });
   });
 
   return app;
