@@ -36,6 +36,7 @@ export type OrphanedTestCheckerReport = {
 export const EXPLICIT_TEST_TARGET_MAP = {
   "scripts/deploy.test.ts": "deploy.sh",
   "scripts/deploy-timeout-alignment.test.ts": "deploy.sh",
+  "scripts/dockerfile-runtime-permissions.test.ts": "Dockerfile",
   "src/contributor/profile-store-retry.test.ts": "src/contributor/profile-store.ts",
   "src/execution/mcp/issue-tools-registration.test.ts": "src/execution/mcp/index.ts",
   "src/execution/prepare-agent-workspace.test.ts": "src/execution/executor.ts",
