@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v0.50 (2026-07-29)
+
+An exhaustive correctness sweep across review publication, dependency-bump review, knowledge/embedding clustering, wiki sync, review-graph indexing, expertise scoring, and the durable webhook queue, plus a deploy-safety fix so a deploy can no longer kill jobs that are still in flight.
+
 ### Fixed
 
 - Regular PR reviews now surface bounded, sanitized file/line findings immediately when an approved finding has no safe auto-generated patch, instead of replacing the finding text with publication-gate diagnostics.
@@ -17,6 +21,35 @@ All notable changes to this project are documented in this file.
 - A mention-triggered NOT-APPROVED verdict now always publishes through the canonical marker system, even when the model's free-text result doesn't match the expected finding-line format; previously it silently fell back to an unmarked plain reply in that case (found via a live smoke test on `xbmc/xbmc#28172`).
 - The model's own direct GitHub tool calls (`create_comment`, inline review comments) now embed the same trigger-agnostic canonical marker as every other publish path, instead of the old per-delivery key. This was the most common review outcome and had been missed in the initial unification pass -- without this, a normal automatic review with real findings still wouldn't reconcile with a later mention-triggered re-review of the same commit.
 - Two publish paths (mention approval, blocked-findings notice) could report success and run stale-surface reconciliation even when the underlying write was silently dropped because publish rights were revoked mid-flight; both now correctly report failure and skip reconciliation in that case.
+- A blocked-candidate publication's per-bucket reasons skipped the secret-redaction scrub applied to top-level reasons, risking raw tokens or prompt text leaking into a published GitHub comment if a blocked reason ever echoed model output.
+- Candidate-publication fallback-disallowed counts were capped instead of accumulated, undercounting how many candidate findings were denied a template fallback.
+- Dependency-bump reviews only analyzed the impact of the first changed package in a multi-package bump, silently skipping every other package in the same PR.
+- Dependency-bump patch-file detection matched changelog patch filenames anywhere in the PR's changed files instead of only under `tools/depends/`, risking misattributed patches.
+- Dependency-bump changelog gating ignored changelogs that had only breaking-change entries and no highlights, treating them as if there were no changelog at all.
+- Fork-readiness polling guessed a bot-owned fork existed by checking a same-named repo under the bot's own account; it now enumerates the bot's actual forks and matches by parent, so it can no longer bind to an unrelated repo after a rename collision.
+- Workspace cleanup could throw and crash a job if removing its temp directory failed; it now logs a warning and continues, matching the sibling create-failure path.
+- An Azure Container Apps job-start response that wasn't valid JSON crashed with an unhandled parse error instead of a clear "job may already be running unmonitored" diagnostic.
+- Knowledge-cluster centroid merges averaged the existing centroid and new members with equal weight regardless of the existing cluster's size, distorting centroids for large clusters; merges are now weighted by member count.
+- Null-embedding backfill pagination never advanced its cursor, so it re-scanned the same page on every call instead of making forward progress.
+- Review-comment backfill computed its resume watermark from only the last comment on a page instead of the maximum `updated_at` across the page, risking missed comments on the next run.
+- Wiki-voice validation re-checked heading/format/length rules against the original draft even when a retry regenerated different suggestion text, so a corrected retry could still be flagged (or wrongly pass) against stale text.
+- Wiki exemplar-section selection computed a diversity score per section but never used it to choose sections, defeating the intended diversity sampling.
+- Generated-rule retirement now records and reports the actual reason each rule was retired instead of guessing "policy" for every retired rule.
+- Review-graph indexing could throw on an oversized file during its first pass instead of skipping it like the second pass already did.
+- C++ unresolved-call resolution in review-graph extraction no longer guesses a single arbitrary include target when multiple local includes are ambiguous; Python aliased-import spans now point at the alias name instead of the whole clause.
+- Contributor expertise scoring blended each topic's updated score against already-mutated state instead of the pre-update snapshot, compounding blend weights across topics processed in the same update.
+- Review validation-truth evidence-freshness counts could double-count a record as both fresh and stale when validation and revalidation evidence disagreed; a record now counts as exactly one.
+- **Durable webhook queue crash recovery** matched stuck `processing` rows on `queued_at` (set once at insert) instead of `claimed_at` (set when a worker picks it up), so a webhook that simply waited more than 60 seconds in queue before being claimed became immediately eligible for "recovery" and could be dispatched twice.
+- A mention-plan headSha/headRef mixup meant callers reading `headSha` actually got the branch name, not the commit SHA.
+- The orphaned-test-ownership CI gate (`static` check) was failing on `main` for lack of an explicit ownership mapping for a Dockerfile-permissions test; added the missing mapping.
+- **Deploys could kill jobs that were still running.** A deploy's SIGTERM could land while jobs were in flight; after a bounded grace window the process force-exited and abandoned that work (2 real incidents in the prior two weeks, 12 and 9 jobs abandoned). Deploys now poll a new `/internal/drain-status` endpoint and wait for the running revision to report zero in-flight work before triggering a revision swap, failing the deploy loudly instead of ever killing in-flight jobs.
+
+### Verification
+
+- `bun run test:unit` passed with `6869 pass`, `0 fail`.
+- `bun run check:orphaned-tests` passed.
+- `bunx tsc --noEmit` passed.
+- Prod log audit of the prior 2 weeks confirmed no other abandoned-job incidents beyond the two fixed here, and no other warn/error-level regressions.
 
 ## v0.49 (2026-07-20)
 
