@@ -184,6 +184,7 @@ async function runNotifyLifecycleFixture(): Promise<NotifyLifecycleFixtureResult
     kept: 0,
     retirementFailures: 0,
     retiredRules: [retired],
+    retirementReasons: { [retired.id]: "below-floor" },
     durationMs: 5,
   };
 
@@ -217,6 +218,7 @@ async function runNotifyFailOpenFixture(): Promise<NotifyFailOpenFixtureResult> 
     kept: 0,
     retirementFailures: 0,
     retiredRules: [retired],
+    retirementReasons: { [retired.id]: "below-floor" },
     durationMs: 5,
   };
 

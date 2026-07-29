@@ -1,6 +1,6 @@
 import picomatch from "picomatch";
 import { createHash } from "node:crypto";
-import { classifyFileLanguage } from "../execution/diff-analysis.ts";
+import { classifyFileLanguage, normalizeLanguageLabel } from "../execution/diff-analysis.ts";
 import type { CanonicalChunkType } from "./canonical-code-types.ts";
 
 export type CanonicalChunk = {
@@ -376,6 +376,17 @@ function chunkBraceLanguageFile(filePath: string, language: string, lines: strin
 }
 
 export function chunkCanonicalCodeFile(params: { filePath: string; fileContent: string }): CanonicalChunkResult {
+  const result = chunkCanonicalCodeFileImpl(params);
+  // Boundary detection above branches on the display-case language (e.g. "TypeScript",
+  // "C++") to pick the right regex strategy -- normalize only at the storage/output
+  // boundary so retrieval-time language lookups get the lowercase form they expect.
+  return {
+    ...result,
+    chunks: result.chunks.map((chunk) => ({ ...chunk, language: normalizeLanguageLabel(chunk.language) })),
+  };
+}
+
+function chunkCanonicalCodeFileImpl(params: { filePath: string; fileContent: string }): CanonicalChunkResult {
   const exclusionReason = detectExclusionReason(params.filePath);
   if (exclusionReason) {
     return {

@@ -55,6 +55,7 @@ function makeRetirementResult(overrides?: Partial<RetirementPolicyResult>): Reti
     kept: 0,
     retirementFailures: 0,
     retiredRules: [rule],
+    retirementReasons: { [rule.id]: "below-floor" },
     durationMs: 5,
     ...overrides,
   };

@@ -100,6 +100,20 @@ export function classifyFileLanguage(filePath: string): string {
 }
 
 /**
+ * Normalize a display-case language name (e.g. from classifyFileLanguage,
+ * "C++", "TypeScript") to the lowercase, symbol-mapped form used for database
+ * storage and retrieval-time lookups (e.g. "cpp", "typescript").
+ */
+export function normalizeLanguageLabel(displayLang: string): string {
+  return displayLang.toLowerCase()
+    .replace("c#", "csharp")
+    .replace("c++", "cpp")
+    .replace("objective-c++", "objectivecpp")
+    .replace("objective-c", "objectivec")
+    .replace("f#", "fsharp");
+}
+
+/**
  * Context-aware language classification. Returns lowercase language names for
  * consistency with database storage. Resolves ambiguous extensions (e.g., .h)
  * using context files from the same PR/repository.
@@ -128,12 +142,7 @@ export function classifyFileLanguageWithContext(
 
   const displayLang = EXTENSION_LANGUAGE_MAP[ext];
   if (!displayLang) return "unknown";
-  return displayLang.toLowerCase()
-    .replace("c#", "csharp")
-    .replace("c++", "cpp")
-    .replace("objective-c++", "objectivecpp")
-    .replace("objective-c", "objectivec")
-    .replace("f#", "fsharp");
+  return normalizeLanguageLabel(displayLang);
 }
 
 export function classifyLanguages(files: string[]): Record<string, string[]> {

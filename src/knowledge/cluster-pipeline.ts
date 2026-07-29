@@ -30,6 +30,7 @@ import {
   cosineSimilarity,
   meanEmbedding,
   parsePgVectorEmbedding,
+  weightedMeanEmbedding,
 } from "./embedding-vector.ts";
 
 export { cosineSimilarity } from "./embedding-vector.ts";
@@ -215,9 +216,12 @@ export async function runClusterPipeline(opts: {
           const cluster = mergeCandidateClusterById.get(clusterId);
           if (!cluster) continue;
 
-          // Update centroid with new members
-          const allEmbeddings = [cluster.centroid, ...newMembers.map((m) => m.embedding)];
-          const newCentroid = meanEmbedding(allEmbeddings);
+          // Update centroid with new members, weighting the existing centroid by the
+          // sample count it already represents so it doesn't collapse to a single point.
+          const newCentroid = weightedMeanEmbedding([
+            { embedding: cluster.centroid, weight: cluster.memberCount },
+            ...newMembers.map((m) => ({ embedding: m.embedding, weight: 1 })),
+          ]);
           if (!newCentroid) {
             logger.warn(
               { repo, clusterId, memberCount: newMembers.length },

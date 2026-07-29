@@ -88,10 +88,9 @@ function makeActivationEvents(
 function makeRetirementEvents(
   repo: string,
   rules: GeneratedRuleRecord[],
+  reasons: Record<number, string>,
   timestamp: string,
 ): LifecycleEvent[] {
-  // Retirement records don't carry reason — we reconstruct from the rule's
-  // current signalScore and memberCount. Just surface what is known.
   return rules.map((rule) => ({
     type: "retired" as const,
     repo,
@@ -99,7 +98,7 @@ function makeRetirementEvents(
     title: rule.title,
     signalScore: rule.signalScore,
     memberCount: rule.memberCount,
-    reason: rule.retiredAt ? "policy" : null,
+    reason: reasons[rule.id] ?? null,
     timestamp,
   }));
 }
@@ -155,7 +154,7 @@ export async function notifyLifecycleRun(
 
   const timestamp = new Date().toISOString();
   const activationEvents = makeActivationEvents(repo, activation.activatedRules, timestamp);
-  const retirementEvents = makeRetirementEvents(repo, retirement.retiredRules, timestamp);
+  const retirementEvents = makeRetirementEvents(repo, retirement.retiredRules, retirement.retirementReasons, timestamp);
   const allEvents = [...activationEvents, ...retirementEvents];
 
   // Structured per-event logs
@@ -260,7 +259,7 @@ export async function notifyRetirement(
   const notifyLogger = getNotifyLogger(logger, repo);
 
   const timestamp = new Date().toISOString();
-  const events = makeRetirementEvents(repo, result.retiredRules, timestamp);
+  const events = makeRetirementEvents(repo, result.retiredRules, result.retirementReasons, timestamp);
 
   logLifecycleEvents(notifyLogger, events);
 

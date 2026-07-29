@@ -8,7 +8,7 @@
 
 import picomatch from "picomatch";
 import { createHash } from "node:crypto";
-import { classifyFileLanguage } from "../execution/diff-analysis.ts";
+import { classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 
 export type ParsedHunk = {
   filePath: string;
@@ -41,7 +41,7 @@ export function parseDiffHunks(params: {
   const lines = diffText.split("\n");
   const hunks: ParsedHunk[] = [];
   let currentHunk: ParsedHunk | null = null;
-  const language = classifyFileLanguage(filePath);
+  const language = classifyFileLanguageWithContext(filePath);
 
   for (const line of lines) {
     // Skip file header lines

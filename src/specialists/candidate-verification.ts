@@ -497,14 +497,22 @@ export function classifyCandidateVerification(
   }
 
   const evidenceByCandidate = new Map<string, NormalizedEvidence[]>();
+  const duplicateEvidenceCountByCandidate = new Map<string, number>();
   let unmatchedEvidenceCount = 0;
-  let duplicateEvidenceCount = 0;
+  let orphanedDuplicateEvidenceCount = 0;
   const seenEvidenceSignatures = new Set<string>();
   const globalEvidenceAccumulator = emptyAccumulator();
 
   for (const evidence of normalizedEvidence.evidence) {
     if (seenEvidenceSignatures.has(evidence.signature)) {
-      duplicateEvidenceCount++;
+      if (evidence.candidateKey === null) {
+        orphanedDuplicateEvidenceCount++;
+      } else {
+        duplicateEvidenceCountByCandidate.set(
+          evidence.candidateKey,
+          (duplicateEvidenceCountByCandidate.get(evidence.candidateKey) ?? 0) + 1,
+        );
+      }
       continue;
     }
     seenEvidenceSignatures.add(evidence.signature);
@@ -529,7 +537,7 @@ export function classifyCandidateVerification(
   const counts = emptyCounts({
     candidateCount: normalizedCandidates.candidates.length,
     evidenceCount: normalizedEvidence.evidence.length,
-    duplicateCount: duplicateEvidenceCount,
+    duplicateCount: orphanedDuplicateEvidenceCount,
     unclassifiableCount: globalEvidenceAccumulator.unclassifiableCount,
     malformedRecordCount: topLevelMalformedCount
       + normalizedCandidates.malformedRecordCount
@@ -555,8 +563,11 @@ export function classifyCandidateVerification(
       applyEvidence(accumulator, evidence);
     }
 
-    if (duplicateEvidenceCount > 0) {
-      accumulator.duplicateCount += duplicateEvidenceCount;
+    const candidateDuplicateEvidenceCount = candidate.key === null
+      ? 0
+      : duplicateEvidenceCountByCandidate.get(candidate.key) ?? 0;
+    if (candidateDuplicateEvidenceCount > 0) {
+      accumulator.duplicateCount += candidateDuplicateEvidenceCount;
       addConflict(accumulator, "duplicate");
       addReason(accumulator, "evidence-duplicate-key");
     }

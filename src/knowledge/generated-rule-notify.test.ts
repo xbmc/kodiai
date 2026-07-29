@@ -79,6 +79,7 @@ function makeRetirementResult(
     kept: 2,
     retirementFailures: 0,
     retiredRules: [makeRetiredRecord(2)],
+    retirementReasons: { 2: "below-floor" },
     durationMs: 80,
     ...overrides,
   };
@@ -403,6 +404,25 @@ describe("notifyRetirement", () => {
     expect(ev.type).toBe("retired");
     expect(typeof ev.timestamp).toBe("string");
     expect(ev.timestamp.length).toBeGreaterThan(0);
+  });
+
+  test("event reason reflects the rule's specific retirement reason, not a generic fallback", async () => {
+    const hookCalls: LifecycleEvent[][] = [];
+    const hook = mock(async (e: LifecycleEvent[]) => { hookCalls.push(e); });
+
+    await notifyRetirement({
+      logger: silentLogger,
+      result: makeRetirementResult({
+        retiredRules: [makeRetiredRecord(5), makeRetiredRecord(6)],
+        retired: 2,
+        retirementReasons: { 5: "below-floor", 6: "member-decay" },
+      }),
+      notifyHook: hook,
+    });
+
+    const events = hookCalls[0]!;
+    expect(events.find((e) => e.ruleId === 5)!.reason).toBe("below-floor");
+    expect(events.find((e) => e.ruleId === 6)!.reason).toBe("member-decay");
   });
 });
 

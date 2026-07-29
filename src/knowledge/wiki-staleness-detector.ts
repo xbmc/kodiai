@@ -54,7 +54,6 @@ async function loadRunState(sql: Sql): Promise<WikiStalenessRunState> {
     return {
       lastRunAt: null,
       lastCommitSha: null,
-      lastMergedAt: null,
       pagesFlagged: 0,
       pagesEvaluated: 0,
       status: "pending",
@@ -66,7 +65,6 @@ async function loadRunState(sql: Sql): Promise<WikiStalenessRunState> {
     id: row.id as number,
     lastRunAt: row.last_run_at ? new Date(row.last_run_at as string) : null,
     lastCommitSha: (row.last_commit_sha as string) ?? null,
-    lastMergedAt: row.last_run_at ? new Date(row.last_run_at as string) : null,
     pagesFlagged: row.pages_flagged as number,
     pagesEvaluated: row.pages_evaluated as number,
     status: row.status as WikiStalenessRunState["status"],
@@ -305,7 +303,6 @@ async function heuristicPass(
       chunkTexts: page.chunkTexts,
       heuristicScore: score,
       heuristicTier,
-      affectingCommitShas: [], // no longer used but kept for backward compat
       affectingPRNumbers,
       affectingFilePaths: dedupedFilePaths,
       sortableRecencyMs,
@@ -444,7 +441,6 @@ Your confidence in this assessment based on file overlap: ${candidate.heuristicT
       pageUrl: candidate.pageUrl,
       confidence,
       explanation,
-      commitSha: candidate.affectingCommitShas[0] ?? "",
       prNumber: candidate.affectingPRNumbers[0] ?? null,
       changedFilePath: candidate.affectingFilePaths[0] ?? "",
     };
@@ -494,7 +490,7 @@ async function deliverStalenessReport(deliveryOpts: {
 
   // Post one thread reply per page beyond the top 5.
   for (const page of remainingPages) {
-    const replyText = `[${page.confidence}] <${page.pageUrl}|${page.pageTitle}>\nChanged: \`${page.changedFilePath}\` (${page.commitSha.slice(0, 7)}) \u2014 ${page.explanation}`;
+    const replyText = `[${page.confidence}] <${page.pageUrl}|${page.pageTitle}>\nChanged: \`${page.changedFilePath}\` \u2014 ${page.explanation}`;
     try {
       await slackClient.postThreadMessage({
         channel: channelId,
@@ -580,7 +576,6 @@ export function createWikiStalenessDetector(
           ...runState,
           lastRunAt: new Date(),
           lastCommitSha: null,
-          lastMergedAt: null,
           pagesFlagged: 0,
           pagesEvaluated: 0,
           status: "success",
@@ -619,16 +614,9 @@ export function createWikiStalenessDetector(
       );
       const stalePages = evaluatedPages.filter((page): page is StalePage => page !== null);
 
-      // Determine newest merged_at timestamp for scan window anchor
-      const newestMergedAt = mergedPRs.reduce<Date | null>(
-        (max, pr) => (!max || pr.mergedAt > max ? pr.mergedAt : max),
-        null,
-      );
-
       await saveRunState(opts.sql, {
         lastRunAt: new Date(),
         lastCommitSha: null, // no longer used but column exists
-        lastMergedAt: newestMergedAt,
         pagesFlagged,
         pagesEvaluated: toEvaluate.length,
         status: "success",

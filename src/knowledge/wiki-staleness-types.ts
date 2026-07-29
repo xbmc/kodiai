@@ -17,8 +17,6 @@ export type WikiPageCandidate = {
   heuristicScore: number;
   /** Confidence tier from heuristic: "High" | "Medium" */
   heuristicTier: "High" | "Medium";
-  /** The commit SHA(s) most recently associated with score contribution. */
-  affectingCommitShas: string[];
   /** The PR number(s) that contributed to the heuristic score. */
   affectingPRNumbers: number[];
   /** The changed file path(s) that contributed to the heuristic score. */
@@ -40,8 +38,6 @@ export type StalePage = {
   confidence: "High" | "Medium" | "Low";
   /** One-line LLM-generated explanation of why the page is stale. */
   explanation: string;
-  /** Commit SHA of most recent affecting commit. */
-  commitSha: string;
   /** PR number that most directly triggered staleness (for Phase 123 citation). */
   prNumber: number | null;
   /** File path that most directly triggered staleness. */
@@ -64,8 +60,6 @@ export type WikiStalenessRunState = {
   id?: number;
   lastRunAt: Date | null;
   lastCommitSha: string | null;
-  /** Newest merged_at timestamp from the last scan (primary scan window cursor). */
-  lastMergedAt: Date | null;
   pagesFlagged: number;
   pagesEvaluated: number;
   status: "success" | "failed" | "pending";

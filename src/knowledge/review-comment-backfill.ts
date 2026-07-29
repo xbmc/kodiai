@@ -527,9 +527,16 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
       hadWriteFailures = true;
     }
 
-    // Track last comment date for sync state
-    const lastComment = comments[comments.length - 1]!;
-    lastCommentDate = new Date(lastComment.created_at);
+    // Track the latest updated_at across the page for sync state -- `since` on the
+    // next resumed run filters by updated_at, so the watermark must track that same
+    // field (an edited older comment can have a later updated_at than this page's
+    // last-created comment).
+    for (const comment of comments) {
+      const updatedAt = new Date(comment.updated_at);
+      if (!lastCommentDate || updatedAt > lastCommentDate) {
+        lastCommentDate = updatedAt;
+      }
+    }
 
     // Verbose logging per batch
     logger.info(

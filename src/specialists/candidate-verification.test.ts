@@ -130,7 +130,36 @@ describe("classifyCandidateVerification", () => {
       evidenceCount: 1,
       duplicateEvidenceCount: 1,
     });
-    expect(result.counts.duplicateCount).toBe(2);
+    expect(result.counts.duplicateCount).toBe(1);
+  });
+
+  test("duplicate evidence for one candidate does not taint an unrelated candidate", () => {
+    const result = classifyCandidateVerification({
+      normalReview: { candidates: [{ candidateKey: "candidate-a" }, { candidateKey: "candidate-b" }] },
+      docsConfigTruth: {
+        evidence: [
+          { candidateKey: "candidate-a", decision: "verified", evidenceId: "same" },
+          { candidateKey: "candidate-a", decision: "verified", evidenceId: "same" },
+          { candidateKey: "candidate-b", decision: "verified", evidenceId: "clean" },
+        ],
+      },
+    });
+
+    const [candidateA, candidateB] = result.candidates;
+    expect(candidateA).toMatchObject({
+      verificationState: "verified",
+      publicationEligible: true,
+      conflictFlags: ["duplicate"],
+      duplicateEvidenceCount: 1,
+    });
+    expect(candidateB).toMatchObject({
+      verificationState: "verified",
+      publicationEligible: true,
+      conflictFlags: [],
+      reasonCategories: ["full-support"],
+      duplicateEvidenceCount: 0,
+    });
+    expect(result.counts.duplicateCount).toBe(1);
   });
 
   test("counts conflicting lane outputs as disagreement and denies publication", () => {
