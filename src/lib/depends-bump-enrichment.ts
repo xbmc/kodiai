@@ -688,7 +688,7 @@ export function detectPatchChanges(
   const patchPattern = /\.(patch|diff)$/i;
 
   return files
-    .filter((f) => patchPattern.test(f.filename))
+    .filter((f) => f.filename.startsWith("tools/depends/") && patchPattern.test(f.filename))
     .map((f) => ({
       file: f.filename,
       action: mapStatus(f.status),

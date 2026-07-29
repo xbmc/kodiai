@@ -9,7 +9,12 @@ import {
   parseVersionFileDiff,
   verifyHash,
 } from "./depends-bump-enrichment.ts";
-import { checkTransitiveDependencies, findDependencyConsumers } from "./depends-impact-analyzer.ts";
+import {
+  checkTransitiveDependencies,
+  findDependencyConsumers,
+  type ImpactResult,
+  type TransitiveResult,
+} from "./depends-impact-analyzer.ts";
 import type { DependsReviewData } from "./depends-review-builder.ts";
 import { buildDependsVersionFileByPackage } from "./depends-version-files.ts";
 
@@ -69,6 +74,52 @@ const DEPENDS_BUILD_CONFIG_PATHS = [
   "project/BuildDependencies/",
   "project/cmake/",
 ];
+
+/**
+ * Combine per-package impact/transitive analysis into the single ImpactResult
+ * and TransitiveResult the review builder renders -- a multi-package [depends]
+ * bump (e.g. "Bump zlib / openssl") must not report consumer/transitive impact
+ * for only the first package.
+ */
+function mergeImpactSignalsAcrossPackages(
+  perPackageResults: ReadonlyArray<{ impact: ImpactResult; transitive: TransitiveResult }>,
+): { impact: ImpactResult; transitive: TransitiveResult } {
+  const seenConsumers = new Set<string>();
+  const consumers: ImpactResult["consumers"] = [];
+  let timeLimitReached = false;
+  const degradationNotes: string[] = [];
+  const dependents = new Set<string>();
+  const newDependencies = new Set<string>();
+  const circular = new Set<string>();
+
+  for (const { impact, transitive } of perPackageResults) {
+    for (const consumer of impact.consumers) {
+      const key = `${consumer.filePath}:${consumer.line}`;
+      if (seenConsumers.has(key)) continue;
+      seenConsumers.add(key);
+      consumers.push(consumer);
+    }
+    timeLimitReached = timeLimitReached || impact.timeLimitReached;
+    if (impact.degradationNote) degradationNotes.push(impact.degradationNote);
+    for (const dependent of transitive.dependents) dependents.add(dependent);
+    for (const newDependency of transitive.newDependencies) newDependencies.add(newDependency);
+    for (const pair of transitive.circular) circular.add(pair);
+  }
+
+  return {
+    impact: {
+      consumers,
+      transitive: { dependents: [], newDependencies: [], circular: [] },
+      timeLimitReached,
+      degradationNote: degradationNotes.length > 0 ? degradationNotes.join("; ") : null,
+    },
+    transitive: {
+      dependents: [...dependents],
+      newDependencies: [...newDependencies],
+      circular: [...circular],
+    },
+  };
+}
 
 export function hasNonDependsSourceChanges(prFiles: DependsReviewFile[]): boolean {
   return prFiles.some((file) =>
@@ -198,28 +249,30 @@ export function createDependsReviewSignalCollector(
     });
 
     const collectImpactSignals = async (): Promise<Pick<DependsReviewSignalSet, "impact" | "transitive">> => {
-      const primaryPackage = info.packages[0];
-      if (!workspaceDir || !primaryPackage) {
+      if (!workspaceDir || info.packages.length === 0) {
         return { impact: null, transitive: null };
       }
       try {
-        const [impact, transitive] = await Promise.all([
-          dependencies.findDependencyConsumers({
-            workspaceDir,
-            libraryName: primaryPackage.name,
-            octokit,
-            owner,
-            repo,
-            timeBudgetMs: 3000,
-          }),
-          dependencies.checkTransitiveDependencies({
-            libraryName: primaryPackage.name,
-            octokit,
-            owner,
-            repo,
-          }),
-        ]);
-        return { impact, transitive };
+        const perPackageResults = await mapWithConcurrency(info.packages, 3, async (pkg) => {
+          const [impact, transitive] = await Promise.all([
+            dependencies.findDependencyConsumers({
+              workspaceDir,
+              libraryName: pkg.name,
+              octokit,
+              owner,
+              repo,
+              timeBudgetMs: 3000,
+            }),
+            dependencies.checkTransitiveDependencies({
+              libraryName: pkg.name,
+              octokit,
+              owner,
+              repo,
+            }),
+          ]);
+          return { impact, transitive };
+        });
+        return mergeImpactSignalsAcrossPackages(perPackageResults);
       } catch (err) {
         logger.warn({ ...baseLog, err, gate: "depends-impact" }, "Impact analysis failed (fail-open)");
         return { impact: null, transitive: null };

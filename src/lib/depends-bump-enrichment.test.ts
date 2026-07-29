@@ -603,6 +603,17 @@ describe("detectPatchChanges", () => {
     expect(result).toHaveLength(0);
   });
 
+  test("ignores .patch/.diff files outside tools/depends/ so unrelated removals don't force a Risky verdict", () => {
+    const files = [
+      { filename: "docs/example.diff", status: "removed" },
+      { filename: "addons/skin.example/changes.patch", status: "removed" },
+      { filename: "tools/depends/target/zlib/ZLIB-VERSION", status: "modified" },
+    ];
+
+    const result = detectPatchChanges(files);
+    expect(result).toHaveLength(0);
+  });
+
   test("detects multiple patch changes", () => {
     const files = [
       { filename: "tools/depends/target/ffmpeg/01-fix-decode.patch", status: "added" },

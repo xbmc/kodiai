@@ -194,4 +194,56 @@ describe("collectDependsReviewSignals", () => {
     expect(events).toContain("impact");
     expect(events).toContain("transitive");
   });
+
+  test("analyzes impact and transitive dependencies for every package in a multi-package bump, not just the first", async () => {
+    const analyzedLibraries: string[] = [];
+
+    const dependencies: DependsReviewSignalDependencies = {
+      fetchDependsChangelog: async () => ({ source: "unavailable", highlights: [], breakingChanges: [], url: null, degradationNote: null }),
+      verifyHash: async () => ({ status: "verified", detail: "ok" }),
+      detectPatchChanges: () => [],
+      findDependencyConsumers: async ({ libraryName }) => {
+        analyzedLibraries.push(`impact:${libraryName}`);
+        return {
+          consumers: [{ filePath: `xbmc/${libraryName}.cpp`, line: 1, snippet: `#include <${libraryName}.h>`, includeDirective: `<${libraryName}.h>`, isDirect: true }],
+          transitive: { dependents: [], newDependencies: [], circular: [] },
+          timeLimitReached: false,
+          degradationNote: null,
+        };
+      },
+      checkTransitiveDependencies: async ({ libraryName }) => {
+        analyzedLibraries.push(`transitive:${libraryName}`);
+        return { dependents: [`${libraryName}-dependent`], newDependencies: [], circular: [] };
+      },
+    };
+
+    const collectWithDependencies = createDependsReviewSignalCollector(dependencies);
+
+    const result = await collectWithDependencies({
+      info: makeInfo({
+        packages: [
+          { name: "zlib", oldVersion: null, newVersion: null },
+          { name: "openssl", oldVersion: null, newVersion: null },
+        ],
+      }),
+      prFiles: [],
+      octokit: {} as never,
+      owner: "xbmc",
+      repo: "xbmc",
+      workspaceDir: "/tmp/workspace",
+      logger,
+      baseLog: { deliveryId: "test" },
+    });
+
+    expect(analyzedLibraries).toContain("impact:zlib");
+    expect(analyzedLibraries).toContain("impact:openssl");
+    expect(analyzedLibraries).toContain("transitive:zlib");
+    expect(analyzedLibraries).toContain("transitive:openssl");
+    expect(result.signals.impact?.consumers.map((c) => c.filePath)).toEqual(
+      expect.arrayContaining(["xbmc/zlib.cpp", "xbmc/openssl.cpp"]),
+    );
+    expect(result.signals.transitive?.dependents).toEqual(
+      expect.arrayContaining(["zlib-dependent", "openssl-dependent"]),
+    );
+  });
 });
