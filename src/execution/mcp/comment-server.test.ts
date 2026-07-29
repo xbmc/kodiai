@@ -47,7 +47,7 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const server = createCommentServer({ getOctokit: async () => octokit as never, owner: "acme", repo: "repo", botHandles: [] });
     const { create } = getToolHandlers(server);
 
     const result = await create({ issueNumber: 1, body: "Hello" });
@@ -69,7 +69,7 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const server = createCommentServer({ getOctokit: async () => octokit as never, owner: "acme", repo: "repo", botHandles: [] });
     const { create } = getToolHandlers(server);
 
     const body = [
@@ -111,7 +111,7 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const server = createCommentServer({ getOctokit: async () => octokit as never, owner: "acme", repo: "repo", botHandles: [] });
     const { create } = getToolHandlers(server);
 
     const body = [
@@ -161,15 +161,15 @@ describe("createCommentServer", () => {
       "Reviewed 3 changed files with no actionable issues.",
     ]);
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      [],
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
       reviewOutputKey,
-      () => { publishCalled = true; },
-      42,
-    );
+      onPublish: () => { publishCalled = true; },
+      prNumber: 42,
+    });
     const { create } = getToolHandlers(server);
 
     const result = await create({ issueNumber: 42, body });
@@ -194,6 +194,92 @@ describe("createCommentServer", () => {
 
     expect(createCommentCalled).toBe(false);
     expect(publishCalled).toBe(true);
+  });
+
+  test("stamps the trigger-agnostic canonical key, not the per-delivery reviewOutputKey, when both are provided", async () => {
+    // Regression test: the model's own direct create_comment/create_review calls
+    // must embed the canonical (action/delivery-agnostic) marker so a later
+    // mention-triggered re-review of the same PR/commit can find and reconcile
+    // with it -- not the per-delivery reviewOutputKey used for candidate/telemetry
+    // correlation elsewhere.
+    let createReviewParams: Record<string, unknown> | undefined;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+          listComments: async () => ({ data: [] }),
+        },
+        pulls: {
+          createReview: async (params: Record<string, unknown>) => {
+            createReviewParams = params;
+            return { data: { id: 100 } };
+          },
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const perDeliveryKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-42:action-opened:delivery-d1:head-sha1";
+    const canonicalKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-42:head-sha1";
+    const body = buildSharedApprovalBody(["Reviewed 1 changed file with no actionable issues."]);
+
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
+      reviewOutputKey: perDeliveryKey,
+      prNumber: 42,
+      candidateVerificationRequired: false,
+      canonicalReviewOutputKey: canonicalKey,
+    });
+    const { create } = getToolHandlers(server);
+
+    const result = await create({ issueNumber: 42, body });
+    expect(result.isError).toBeUndefined();
+    expect(createReviewParams).toBeDefined();
+    expect(extractReviewOutputKey(String(createReviewParams!.body))).toBe(canonicalKey);
+    expect(String(createReviewParams!.body)).not.toContain(perDeliveryKey);
+  });
+
+  test("falls back to the per-delivery reviewOutputKey when no canonical key is passed (back-compat)", async () => {
+    let createCommentParams: Record<string, unknown> | undefined;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async (params: Record<string, unknown>) => {
+            createCommentParams = params;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+          listComments: async () => ({ data: [] }),
+        },
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const reviewOutputKey = "kodiai-review-output:v1:inst-1:acme/repo:pr-7:action-opened:delivery-d1:head-sha1";
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
+      reviewOutputKey,
+      prNumber: 7,
+    });
+    const { create } = getToolHandlers(server);
+
+    const result = await create({ issueNumber: 7, body: "Some findings summary" });
+    expect(result.isError).toBeUndefined();
+    expect(createCommentParams).toBeDefined();
+    expect(extractReviewOutputKey(String(createCommentParams!.body))).toBe(reviewOutputKey);
   });
 
   test("replayed create_comment call is blocked when the first call may have been accepted before erroring", async () => {
@@ -225,15 +311,14 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      [],
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
       reviewOutputKey,
-      undefined,
-      42,
-    );
+      prNumber: 42,
+    });
     const { create } = getToolHandlers(server);
 
     const firstResult = await create({ issueNumber: 42, body: "Summary body" });
@@ -268,15 +353,13 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      [],
-      undefined,
-      undefined,
-      42,
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
+      prNumber: 42,
+    });
     const { create } = getToolHandlers(server);
 
     const result = await create({
@@ -325,15 +408,12 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      [],
-      undefined,
-      undefined,
-      undefined,
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
+    });
     const { create } = getToolHandlers(server);
 
     const body = buildSharedApprovalBody([
@@ -369,15 +449,13 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      [],
-      undefined,
-      undefined,
-      42,
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
+      prNumber: 42,
+    });
     const { create } = getToolHandlers(server);
 
     const result = await create({
@@ -474,15 +552,13 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      [],
-      undefined,
-      undefined,
-      42,
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
+      prNumber: 42,
+    });
     const { create } = getToolHandlers(server);
 
     const result = await create({ issueNumber: 10, body });
@@ -514,15 +590,13 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      [],
-      undefined,
-      undefined,
-      42,
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: [],
+      prNumber: 42,
+    });
     const { create } = getToolHandlers(server);
 
     const body = [
@@ -552,7 +626,7 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const server = createCommentServer({ getOctokit: async () => octokit as never, owner: "acme", repo: "repo", botHandles: [] });
     const { create } = getToolHandlers(server);
 
     const body = [
@@ -631,7 +705,7 @@ function makeOctokit() {
 
 async function callCreate(body: string, logger?: import("pino").Logger) {
   const { octokit, getCalledBody } = makeOctokit();
-  const server = createCommentServer(async () => octokit as never, "acme", "repo", [], undefined, undefined, undefined, undefined, logger);
+  const server = createCommentServer({ getOctokit: async () => octokit as never, owner: "acme", repo: "repo", botHandles: [], logger });
   const { create } = getToolHandlers(server);
   const result = await create({ issueNumber: 1, body });
   return { result, calledBody: getCalledBody() };
@@ -1093,7 +1167,7 @@ describe("outgoing secret scan", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const server = createCommentServer({ getOctokit: async () => octokit as never, owner: "acme", repo: "repo", botHandles: [] });
     const { create } = getToolHandlers(server);
 
     const body = "ghp_" + "A".repeat(36);
@@ -1112,7 +1186,7 @@ describe("outgoing secret scan", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const server = createCommentServer({ getOctokit: async () => octokit as never, owner: "acme", repo: "repo", botHandles: [] });
     const { update } = getToolHandlers(server);
 
     const body = "ghp_" + "A".repeat(36);
@@ -1135,7 +1209,7 @@ describe("outgoing secret scan", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const server = createCommentServer({ getOctokit: async () => octokit as never, owner: "acme", repo: "repo", botHandles: [] });
     const { create } = getToolHandlers(server);
 
     const token = "ghs_" + "a".repeat(18) + "\u200B" + "a".repeat(18);
@@ -1436,12 +1510,12 @@ describe("mention sanitization", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      ["kodiai", "claude"],
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: ["kodiai", "claude"],
+    });
     const { create } = getToolHandlers(server);
 
     const result = await create({ issueNumber: 1, body: "@kodiai found an issue" });
@@ -1465,12 +1539,12 @@ describe("mention sanitization", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      ["kodiai", "claude"],
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: ["kodiai", "claude"],
+    });
     const { update } = getToolHandlers(server);
 
     const result = await update({ commentId: 99, body: "As @kodiai mentioned earlier" });
@@ -1497,15 +1571,14 @@ describe("mention sanitization", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      ["kodiai", "claude"],
-      undefined,
-      () => {},
-      42,
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: ["kodiai", "claude"],
+      onPublish: () => {},
+      prNumber: 42,
+    });
     const { create } = getToolHandlers(server);
 
     const body = buildSharedApprovalBody([
@@ -1533,12 +1606,12 @@ describe("mention sanitization", () => {
       },
     };
 
-    const server = createCommentServer(
-      async () => octokit as never,
-      "acme",
-      "repo",
-      ["kodiai", "claude"],
-    );
+    const server = createCommentServer({
+      getOctokit: async () => octokit as never,
+      owner: "acme",
+      repo: "repo",
+      botHandles: ["kodiai", "claude"],
+    });
     const { create } = getToolHandlers(server);
 
     const result = await create({ issueNumber: 1, body: "@claude and @kodiai reviewed this" });

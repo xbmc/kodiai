@@ -3,6 +3,7 @@ import { buildReviewOutputMarker } from "./review-idempotency.ts";
 import {
   findCanonicalReviewSurface,
   getCanonicalReviewSurfaceId,
+  reconcileSupersededCanonicalSurface,
   upsertDegradedReviewDetailsFallbackComment,
 } from "./review-canonical-surface.ts";
 import { buildReviewDetailsMarker } from "../lib/review-details-formatting.ts";
@@ -217,5 +218,134 @@ describe("findCanonicalReviewSurface", () => {
         error,
       },
     });
+  });
+});
+
+describe("reconcileSupersededCanonicalSurface", () => {
+  test("annotates a stale pull-review surface when a new issue-comment verdict is published", async () => {
+    const reviewOutputKey = "reconcile-key-1";
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const updatedBodies: Array<{ reviewId: number; body: string }> = [];
+    const octokit = {
+      rest: {
+        issues: { listComments: async () => ({ data: [] }) },
+        pulls: {
+          listReviews: async () => ({
+            data: [{ id: 77, body: `Decision: APPROVE\n${marker}` }],
+          }),
+        },
+      },
+      request: async (route: string, params: { review_id: number; body: string }) => {
+        expect(route).toBe("PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}");
+        updatedBodies.push({ reviewId: params.review_id, body: params.body });
+        return { data: { id: params.review_id, body: params.body } };
+      },
+    };
+
+    await reconcileSupersededCanonicalSurface({
+      octokit: octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      reviewOutputKey,
+      newSurfaceKind: "issue_comment",
+      botHandles: ["kodiai"],
+    });
+
+    expect(updatedBodies).toHaveLength(1);
+    expect(updatedBodies[0]?.reviewId).toBe(77);
+    expect(updatedBodies[0]?.body).toContain("Superseded by a newer kodiai review decision");
+  });
+
+  test("does nothing when no stale alternate-kind surface exists", async () => {
+    const reviewOutputKey = "reconcile-key-2";
+    let updateCalled = false;
+    const octokit = {
+      rest: {
+        issues: { listComments: async () => ({ data: [] }) },
+        pulls: {
+          listReviews: async () => ({ data: [] }),
+          updateReview: async () => {
+            updateCalled = true;
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    await reconcileSupersededCanonicalSurface({
+      octokit: octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      reviewOutputKey,
+      newSurfaceKind: "issue_comment",
+      botHandles: ["kodiai"],
+    });
+
+    expect(updateCalled).toBe(false);
+  });
+
+  test("does not re-annotate an already-superseded surface", async () => {
+    const reviewOutputKey = "reconcile-key-3";
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    let updateCalled = false;
+    const octokit = {
+      rest: {
+        issues: { listComments: async () => ({ data: [] }) },
+        pulls: {
+          listReviews: async () => ({
+            data: [{
+              id: 88,
+              body: `Decision: APPROVE\n${marker}\n<!-- kodiai:superseded -->`,
+            }],
+          }),
+          updateReview: async () => {
+            updateCalled = true;
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    await reconcileSupersededCanonicalSurface({
+      octokit: octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      reviewOutputKey,
+      newSurfaceKind: "issue_comment",
+      botHandles: ["kodiai"],
+    });
+
+    expect(updateCalled).toBe(false);
+  });
+
+  test("swallows errors and does not throw (best-effort)", async () => {
+    const reviewOutputKey = "reconcile-key-4";
+    const warnCalls: unknown[] = [];
+    const octokit = {
+      rest: {
+        issues: { listComments: async () => ({ data: [] }) },
+        pulls: {
+          listReviews: async () => {
+            throw new Error("boom");
+          },
+        },
+      },
+    };
+
+    await expect(reconcileSupersededCanonicalSurface({
+      octokit: octokit as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 42,
+      reviewOutputKey,
+      newSurfaceKind: "issue_comment",
+      botHandles: ["kodiai"],
+      logger: { warn: (fields) => warnCalls.push(fields) },
+    })).resolves.toBeUndefined();
+
+    expect(warnCalls).toHaveLength(1);
   });
 });

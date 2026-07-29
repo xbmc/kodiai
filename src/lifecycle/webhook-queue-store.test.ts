@@ -68,6 +68,12 @@ describe("webhook queue store crash recovery", () => {
     expect(recoveryQuery).toBeDefined();
     expect(recoveryQuery!.text).toContain("WHERE status = 'processing'");
     expect(recoveryQuery!.text).toContain("INTERVAL '60 seconds'");
+    // The recovery guard must key off claimed_at (when the row entered 'processing'),
+    // not queued_at (set once at insert and never updated) -- otherwise any row that
+    // waited more than 60s in the queue before being claimed is immediately eligible
+    // for "recovery" a moment after being claimed, causing duplicate dispatch.
+    expect(recoveryQuery!.text).toContain("claimed_at");
+    expect(recoveryQuery!.text).not.toContain("queued_at < NOW()");
 
     const recoveryIndex = queries.findIndex((q) => q.text.includes("SET status = 'pending'"));
     const selectIndex = queries.findIndex((q) =>

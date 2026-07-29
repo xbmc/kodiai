@@ -227,6 +227,26 @@ describe("buildDependsReviewComment", () => {
     expect(comment).toContain("Bug fixes and performance improvements");
   });
 
+  test("renders breaking-change details even when there are no highlights or degradation note", () => {
+    const data = makeSafeData({
+      changelogs: [
+        {
+          packageName: "zlib",
+          changelog: {
+            source: "github-releases",
+            highlights: [],
+            breakingChanges: ["Removed deflateInit() in favor of deflateInit2()"],
+            url: "https://github.com/madler/zlib/releases",
+            degradationNote: null,
+          },
+        },
+      ],
+    });
+    const comment = buildDependsReviewComment(data);
+    expect(comment).toContain("### Changelog Highlights");
+    expect(comment).toContain("Removed deflateInit() in favor of deflateInit2()");
+  });
+
   test("includes impact assessment", () => {
     const comment = buildDependsReviewComment(makeSafeData());
     expect(comment).toContain("### Impact Assessment");

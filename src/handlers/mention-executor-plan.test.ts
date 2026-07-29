@@ -14,7 +14,8 @@ function makeMention(overrides: Partial<MentionEvent> = {}): MentionEvent {
     commentBody: "@kodiai review this PR",
     commentAuthor: "mona",
     commentCreatedAt: "2026-07-06T12:00:00Z",
-    headRef: "head-sha",
+    headRef: "feature-branch",
+    headSha: "head-sha",
     baseRef: "main",
     headRepoOwner: "octo-org",
     headRepoName: "widget",
@@ -47,6 +48,7 @@ describe("resolveMentionExecutorPlan", () => {
 
     expect(plan).toEqual({
       reviewOutputKey: "kodiai-review-output:v1:inst-123:octo-org/widget:pr-42:action-mention-review:delivery-delivery-1:head-head-sha",
+      canonicalReviewSurfaceKey: "kodiai-review-output:v1:inst-123:octo-org/widget:pr-42:head-head-sha",
       maxTurnsOverride: 44,
       taskType: TASK_TYPES.REVIEW_SMALL_DIFF,
       eventType: "issue_comment.created",

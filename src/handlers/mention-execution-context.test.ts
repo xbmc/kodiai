@@ -18,6 +18,7 @@ function makeMention(overrides: Partial<MentionEvent> = {}): MentionEvent {
     commentAuthor: "mona",
     commentCreatedAt: "2026-07-06T12:00:00Z",
     headRef: "feature",
+    headSha: "feature",
     baseRef: "main",
     headRepoOwner: "octo-org",
     headRepoName: "widget",
@@ -34,6 +35,7 @@ function makeMention(overrides: Partial<MentionEvent> = {}): MentionEvent {
 function makeExecutorPlan(overrides: Partial<MentionExecutorPlan> = {}): MentionExecutorPlan {
   return {
     reviewOutputKey: "review-output-key",
+    canonicalReviewSurfaceKey: "canonical-review-output-key",
     maxTurnsOverride: 12,
     taskType: "review.small",
     eventType: "pull_request_review_comment.created",
@@ -102,6 +104,7 @@ describe("buildMentionExecutionContext", () => {
       prompt: "prompt",
       promptSections,
       reviewOutputKey: "review-output-key",
+      canonicalReviewOutputKey: "canonical-review-output-key",
       maxTurnsOverride: 12,
       dynamicTimeoutSeconds: 90,
       knowledgeStore,

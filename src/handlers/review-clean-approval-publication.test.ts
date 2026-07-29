@@ -42,6 +42,7 @@ function baseParams(overrides: Partial<Parameters<typeof publishCleanReviewAppro
     logger: {
       info: mock(() => undefined),
       error: mock(() => undefined),
+      warn: mock(() => undefined),
     },
     canPublishVisibleOutput: mock(() => true),
     setReviewWorkPhase: mock(() => undefined),

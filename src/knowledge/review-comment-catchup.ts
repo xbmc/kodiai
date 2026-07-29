@@ -129,7 +129,10 @@ export async function catchUpReviewComments(opts: CatchUpSyncOptions): Promise<C
       () => octokit.rest.pulls.listReviewCommentsForRepo({
         owner,
         repo: repoName,
-        sort: "updated",
+        // `since` already filters to comments updated after this timestamp regardless
+        // of `sort`; sorting by the immutable `created_at` (like the backfill path)
+        // avoids a shifting page window if a comment is edited mid-run.
+        sort: "created",
         direction: "asc",
         since: sinceDate.toISOString(),
         per_page: 100,

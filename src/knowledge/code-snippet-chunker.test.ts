@@ -144,10 +144,10 @@ describe("parseDiffHunks", () => {
 +b
 +c`;
     const ts = parseDiffHunks({ diffText: diff, filePath: "src/main.ts" });
-    expect(ts[0]!.language).toBe("TypeScript");
+    expect(ts[0]!.language).toBe("typescript");
 
     const py = parseDiffHunks({ diffText: diff, filePath: "lib/util.py" });
-    expect(py[0]!.language).toBe("Python");
+    expect(py[0]!.language).toBe("python");
   });
 });
 

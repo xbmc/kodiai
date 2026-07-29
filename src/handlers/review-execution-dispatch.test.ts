@@ -90,6 +90,7 @@ describe("dispatchInitialReviewExecution", () => {
         reviewPrompt: "review prompt",
         reviewPromptSections: promptSections,
         reviewOutputKey: "review-output-key",
+        canonicalReviewOutputKey: "canonical-review-output-key",
         deliveryId: "delivery-1",
         candidateVerificationContext: undefined,
         knowledgeStore: undefined,

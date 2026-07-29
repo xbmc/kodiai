@@ -324,11 +324,26 @@ export async function launchAcaJob(opts: {
     );
   }
 
-  const parsed = JSON.parse(responseBody) as { name?: string; id?: string };
+  let parsed: { name?: string; id?: string };
+  try {
+    parsed = JSON.parse(responseBody) as { name?: string; id?: string };
+  } catch (parseError) {
+    logger?.error(
+      { jobName, resourceGroup, err: parseError, responseBodyLength: responseBody.length },
+      "ACA Job start returned a 2xx response with a non-JSON body -- Azure has already scheduled this execution but no handle was recovered to monitor or cancel it",
+    );
+    throw new Error(
+      `launchAcaJob: Azure accepted the job start (${response.status}) but returned a non-JSON body, so no execution handle could be recovered. The container may already be running unmonitored. Body: ${responseBody.slice(0, 500)}`,
+    );
+  }
   const executionName = parsed.name ?? "";
   if (!executionName) {
+    logger?.error(
+      { jobName, resourceGroup, parsedBody: parsed },
+      "ACA Job start returned a 2xx response with no execution name -- Azure has already scheduled this execution but no handle was recovered to monitor or cancel it",
+    );
     throw new Error(
-      `launchAcaJob: API returned no execution name. Body: ${JSON.stringify(parsed).slice(0, 500)}`,
+      `launchAcaJob: Azure accepted the job start (${response.status}) but returned no execution name, so no execution handle could be recovered. The container may already be running unmonitored. Body: ${JSON.stringify(parsed).slice(0, 500)}`,
     );
   }
 

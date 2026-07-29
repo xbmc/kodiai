@@ -64,6 +64,24 @@ describe("selectExemplarSections", () => {
     expect(result[2]!.sectionHeading).toBe("Usage");
   });
 
+  it("prefers the more formatting-diverse section within each position bucket", () => {
+    const chunks = [
+      makeChunk({ sectionHeading: "Intro", chunkIndex: 0, chunkText: "First plain section content that is long enough to pass the minimum length filter." }),
+      makeChunk({ sectionHeading: "Overview", chunkIndex: 1, chunkText: "- Second section\n- with bullet lists\n- and enough length to pass the filter check." }),
+      makeChunk({ sectionHeading: "Installation", chunkIndex: 2, chunkText: "Third plain section about installation steps that is long enough for the filter." }),
+      makeChunk({ sectionHeading: "Configuration", chunkIndex: 3, chunkText: "```\ncode block here\n```\nFourth section with a code block that meets the length requirement." }),
+      makeChunk({ sectionHeading: "Usage", chunkIndex: 4, chunkText: "Fifth plain section about usage patterns that is long enough to pass the filter check." }),
+      makeChunk({ sectionHeading: "Troubleshooting", chunkIndex: 5, chunkText: "Sixth plain section about troubleshooting that has enough content for the length check." }),
+    ];
+    const result = selectExemplarSections(chunks, 3);
+    expect(result).toHaveLength(3);
+    // Position bucket 0 is [Intro, Overview] -- Overview has a bullet list, Intro is plain.
+    // Position bucket 1 is [Installation, Configuration] -- Configuration has a code block.
+    expect(result[0]!.sectionHeading).toBe("Overview");
+    expect(result[1]!.sectionHeading).toBe("Configuration");
+    expect(result[2]!.sectionHeading).toBe("Usage");
+  });
+
   it("excludes very short sections (< 50 chars chunkText)", () => {
     const chunks = [
       makeChunk({ sectionHeading: "Good", chunkIndex: 0, chunkText: "This section has enough content to pass the minimum length filter for exemplars." }),

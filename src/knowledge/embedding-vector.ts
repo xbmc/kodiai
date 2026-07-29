@@ -46,3 +46,33 @@ export function meanEmbedding(embeddings: readonly Float32Array[]): Float32Array
 
   return result;
 }
+
+/**
+ * Weighted mean, for combining an existing centroid (weighted by the sample
+ * count it already represents) with new samples (weight 1 each) without
+ * letting the prior samples collapse to a single unweighted point.
+ */
+export function weightedMeanEmbedding(
+  entries: readonly { embedding: Float32Array; weight: number }[],
+): Float32Array | null {
+  if (entries.length === 0) return new Float32Array(0);
+
+  const dimension = entries[0]!.embedding.length;
+  if (entries.some((entry) => entry.embedding.length !== dimension)) return null;
+
+  const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight <= 0) return null;
+
+  const result = new Float32Array(dimension);
+  for (const entry of entries) {
+    for (let i = 0; i < dimension; i++) {
+      result[i]! += entry.embedding[i]! * entry.weight;
+    }
+  }
+
+  for (let i = 0; i < dimension; i++) {
+    result[i]! /= totalWeight;
+  }
+
+  return result;
+}

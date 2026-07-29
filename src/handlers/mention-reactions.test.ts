@@ -14,6 +14,7 @@ function makeMention(overrides: Partial<MentionEvent>): MentionEvent {
     commentAuthor: "alice",
     commentCreatedAt: "2026-01-01T00:00:00Z",
     headRef: undefined,
+    headSha: undefined,
     baseRef: undefined,
     headRepoOwner: undefined,
     headRepoName: undefined,

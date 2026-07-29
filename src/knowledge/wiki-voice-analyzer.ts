@@ -87,16 +87,18 @@ export function selectExemplarSections(
     return { section: s, diversityScore, text };
   });
 
-  // Sort by diversity score descending for preference, but select by position spread
-  scored.sort((a, b) => b.diversityScore - a.diversityScore);
-
-  // Select from spread positions: pick indices at evenly-spaced intervals
+  // Spread selections across page positions (early, middle, late), but within each
+  // position bucket prefer the section with the most formatting diversity.
   const result: StyleExemplar[] = [];
   const totalSections = eligibleSections.length;
 
   for (let i = 0; i < targetCount; i++) {
-    const positionIndex = Math.floor((i * totalSections) / targetCount);
-    const selected = eligibleSections[positionIndex]!;
+    const bucketStart = Math.floor((i * totalSections) / targetCount);
+    const bucketEnd = Math.floor(((i + 1) * totalSections) / targetCount);
+    const bucket = scored.slice(bucketStart, Math.max(bucketStart + 1, bucketEnd));
+    const best = bucket.reduce((max, current) =>
+      current.diversityScore > max.diversityScore ? current : max);
+    const selected = best.section;
     result.push({
       sectionHeading: selected.heading,
       chunkText: selected.chunks.map((c) => c.chunkText).join("\n"),

@@ -470,14 +470,22 @@ export function createReviewCommentStore(opts: {
       return rows[0]!.cnt as number;
     },
 
-    async getNullEmbeddingChunks(repo: string, limit: number): Promise<ReviewCommentRecord[]> {
-      const rows = await sql`
-        SELECT ${reviewCommentColumnsWithoutEmbedding(sql)}
-        FROM review_comments
-        WHERE repo = ${repo} AND embedding IS NULL AND deleted = false
-        ORDER BY github_created_at ASC
-        LIMIT ${limit}
-      `;
+    async getNullEmbeddingChunks(repo: string, limit: number, afterId?: number): Promise<ReviewCommentRecord[]> {
+      const rows = afterId === undefined
+        ? await sql`
+          SELECT ${reviewCommentColumnsWithoutEmbedding(sql)}
+          FROM review_comments
+          WHERE repo = ${repo} AND embedding IS NULL AND deleted = false
+          ORDER BY id ASC
+          LIMIT ${limit}
+        `
+        : await sql`
+          SELECT ${reviewCommentColumnsWithoutEmbedding(sql)}
+          FROM review_comments
+          WHERE repo = ${repo} AND embedding IS NULL AND deleted = false AND id > ${afterId}
+          ORDER BY id ASC
+          LIMIT ${limit}
+        `;
       return rows.map((row) => rowToRecord(row as unknown as CommentRow));
     },
 

@@ -88,6 +88,16 @@ export async function publishReviewCandidateInlineComments(params: {
   }
 
   for (const payload of params.payloads) {
+    if (!params.canPublishVisibleOutput("candidate-approved inline review comments")) {
+      results.set(payload.candidateFingerprint, {
+        status: "blocked",
+        reason: "publication-failed",
+        content: [{ type: "text", text: "Candidate publication skipped because review publish rights were superseded." }],
+        isError: true,
+      });
+      continue;
+    }
+
     const candidateReviewOutputKey = buildCandidateReviewOutputKey(params.reviewOutputKey, payload.candidateFingerprint);
     const candidatePublisher = createPublisher({
       getOctokit: params.getOctokit,

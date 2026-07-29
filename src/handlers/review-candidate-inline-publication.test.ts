@@ -140,6 +140,43 @@ describe("publishReviewCandidateInlineComments", () => {
     ]);
   });
 
+  test("stops publishing once visible output is superseded mid-loop", async () => {
+    let callCount = 0;
+    const publishedInputs: PublishInlineReviewCommentInput[] = [];
+
+    const result = await publishReviewCandidateInlineComments(baseParams({
+      canPublishVisibleOutput: () => {
+        callCount += 1;
+        // Allowed for the upfront check and the first payload; superseded before the second.
+        return callCount <= 2;
+      },
+      createPublisher: () => ({
+        async publish(input) {
+          publishedInputs.push(input);
+          return {
+            status: "published",
+            commentId: publishedInputs.length,
+            content: [{ type: "text", text: "published" }],
+          } satisfies InlineReviewPublicationResult;
+        },
+      }),
+    }));
+
+    const value = unwrapPublicationValue(result);
+
+    // Only the first payload should have actually been published; the second must be
+    // blocked once canPublishVisibleOutput flips to false, not silently posted anyway.
+    expect(publishedInputs.map((input) => input.body)).toEqual(["body fp-a"]);
+    expect([...value.results.entries()]).toEqual([
+      ["fp-a", expect.objectContaining({ status: "published", commentId: 1 })],
+      ["fp-b", expect.objectContaining({
+        status: "blocked",
+        reason: "publication-failed",
+        isError: true,
+      })],
+    ]);
+  });
+
   test("returns a Result error with partial publisher results when a publisher throws", async () => {
     const result = await publishReviewCandidateInlineComments(baseParams({
       createPublisher: () => ({

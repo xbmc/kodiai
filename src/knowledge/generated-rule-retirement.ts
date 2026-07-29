@@ -57,6 +57,8 @@ export type RetirementPolicyResult = {
   kept: number;
   retirementFailures: number;
   retiredRules: GeneratedRuleRecord[];
+  /** The specific retirement reason for each rule in `retiredRules`, keyed by rule id. */
+  retirementReasons: Record<number, RetirementReason>;
   durationMs: number;
 };
 
@@ -172,9 +174,10 @@ export async function applyRetirementPolicy(
   let kept = 0;
   let retirementFailures = 0;
   const retiredRules: GeneratedRuleRecord[] = [];
+  const retirementReasons: Record<number, RetirementReason> = {};
   const retiringRules: Array<{
     rule: GeneratedRuleRecord;
-    reason: string;
+    reason: RetirementReason;
   }> = [];
 
   for (const rule of active) {
@@ -210,15 +213,17 @@ export async function applyRetirementPolicy(
       },
       "Retirement policy: retirement criterion met — retiring rule",
     );
-    retiringRules.push({ rule, reason: decision.reason ?? "unknown" });
+    // decision.reason is always set when shouldRetire is true (see shouldRetireRule).
+    retiringRules.push({ rule, reason: decision.reason! });
   }
 
-  const retireOne = async (rule: GeneratedRuleRecord, reason: string): Promise<void> => {
+  const retireOne = async (rule: GeneratedRuleRecord, reason: RetirementReason): Promise<void> => {
     try {
       const retiredRule = await store.retireRule(rule.id);
       if (retiredRule) {
         retired++;
         retiredRules.push(retiredRule);
+        retirementReasons[retiredRule.id] = reason;
         retirementLogger.info(
           {
             ruleId: retiredRule.id,
@@ -265,6 +270,7 @@ export async function applyRetirementPolicy(
         }
         retired++;
         retiredRules.push(retiredRule);
+        retirementReasons[retiredRule.id] = reason;
         retirementLogger.info(
           {
             ruleId: retiredRule.id,
@@ -302,6 +308,7 @@ export async function applyRetirementPolicy(
     kept,
     retirementFailures,
     retiredRules,
+    retirementReasons,
     durationMs: Date.now() - startTime,
   };
 

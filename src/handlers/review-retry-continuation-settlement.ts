@@ -40,6 +40,7 @@ export async function settleRetryContinuationResults(params: {
   attemptId: string;
   deliveryId: string;
   reviewOutputKey: string;
+  canonicalReviewOutputKey: string;
   retryReviewOutputKey: string;
   retryResult: Pick<ExecutionResult, "conclusion" | "isTimeout" | "published">;
   firstPassOutcome: Pick<ExecutionResult, "conclusion" | "stopReason" | "failureSubtype" | "isTimeout">;
@@ -146,7 +147,7 @@ export async function settleRetryContinuationResults(params: {
       owner: params.owner,
       repo: params.repo,
       prNumber: params.prNumber,
-      reviewOutputKey: params.reviewOutputKey,
+      reviewOutputKey: params.canonicalReviewOutputKey,
       logger: params.logger,
       baseLog: params.baseLog,
     }),
@@ -201,7 +202,7 @@ export async function settleRetryContinuationResults(params: {
     timeoutFirstPassBoundedReason: params.timeoutFirstPassBoundedReason,
     timeoutDurationSeconds: params.timeoutDurationSeconds,
     retryFilesCount: params.retryFilesCount,
-    reviewOutputKey: params.reviewOutputKey,
+    reviewOutputKey: params.canonicalReviewOutputKey,
     continuationRevisionCounts,
   });
 
@@ -231,6 +232,7 @@ export async function settleRetryContinuationResults(params: {
     attemptId: params.attemptId,
     deliveryId: params.deliveryId,
     reviewOutputKey: params.reviewOutputKey,
+    canonicalReviewOutputKey: params.canonicalReviewOutputKey,
     retryReviewOutputKey: params.retryReviewOutputKey,
     retryConclusion: params.retryResult.conclusion,
     partialCommentId: params.partialCommentId,

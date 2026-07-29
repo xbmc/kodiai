@@ -258,7 +258,7 @@ describe("catchUpReviewComments", () => {
     // Verify the API was called with the since parameter
     const apiCall = (octokit.rest.pulls.listReviewCommentsForRepo as ReturnType<typeof mock>).mock.calls[0]![0] as Record<string, unknown>;
     expect(apiCall.since).toBe(lastSyncedAt.toISOString());
-    expect(apiCall.sort).toBe("updated");
+    expect(apiCall.sort).toBe("created");
     expect(apiCall.direction).toBe("asc");
   });
 

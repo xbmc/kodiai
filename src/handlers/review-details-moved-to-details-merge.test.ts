@@ -68,7 +68,7 @@ describe("publishMovedToDetailsReviewDetailsMerge", () => {
         return {
           kind: "issue_comment",
           commentId: 900,
-          body: String(input.body),
+          body: String(input.reviewDetailsBlock ?? input.body),
         };
       },
     });
@@ -83,8 +83,12 @@ describe("publishMovedToDetailsReviewDetailsMerge", () => {
     const state = params.testState;
     expect(upsertCalls).toHaveLength(2);
     const [initialUpsert, finalizedUpsert] = upsertCalls as [Record<string, unknown>, Record<string, unknown>];
-    expect(initialUpsert.body).toBe("details-initial");
-    expect(finalizedUpsert.body).toBe("details-final");
+    expect(initialUpsert.reviewDetailsBlock).toBe("details-initial");
+    // The finalize step must merge into the existing surface, not overwrite it with a raw
+    // Review-Details-only body -- otherwise it silently wipes the Decision/summary text.
+    expect(finalizedUpsert.reviewDetailsBlock).toBe("details-final");
+    expect(finalizedUpsert.summaryBody).toBe("details-initial");
+    expect(finalizedUpsert.body).toBeUndefined();
     expect(state.phases).toEqual(["publish", "finalize"]);
     expect(state.canonicalLogs).toHaveLength(1);
     expect(state.warnings).toHaveLength(0);

@@ -9,7 +9,7 @@ import type {
   FormatterSuggestionSubflowOptions,
   FormatterSuggestionSubflowResult,
 } from "./formatter-suggestion-orchestration.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
+import { buildCanonicalReviewSurfaceKey, buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "../review-orchestration/review-idempotency.ts";
 import { scanLinesForFabricatedContent } from "../lib/fabricated-content-detector.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -8635,7 +8635,7 @@ describe("createMentionHandler review command", () => {
           listComments: async () => ({ data: [] }),
           createComment: async ({ body }: { body: string }) => {
             issueReplies.push(body);
-            return { data: {} };
+            return { data: { id: 9001 } };
           },
         },
       },
@@ -8775,7 +8775,7 @@ describe("createMentionHandler review command", () => {
           listComments: async () => ({ data: [] }),
           createComment: async ({ body }: { body: string }) => {
             issueReplies.push(body);
-            return { data: {} };
+            return { data: { id: 9002 } };
           },
         },
       },
@@ -8924,7 +8924,7 @@ describe("createMentionHandler review command", () => {
           listComments: async () => ({ data: [] }),
           createComment: async ({ body }: { body: string }) => {
             issueReplies.push(body);
-            return { data: {} };
+            return { data: { id: 9003 } };
           },
         },
       },
@@ -9078,7 +9078,7 @@ describe("createMentionHandler review command", () => {
           listComments: async () => ({ data: [] }),
           createComment: async ({ body }: { body: string }) => {
             issueReplies.push(body);
-            return { data: {} };
+            return { data: { id: issueReplies.length } };
           },
         },
       },
@@ -9217,7 +9217,7 @@ describe("createMentionHandler review command", () => {
           listComments: async () => ({ data: [] }),
           createComment: async ({ body }: { body: string }) => {
             issueReplies.push(body);
-            return { data: {} };
+            return { data: { id: 9004 } };
           },
         },
       },
@@ -9493,12 +9493,12 @@ describe("createMentionHandler review command", () => {
           createReplyForReviewComment: async () => ({ data: {} }),
           createReview: async ({ event, body }: { event: string; body: string }) => {
             createdReviews.push({ event, body });
-            return { data: {} };
+            return { data: { id: 1 } };
           },
         },
         issues: {
           listComments: async () => ({ data: [] }),
-          createComment: async () => ({ data: {} }),
+          createComment: async () => ({ data: { id: 1 } }),
         },
       },
     };
@@ -9576,11 +9576,15 @@ describe("createMentionHandler review command", () => {
     const publishAttemptLog = infoCalls.find((entry) =>
       entry.message === "Submitted approval review for explicit mention request",
     );
-    expect(publishAttemptLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    // The publish-success log and the completion log both key off the full
+    // (action + delivery) reviewOutputKey, which is now intentionally distinct
+    // from the canonical (marker/idempotency) key asserted above.
+    expect(publishAttemptLog?.bindings.reviewOutputKey).toBeDefined();
+    expect(publishAttemptLog?.bindings.reviewOutputKey).toBe(completionLog?.bindings.reviewOutputKey);
+    expect(publishAttemptLog?.bindings.reviewOutputKey).not.toBe(idempotencyReviewOutputKey);
     expect(publishAttemptLog?.bindings.publishAttemptOutcome).toBe("submitted-approval");
 
-    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
-    expect(completionLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
     expect(completionLog?.bindings.explicitReviewRequest).toBe(true);
     expect(completionLog?.bindings.taskType).toBe("review.full");
     expect(completionLog?.bindings.lane).toBe("interactive-review");
@@ -9665,7 +9669,7 @@ describe("createMentionHandler review command", () => {
           listComments: async () => ({ data: [] }),
           createComment: async ({ body }: { body: string }) => {
             issueReplies.push(body);
-            return { data: {} };
+            return { data: { id: 1 } };
           },
         },
       },
@@ -9744,11 +9748,15 @@ describe("createMentionHandler review command", () => {
     const publishAttemptLog = infoCalls.find((entry) =>
       entry.message === "Submitted approval-shaped comment for explicit mention request",
     );
-    expect(publishAttemptLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    // The publish-success log and the completion log both key off the full
+    // (action + delivery) reviewOutputKey, which is now intentionally distinct
+    // from the canonical (marker/idempotency) key asserted above.
+    expect(publishAttemptLog?.bindings.reviewOutputKey).toBeDefined();
+    expect(publishAttemptLog?.bindings.reviewOutputKey).toBe(completionLog?.bindings.reviewOutputKey);
+    expect(publishAttemptLog?.bindings.reviewOutputKey).not.toBe(idempotencyReviewOutputKey);
     expect(publishAttemptLog?.bindings.publishAttemptOutcome).toBe("submitted-comment");
 
-    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
-    expect(completionLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
     expect(completionLog?.bindings.explicitReviewRequest).toBe(true);
     expect(completionLog?.bindings.taskType).toBe("review.full");
     expect(completionLog?.bindings.lane).toBe("interactive-review");
@@ -10293,9 +10301,16 @@ describe("createMentionHandler review command", () => {
       prNumber,
       action: "mention-review",
       deliveryId: "delivery-pr-issue-comment-mention",
-      headSha: "feature",
+      headSha: "feature-sha",
     });
-    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber,
+      headSha: "feature-sha",
+    });
+    const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -10331,7 +10346,7 @@ describe("createMentionHandler review command", () => {
               title: "Test PR",
               body: "",
               user: { login: "octocat" },
-              head: { ref: "feature" },
+              head: { ref: "feature", sha: "feature-sha" },
               base: { ref: "main" },
             },
           }),
@@ -10343,14 +10358,14 @@ describe("createMentionHandler review command", () => {
           createReplyForReviewComment: async () => ({ data: {} }),
           createReview: async () => {
             createReviewCalls++;
-            return { data: {} };
+            return { data: { id: 1 } };
           },
         },
         issues: {
           listComments: async () => ({ data: [] }),
           createComment: async ({ body }: { body: string }) => {
             issueReplies.push(body);
-            return { data: {} };
+            return { data: { id: 1 } };
           },
         },
       },
@@ -10396,7 +10411,7 @@ describe("createMentionHandler review command", () => {
     const skipLog = infoCalls.find((entry) =>
       entry.message === "Skipping explicit mention review publish because output already exists",
     );
-    expect(skipLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(skipLog?.bindings.reviewOutputKey).toBe(canonicalReviewSurfaceKey);
     expect(skipLog?.bindings.idempotencyDecision).toBe("skip-existing-review");
     expect(skipLog?.bindings.reviewOutputPublicationState).toBe("skip-existing-output");
     expect(skipLog?.bindings.existingLocation).toBe("review");
@@ -10431,9 +10446,16 @@ describe("createMentionHandler review command", () => {
       prNumber,
       action: "mention-review",
       deliveryId: "delivery-pr-issue-comment-mention",
-      headSha: "feature",
+      headSha: "feature-sha",
     });
-    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber,
+      headSha: "feature-sha",
+    });
+    const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
     let listReviewsCalls = 0;
 
     const eventRouter: EventRouter = {
@@ -10470,7 +10492,7 @@ describe("createMentionHandler review command", () => {
               title: "Test PR",
               body: "",
               user: { login: "octocat" },
-              head: { ref: "feature" },
+              head: { ref: "feature", sha: "feature-sha" },
               base: { ref: "main" },
             },
           }),
@@ -10543,7 +10565,7 @@ describe("createMentionHandler review command", () => {
     const recoveredLog = infoCalls.find((entry) =>
       entry.message === "Explicit mention review publish error still produced output; suppressing fallback",
     );
-    expect(recoveredLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(recoveredLog?.bindings.reviewOutputKey).toBe(canonicalReviewSurfaceKey);
     expect(recoveredLog?.bindings.gateResult).toBe("recovered");
     expect(recoveredLog?.bindings.reviewOutputPublicationState).toBe("skip-existing-output");
 
@@ -10576,7 +10598,7 @@ describe("createMentionHandler review command", () => {
       prNumber,
       action: "mention-review",
       deliveryId: "delivery-pr-issue-comment-mention",
-      headSha: "feature",
+      headSha: "feature-sha",
     });
 
     const eventRouter: EventRouter = {
@@ -10613,7 +10635,7 @@ describe("createMentionHandler review command", () => {
               title: "Test PR",
               body: "",
               user: { login: "octocat" },
-              head: { ref: "feature" },
+              head: { ref: "feature", sha: "feature-sha" },
               base: { ref: "main" },
             },
           }),
@@ -10719,7 +10741,7 @@ describe("createMentionHandler review command", () => {
       prNumber,
       action: "mention-review",
       deliveryId: "delivery-pr-issue-comment-mention",
-      headSha: "feature",
+      headSha: "feature-sha",
     });
 
     const eventRouter: EventRouter = {
@@ -10756,7 +10778,7 @@ describe("createMentionHandler review command", () => {
               title: "Test PR",
               body: "",
               user: { login: "octocat" },
-              head: { ref: "feature" },
+              head: { ref: "feature", sha: "feature-sha" },
               base: { ref: "main" },
             },
           }),
@@ -13149,7 +13171,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
           listComments: async () => ({ data: [] }),
           createComment: async (params: { body: string }) => {
             commentBodies.push(params.body);
-            return { data: {} };
+            return { data: { id: 1 } };
           },
         },
         pulls: {
@@ -13179,7 +13201,7 @@ describe("createMentionHandler formatter suggestion intent context", () => {
           }),
           createReview: async (params: { body: string }) => {
             reviewBodies.push(params.body);
-            return { data: {} };
+            return { data: { id: 1 } };
           },
           createReplyForReviewComment: async () => ({ data: {} }),
         },

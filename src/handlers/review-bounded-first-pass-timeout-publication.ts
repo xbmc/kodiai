@@ -52,6 +52,7 @@ export async function publishBoundedFirstPassTimeoutOutput(params: {
   repo: string;
   prNumber: number;
   reviewOutputKey: string;
+  canonicalReviewOutputKey: string;
   botHandles: string[];
   canPublishVisibleOutput: (reason: string) => boolean;
   setReviewWorkPhase: (phase: "publish") => void;
@@ -165,7 +166,7 @@ export async function publishBoundedFirstPassTimeoutOutput(params: {
     owner: params.owner,
     repo: params.repo,
     prNumber: params.prNumber,
-    reviewOutputKey: params.reviewOutputKey,
+    reviewOutputKey: params.canonicalReviewOutputKey,
     partialCommentId,
     partialBody: params.partialBody,
     botHandles: params.botHandles,

@@ -50,6 +50,8 @@ export type InlineReviewPublisherOptions = {
   prNumber: number;
   botHandles: string[];
   reviewOutputKey?: string;
+  /** Trigger-agnostic key for the GitHub-visible marker/idempotency check only (see ExecutionContext.canonicalReviewOutputKey). */
+  canonicalReviewOutputKey?: string;
   deliveryId?: string;
   logger?: Logger;
   onPublish?: () => void;
@@ -276,6 +278,7 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
           repo: options.repo,
           prNumber: options.prNumber,
           reviewOutputKey: options.reviewOutputKey,
+          canonicalReviewOutputKey: options.canonicalReviewOutputKey ?? options.reviewOutputKey,
         })
         : undefined
     );
@@ -452,8 +455,9 @@ export function createInlineReviewPublisher(options: InlineReviewPublisherOption
           };
         }
 
-        const body = options.reviewOutputKey
-          ? `${sanitizedBody}\n\n${buildReviewOutputMarker(options.reviewOutputKey)}${inlineOutputMarker ? `\n${inlineOutputMarker}` : ""}`
+        const canonicalMarkerKey = options.canonicalReviewOutputKey ?? options.reviewOutputKey;
+        const body = canonicalMarkerKey
+          ? `${sanitizedBody}\n\n${buildReviewOutputMarker(canonicalMarkerKey)}${inlineOutputMarker ? `\n${inlineOutputMarker}` : ""}`
           : sanitizedBody;
         const params: Record<string, unknown> = {
           owner: options.owner,

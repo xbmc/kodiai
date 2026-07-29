@@ -199,7 +199,7 @@ export function buildDependsReviewComment(data: DependsReviewData): string {
 
   // 3. Changelog Highlights (per-package for multi-package)
   const hasChangelogs = data.changelogs.some(
-    (c) => c.changelog.highlights.length > 0 || c.changelog.degradationNote,
+    (c) => c.changelog.highlights.length > 0 || c.changelog.breakingChanges.length > 0 || c.changelog.degradationNote,
   );
   if (hasChangelogs) {
     sections.push("### Changelog Highlights");

@@ -15,6 +15,7 @@ function makeMention(overrides: Partial<MentionEvent> = {}): MentionEvent {
     commentAuthor: "mona",
     commentCreatedAt: "2026-07-06T12:00:00Z",
     headRef: "feature",
+    headSha: "feature",
     baseRef: "main",
     headRepoOwner: "octo-org",
     headRepoName: "widget",

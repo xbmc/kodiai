@@ -125,6 +125,7 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
       let acquiredWriteKey: string | undefined;
       let explicitReviewRequest = false;
       let reviewOutputKey: string | undefined;
+let canonicalReviewSurfaceKey: string | undefined;
 
       try {
         const mentionSetupOctokitAdapters = buildMentionSetupOctokitAdapters({
@@ -387,6 +388,7 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
           logger,
         });
         reviewOutputKey = mentionExecutorDispatch.reviewOutputKey;
+        canonicalReviewSurfaceKey = mentionExecutorDispatch.canonicalReviewSurfaceKey;
 
         const postExecutorPublicationAdapters = buildMentionPostExecutorPublicationAdapters({
           installationId: event.installationId,
@@ -399,6 +401,7 @@ export function createMentionHandler(deps: MentionHandlerDependencies): void {
           eventAction: action,
           mention,
           reviewOutputKey,
+          canonicalReviewSurfaceKey,
           deliveryId: event.id,
           installationId: event.installationId,
           explicitReviewHeadSha,

@@ -14,6 +14,7 @@ function baseMention(): MentionEvent {
     commentAuthor: "alice",
     commentCreatedAt: "2026-02-10T00:00:00Z",
     headRef: "test",
+    headSha: "test",
     baseRef: "main",
     headRepoOwner: "xbmc",
     headRepoName: "kodiai",
@@ -32,6 +33,7 @@ function issueMention(): MentionEvent {
     surface: "issue_comment",
     prNumber: undefined,
     headRef: undefined,
+    headSha: undefined,
     baseRef: undefined,
   };
 }

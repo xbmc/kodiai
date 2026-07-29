@@ -431,15 +431,23 @@ export async function generateWithVoicePreservation(
     repo: opts.repo,
   });
 
-  const makeResult = (s: string, mismatch: boolean, v: VoiceValidationResult): VoicePreservedSuggestion => ({
-    suggestion: s,
-    voiceMismatchWarning: mismatch,
-    validationResult: v,
-    templateCheckPassed: templateCheck.passed,
-    headingCheckPassed: headingCheck.passed,
-    formattingAdvisory: formattingCheck.novelElements,
-    sectionLengthAdvisory: lengthCheck.advisory,
-  });
+  // Recompute heading/formatting/length checks against whichever suggestion text is
+  // actually being returned -- a feedback retry can regenerate content that differs
+  // materially from the first draft these were originally checked against.
+  const makeResult = (s: string, mismatch: boolean, v: VoiceValidationResult): VoicePreservedSuggestion => {
+    const finalHeadingCheck = s === suggestion ? headingCheck : checkHeadingLevels(opts.originalSection, s);
+    const finalFormattingCheck = s === suggestion ? formattingCheck : checkFormattingNovelty(opts.originalSection, s);
+    const finalLengthCheck = s === suggestion ? lengthCheck : checkSectionLength(opts.originalSection, s);
+    return {
+      suggestion: s,
+      voiceMismatchWarning: mismatch,
+      validationResult: v,
+      templateCheckPassed: templateCheck.passed,
+      headingCheckPassed: finalHeadingCheck.passed,
+      formattingAdvisory: finalFormattingCheck.novelElements,
+      sectionLengthAdvisory: finalLengthCheck.advisory,
+    };
+  };
 
   if (validation.passed) {
     return makeResult(suggestion, false, validation);

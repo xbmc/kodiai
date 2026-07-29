@@ -448,6 +448,10 @@ export async function updateExpertiseIncremental(params: {
   const newRaw = computeDecayedScore([signal]);
   const normalizedContribution = normalizeScore(newRaw);
   const expertiseUpdates: ContributorExpertiseUpsert[] = [];
+  // Snapshot pre-blend scores for deriveUpdatedOverallScore below -- it blends the new
+  // signal into each touched topic itself, so passing it the already-blended scores
+  // (mutated into scoreByTopic in the loop) would double-count this signal's contribution.
+  const preBlendExpertise = [...scoreByTopic.values()];
 
   for (const { dimension, topics } of dimensions) {
     for (const topic of topics) {
@@ -477,7 +481,7 @@ export async function updateExpertiseIncremental(params: {
   }
 
   const overallScore = deriveUpdatedOverallScore({
-    existingExpertise: [...scoreByTopic.values()],
+    existingExpertise: preBlendExpertise,
     touchedTopics: [
       ...languages.map((topic) => ({
         dimension: "language" as const,

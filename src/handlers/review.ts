@@ -82,7 +82,10 @@ import { removeFilteredInlineCommentsForSuccessfulReview } from "./review-filter
 import { buildReviewDetailsAttemptLogFields } from "./review-details-attempt-log-fields.ts";
 import { registerReviewHandlerEvents } from "./review-event-registration.ts";
 import { buildReviewGithubAppAdapters } from "./review-github-app-adapters.ts";
-import { publishBlockedReviewFindingsNoticeForRuntime } from "./review-blocked-findings-notice.ts";
+import {
+  publishBlockedReviewFindingsNoticeForRuntime,
+  willBlockedReviewFindingsNoticePublish,
+} from "./review-blocked-findings-notice.ts";
 import { shouldSkipGenericReviewForAddonRepo } from "./review-addon-repo-gate.ts";
 
 /**
@@ -167,6 +170,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
       eventAction: action,
       baseLog,
       reviewOutputKey,
+      canonicalReviewSurfaceKey,
       isDraft,
       apiOwner,
       apiRepo,
@@ -268,15 +272,13 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
-          reviewOutputKey,
+          reviewOutputKey: canonicalReviewSurfaceKey,
           baseLog,
           logger,
         });
         const idempotencyGate = reviewIdempotencyContext.idempotencyGate;
         if (idempotencyGate.action === "skip") return;
         const idempotencyOctokit = reviewIdempotencyContext.octokit;
-        const acceptedCanonicalSurface: CanonicalReviewSurface | null =
-          reviewIdempotencyContext.acceptedCanonicalSurface;
 
         const prIntent = await resolveReviewPrIntent({
           octokit: idempotencyOctokit,
@@ -593,6 +595,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
             reviewPrompt,
             reviewPromptSections,
             reviewOutputKey,
+            canonicalReviewOutputKey: canonicalReviewSurfaceKey,
             deliveryId: event.id,
             candidateVerificationContext,
             knowledgeStore,
@@ -833,13 +836,18 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           resultPublished: handlerPublishedReviewOutput,
           resultConclusion: result.conclusion,
           candidateMovedToDetailsCount: reviewCandidatePublicationRuntime.counts.candidateMovedToDetails,
+          blockedFindingsNoticeWillPublish: willBlockedReviewFindingsNoticePublish({
+            candidatePublicationRuntime: reviewCandidatePublicationRuntime,
+            findingLifecycle: reviewFindingLifecycleResult.projection,
+            handlerPublishedReviewOutput,
+          }),
           octokit: extractionOctokit,
           owner: apiOwner,
           repo: apiRepo,
           prNumber: pr.number,
-          reviewOutputKey,
+          reviewOutputKey: canonicalReviewSurfaceKey,
+          acceptedCanonicalSurface: reviewIdempotencyContext.acceptedCanonicalSurface,
           botHandles: reviewBotHandles,
-          acceptedCanonicalSurface,
           authorSearchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
           reviewBoundedness,
           baseLog,
@@ -857,7 +865,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         });
         canonicalReviewDetailsBody = resolveFirstPassReviewDetailsPublicationBody(firstPassReviewDetailsPublication);
         const blockedFindingsNoticePublication = await publishBlockedReviewFindingsNoticeForRuntime({
-          octokit: extractionOctokit, owner: apiOwner, repo: apiRepo, prNumber: pr.number, reviewOutputKey,
+          octokit: extractionOctokit, owner: apiOwner, repo: apiRepo, prNumber: pr.number, reviewOutputKey: canonicalReviewSurfaceKey,
           reviewDetailsBlock: canonicalReviewDetailsBody, candidatePublicationRuntime: reviewCandidatePublicationRuntime,
           findingLifecycle: reviewFindingLifecycleResult.projection, processedFindingCount: processedFindings.length,
           handlerPublishedReviewOutput, botHandles: reviewBotHandles, logger, canPublishVisibleOutput, setReviewWorkPhase,
@@ -957,6 +965,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
             result,
             turnBudgetExhausted,
             reviewOutputKey,
+            canonicalReviewOutputKey: canonicalReviewSurfaceKey,
             changedFileCount: changedFiles.length,
             reviewBoundedness,
             knowledgeStore,
@@ -1059,7 +1068,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           repo: apiRepo,
           pr,
           reviewConfig: config.review,
-          reviewOutputKey,
+          reviewOutputKey: canonicalReviewSurfaceKey,
           deliveryId: event.id,
           installationId: event.installationId,
           promptFiles,

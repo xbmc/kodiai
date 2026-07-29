@@ -82,6 +82,7 @@ export function buildReviewTimeoutRetryJobParams(params: {
   partialCommentId: RetryOutcomeParams["partialCommentId"];
   getCheckpoint: RetryOutcomeParams["getCheckpoint"];
   reviewOutputKey: string;
+  canonicalReviewOutputKey: string;
   firstPassOutcome: RetrySettlementParams["firstPassOutcome"];
   baseCheckpoint: RetrySettlementParams["baseCheckpoint"];
   timeoutDurationSeconds: RetrySettlementParams["timeoutDurationSeconds"];
@@ -181,6 +182,7 @@ export function buildReviewTimeoutRetryJobParams(params: {
       repo: params.repo,
       prNumber: params.pr.number,
       reviewOutputKey: params.reviewOutputKey,
+      canonicalReviewOutputKey: params.canonicalReviewOutputKey,
       firstPassOutcome: params.firstPassOutcome,
       baseCheckpoint: params.baseCheckpoint,
       partialCommentId: params.partialCommentId,

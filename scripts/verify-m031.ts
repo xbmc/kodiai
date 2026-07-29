@@ -64,6 +64,7 @@ const MINIMAL_MENTION: MentionEvent = {
   commentAuthor: "alice",
   commentCreatedAt: "2026-01-01T00:00:00Z",
   headRef: "main",
+  headSha: "main",
   baseRef: "main",
   headRepoOwner: "xbmc",
   headRepoName: "kodiai",

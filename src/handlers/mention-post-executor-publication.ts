@@ -1,6 +1,7 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
+import type { ReviewWorkPhase } from "../jobs/review-work-coordinator.ts";
 import type { Workspace } from "../jobs/types.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import { err, ok, type Result } from "../lib/result.ts";
@@ -54,6 +55,7 @@ export async function publishMentionPostExecutorOutputs(params: {
   eventAction: string | undefined;
   mention: MentionEvent;
   reviewOutputKey: string | undefined;
+  canonicalReviewSurfaceKey: string | undefined;
   deliveryId: string;
   installationId: number;
   explicitReviewHeadSha?: string | null;
@@ -63,7 +65,7 @@ export async function publishMentionPostExecutorOutputs(params: {
   explicitReviewPromptFileCount: number | undefined;
   getOctokit: () => Promise<Octokit>;
   canPublishExplicitReviewOutput: Parameters<typeof publishExplicitMentionReviewIfEligible>[0]["canPublishExplicitReviewOutput"];
-  setReviewWorkPhase: Parameters<typeof publishExplicitMentionReviewIfEligible>[0]["setReviewWorkPhase"];
+  setReviewWorkPhase: (phase: ReviewWorkPhase) => void;
   postMentionError: Parameters<typeof publishExplicitMentionReviewIfEligible>[0]["postMentionError"];
   logger: Logger;
   reviewPublishRightsLost: boolean;
@@ -98,6 +100,7 @@ export async function publishMentionPostExecutorOutputs(params: {
     eventName: params.eventName,
     mention: params.mention,
     reviewOutputKey: params.reviewOutputKey,
+    canonicalReviewSurfaceKey: params.canonicalReviewSurfaceKey,
     deliveryId: params.deliveryId,
     installationId: params.installationId,
     headSha: params.explicitReviewHeadSha,
@@ -195,8 +198,15 @@ export async function publishMentionPostExecutorOutputs(params: {
     skipReason: explicitReviewPublishEvaluation.skipReason,
     routingReason: params.explicitReviewRoutingReason,
     reviewOutputKey: params.reviewOutputKey,
+    canonicalReviewSurfaceKey: params.canonicalReviewSurfaceKey,
     surface: params.mention.surface,
+    owner: params.mention.owner,
+    repo: params.mention.repo,
+    prNumber: params.mention.prNumber,
     issueNumber: params.mention.issueNumber,
+    getOctokit: params.getOctokit,
+    botHandles: params.botHandles,
+    setReviewWorkPhase: params.setReviewWorkPhase,
     canPublishExplicitReviewOutput: params.canPublishExplicitReviewOutput,
     postMentionReply: params.postMentionReply,
     postMentionError: params.postMentionError,

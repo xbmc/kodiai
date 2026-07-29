@@ -13,6 +13,7 @@ export type InlineReviewServerOptions = {
   prNumber: number;
   botHandles: string[];
   reviewOutputKey?: string;
+  canonicalReviewOutputKey?: string;
   deliveryId?: string;
   logger?: Logger;
   onPublish?: () => void;
@@ -28,6 +29,7 @@ export function createInlineReviewServer(options: InlineReviewServerOptions) {
     prNumber: options.prNumber,
     botHandles: options.botHandles,
     reviewOutputKey: options.reviewOutputKey,
+    canonicalReviewOutputKey: options.canonicalReviewOutputKey,
     deliveryId: options.deliveryId,
     logger: options.logger,
     onPublish: options.onPublish,

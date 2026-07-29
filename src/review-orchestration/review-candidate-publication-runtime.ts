@@ -76,6 +76,13 @@ export type ReviewCandidatePublicationRuntimeInput = {
   approval?: ReviewCandidateApprovalResult | null;
   adapter?: ReviewCandidatePublicationAdapterSummary | null;
   publisher?: ReviewCandidatePublishedResultSummary | null;
+  /**
+   * The publisher's moved-to-details findings array. This lives as a sibling of
+   * `publisher` on ReviewCandidatePublishedFindingResult (not nested inside its
+   * `.summary`), so it must be passed separately -- callers should pass
+   * `publishedFindings.detailsOnlyFindings` alongside `publishedFindings.summary`.
+   */
+  publisherDetailsOnlyFindings?: ReviewCandidateDetailsOnlyFinding[];
   convertedProcessedFindingCount?: unknown;
   directPublication?: ReviewCandidatePublicationDirectEvidence | null;
 };
@@ -174,7 +181,14 @@ export function classifyReviewCandidatePublicationRuntime(
   const movedToDetails = adapterCounts.movedToDetails + publisher.movedToDetails;
   const detailsOnlyFindings = adapterCounts.detailsOnlyFindings + publisher.detailsOnlyFindings;
   const detailsOnlyOmitted = adapterCounts.detailsOnlyOmitted + publisher.detailsOnlyOmitted;
-  const detailsOnlyProjection = mergeDetailsOnlyFindings(input.adapter, input.publisher);
+  const detailsOnlyProjection = mergeDetailsOnlyFindings([
+    input.adapter
+      ? { counts: input.adapter.counts, movedToDetails: input.adapter.movedToDetails, detailsOnlyFindings: input.adapter.detailsOnlyFindings }
+      : null,
+    input.publisher
+      ? { counts: input.publisher.counts, movedToDetails: input.publisher.movedToDetails, detailsOnlyFindings: input.publisherDetailsOnlyFindings }
+      : null,
+  ]);
   if (detailsOnlyProjection.summary?.reasonCounts) {
     for (const [reason, count] of Object.entries(detailsOnlyProjection.summary.reasonCounts)) {
       if (normalizeCount(count) > 0) addBucketReason(bucketReasons.movedToDetails, reason, "candidate-moved-to-details");
@@ -186,7 +200,7 @@ export function classifyReviewCandidatePublicationRuntime(
     addBucketReason(bucketReasons.degraded, undefined, "malformed-moved-to-details");
   }
   const directPublished = direct.published;
-  const fallbackDisallowed = approvalCounts.fallbackDisallowed > 0 || (direct.attempted && direct.allowed === false) ? 1 : 0;
+  const fallbackDisallowed = approvalCounts.fallbackDisallowed + (direct.attempted && direct.allowed === false ? 1 : 0);
 
   if (candidatePublished > 0) pushReason(reasons, "candidate-publisher-published");
   if (candidatePublished > 0 && candidatePublished < candidatePublishable) pushReason(reasons, "candidate-publisher-partial");
@@ -642,11 +656,15 @@ function normalizePublisherSummary(
   };
 }
 
+type DetailsOnlyFindingsSource = {
+  counts: { movedToDetails?: number; detailsOnlyFindings?: number; detailsOnlyOmitted?: number };
+  movedToDetails?: ReviewCandidateMovedToDetailsSummary;
+  detailsOnlyFindings: ReviewCandidateDetailsOnlyFinding[] | undefined;
+};
+
 function mergeDetailsOnlyFindings(
-  adapter: ReviewCandidatePublicationAdapterSummary | null | undefined,
-  publisher: ReviewCandidatePublishedResultSummary | null | undefined,
+  sources: ReadonlyArray<DetailsOnlyFindingsSource | null>,
 ): { findings: ReviewCandidateDetailsOnlyFinding[]; summary?: ReviewCandidateMovedToDetailsSummary; malformed: number } {
-  const sources = [adapter, publisher];
   const findings: ReviewCandidateDetailsOnlyFinding[] = [];
   let malformed = 0;
   let total = 0;
@@ -674,7 +692,7 @@ function mergeDetailsOnlyFindings(
         reasonCounts[reason as keyof typeof reasonCounts] = (reasonCounts[reason as keyof typeof reasonCounts] ?? 0) + normalizeCount(rawCount);
       }
     }
-    if ("detailsOnlyFindings" in source && Array.isArray(source.detailsOnlyFindings)) {
+    if (Array.isArray(source.detailsOnlyFindings)) {
       for (const finding of source.detailsOnlyFindings) {
         if (findings.length >= MAX_RESULT_SAMPLE) {
           omitted += 1;

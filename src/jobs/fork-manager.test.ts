@@ -50,6 +50,7 @@ function createEnabledBotClient(overrides?: {
   login?: string;
   reposGet?: ReturnType<typeof mock>;
   createFork?: ReturnType<typeof mock>;
+  listForks?: ReturnType<typeof mock>;
   request?: ReturnType<typeof mock>;
   deleteRef?: ReturnType<typeof mock>;
 }): BotUserClient {
@@ -62,6 +63,7 @@ function createEnabledBotClient(overrides?: {
       },
     }));
   const createFork = overrides?.createFork ?? mock(async () => ({ data: {} }));
+  const listForks = overrides?.listForks ?? mock(async () => ({ data: [] }));
   const request = overrides?.request ?? mock(async () => ({ data: {} }));
   const deleteRef = overrides?.deleteRef ?? mock(async () => ({ data: {} }));
 
@@ -73,6 +75,7 @@ function createEnabledBotClient(overrides?: {
         repos: {
           get: reposGet,
           createFork,
+          listForks,
         },
         git: {
           deleteRef,
@@ -196,33 +199,21 @@ describe("createForkManager", () => {
 
   test("ensureFork creates a fork and polls through initial not-ready responses", async () => {
     const { logger, infoCalls } = createMockLogger();
-    let callCount = 0;
-    const reposGet = mock(async (params: { owner: string; repo: string }) => {
-      callCount += 1;
-      if (callCount === 1) {
-        const error = Object.assign(new Error("Not Found"), { status: 404 });
-        throw error;
-      }
-      if (callCount === 2) {
-        const error = Object.assign(new Error("Fork not ready"), { status: 404 });
-        throw error;
-      }
-      if (callCount === 3) {
-        const error = Object.assign(new Error("Still provisioning"), { status: 404 });
-        throw error;
-      }
-      return {
-        data: {
-          full_name: `${params.owner}/${params.repo}`,
-          source: {
-            full_name: "xbmc/xbmc",
-          },
-        },
-      };
+    const reposGet = mock(async () => {
+      const error = Object.assign(new Error("Not Found"), { status: 404 });
+      throw error;
     });
     const createFork = mock(async () => ({ data: {} }));
+    let pollCount = 0;
+    const listForks = mock(async () => {
+      pollCount += 1;
+      if (pollCount < 3) {
+        return { data: [] };
+      }
+      return { data: [{ full_name: "kodiai-bot/xbmc", owner: { login: "kodiai-bot" } }] };
+    });
 
-    const manager = createForkManager(createEnabledBotClient({ reposGet, createFork }), logger, "ghp_test-token");
+    const manager = createForkManager(createEnabledBotClient({ reposGet, createFork, listForks }), logger, "ghp_test-token");
 
     await expect(manager.ensureFork("xbmc", "xbmc")).resolves.toEqual({
       forkOwner: "kodiai-bot",
@@ -235,7 +226,9 @@ describe("createForkManager", () => {
       repo: "xbmc",
       default_branch_only: true,
     });
-    expect(reposGet).toHaveBeenCalledTimes(4);
+    expect(reposGet).toHaveBeenCalledTimes(1);
+    expect(listForks).toHaveBeenCalledTimes(3);
+    expect(listForks).toHaveBeenCalledWith({ owner: "xbmc", repo: "xbmc", per_page: 100 });
     expect(infoCalls).toContainEqual({
       bindings: { owner: "xbmc", repo: "xbmc" },
       message: "Creating fork",
@@ -243,6 +236,28 @@ describe("createForkManager", () => {
     expect(infoCalls).toContainEqual({
       bindings: { owner: "xbmc", repo: "xbmc", forkOwner: "kodiai-bot", forkRepo: "xbmc" },
       message: "Fork created and ready",
+    });
+  });
+
+  test("ensureFork does not bind to an unrelated same-named repo the bot already owns after a rename collision", async () => {
+    const { logger } = createMockLogger();
+    // The bot already owns an unrelated repo also named "tools" (a fork of a different upstream).
+    const reposGet = mock(async () => {
+      const error = Object.assign(new Error("Not Found"), { status: 404 });
+      throw error;
+    });
+    const createFork = mock(async () => ({ data: {} }));
+    // GitHub renamed the just-created fork to "tools-1" due to the name collision.
+    // listForks (queried from the upstream side) correctly reflects the real landing spot.
+    const listForks = mock(async () => ({
+      data: [{ full_name: "kodiai-bot/tools-1", owner: { login: "kodiai-bot" } }],
+    }));
+
+    const manager = createForkManager(createEnabledBotClient({ reposGet, createFork, listForks }), logger, "ghp_test-token");
+
+    await expect(manager.ensureFork("org2", "tools")).resolves.toEqual({
+      forkOwner: "kodiai-bot",
+      forkRepo: "tools-1",
     });
   });
 

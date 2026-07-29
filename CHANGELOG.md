@@ -7,6 +7,16 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Regular PR reviews now surface bounded, sanitized file/line findings immediately when an approved finding has no safe auto-generated patch, instead of replacing the finding text with publication-gate diagnostics.
+- A blocked-candidate findings notice can no longer overwrite an already-published review verdict (e.g. flipping a published APPROVE to NOT APPROVED) when an unrelated candidate-finding sub-pipeline had nothing to publish.
+- The moved-to-details Review Details finalize step now merges into the existing canonical comment instead of overwriting it, so the Decision/summary text is no longer silently wiped after a successful publish.
+- A superseded review attempt can no longer keep posting inline candidate comments after a newer attempt takes over; publish rights are now rechecked before every comment, not just once at the start.
+- Delta re-review context (changed files and prior findings) no longer bypasses the prompt size budget, preventing it from starving other prompt sections on large re-reviews.
+- The Language-Specific Guidance prompt section now discloses when languages are omitted past the 5-language cap instead of silently dropping them.
+- Duplicate GitHub comments: a review run no longer posts a redundant telemetry-only comment alongside (or instead of) the real verdict comment when findings are blocked or moved to details.
+- Unified the automatic push-triggered review pipeline and the explicit `@kodiai review` mention flow onto one canonical GitHub verdict surface per PR/commit, so the two triggers can no longer post contradictory verdicts (e.g. a stale automatic "NOT APPROVED" comment left standing next to a later mention-triggered "APPROVE" review, as seen on `xbmc/xbmc#28648`). Both paths now resolve the same trigger-agnostic surface key and publish through the same canonical create/update primitives; a new reconciliation step also annotates any pre-existing surface of the other kind (comment vs. formal review) as superseded when a new verdict lands.
+- A mention-triggered NOT-APPROVED verdict now always publishes through the canonical marker system, even when the model's free-text result doesn't match the expected finding-line format; previously it silently fell back to an unmarked plain reply in that case (found via a live smoke test on `xbmc/xbmc#28172`).
+- The model's own direct GitHub tool calls (`create_comment`, inline review comments) now embed the same trigger-agnostic canonical marker as every other publish path, instead of the old per-delivery key. This was the most common review outcome and had been missed in the initial unification pass -- without this, a normal automatic review with real findings still wouldn't reconcile with a later mention-triggered re-review of the same commit.
+- Two publish paths (mention approval, blocked-findings notice) could report success and run stale-surface reconciliation even when the underlying write was silently dropped because publish rights were revoked mid-flight; both now correctly report failure and skip reconciliation in that case.
 
 ## v0.49 (2026-07-20)
 

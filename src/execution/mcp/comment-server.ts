@@ -22,25 +22,52 @@ export type CommentPublicationState = {
   createCommentPublished: boolean;
 };
 
-export function createCommentServer(
-  getOctokit: () => Promise<Octokit>,
-  owner: string,
-  repo: string,
-  botHandles: string[],
-  reviewOutputKey?: string,
-  onPublish?: () => void,
-  prNumber?: number,
-  onPublishEvent?: (event: ExecutionPublishEvent) => void,
-  logger?: Logger,
-  publicationGate?: ReviewOutputPublicationGate,
-  publicationState: CommentPublicationState = { createCommentPublished: false },
-  candidateVerificationRequired = false,
-) {
-  const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
+export type CreateCommentServerOptions = {
+  getOctokit: () => Promise<Octokit>;
+  owner: string;
+  repo: string;
+  botHandles: string[];
+  reviewOutputKey?: string;
+  onPublish?: () => void;
+  prNumber?: number;
+  onPublishEvent?: (event: ExecutionPublishEvent) => void;
+  logger?: Logger;
+  publicationGate?: ReviewOutputPublicationGate;
+  publicationState?: CommentPublicationState;
+  candidateVerificationRequired?: boolean;
+  // Trigger-agnostic key for the GitHub-visible marker/idempotency check only (see
+  // ExecutionContext.canonicalReviewOutputKey). Falls back to reviewOutputKey so
+  // existing callers that don't pass it keep their prior (per-delivery) behavior.
+  canonicalReviewOutputKey?: string;
+};
+
+export function createCommentServer(options: CreateCommentServerOptions) {
+  const {
+    getOctokit,
+    owner,
+    repo,
+    botHandles,
+    reviewOutputKey,
+    onPublish,
+    prNumber,
+    onPublishEvent,
+    logger,
+    publicationGate,
+    publicationState = { createCommentPublished: false },
+    candidateVerificationRequired = false,
+    canonicalReviewOutputKey = reviewOutputKey,
+  } = options;
+  const marker = canonicalReviewOutputKey ? buildReviewOutputMarker(canonicalReviewOutputKey) : null;
   const reviewOutputPublicationGate = publicationGate
     ?? (
       reviewOutputKey && prNumber !== undefined
-        ? createReviewOutputPublicationGate({ owner, repo, prNumber, reviewOutputKey })
+        ? createReviewOutputPublicationGate({
+            owner,
+            repo,
+            prNumber,
+            reviewOutputKey,
+            canonicalReviewOutputKey,
+          })
         : undefined
     );
 
