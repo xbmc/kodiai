@@ -386,6 +386,52 @@ describe("updateExpertiseIncremental", () => {
     expect(persisted.tier).toBe("senior");
   });
 
+  test("computes the tier-decision overall score from the same single-blend values it persists", async () => {
+    const updateTierCalls: Array<{ profileId: number; tier: ContributorTier; overallScore: number }> = [];
+    const persistedUpdates: Array<{ dimension: string; topic: string; score: number }> = [];
+    const { logger } = createMockLogger();
+    const profile = makeProfile({
+      githubUsername: "crystalp",
+      overallTier: "senior",
+      overallScore: 0.85,
+    });
+
+    // "typescript" already has a high existing score and will be touched by this
+    // commit -- if deriveUpdatedOverallScore is fed already-blended scores, it
+    // double-counts this signal's contribution for this topic specifically.
+    const expertise = [
+      makeExpertise({ dimension: "language", topic: "typescript", score: 0.85 }),
+      makeExpertise({ dimension: "file_area", topic: "src/handlers/", score: 0.85 }),
+    ];
+
+    const mockStore = createIncrementalMockStore({
+      profile,
+      expertise,
+      allScores: [{ profileId: 1, overallScore: 0.85 }],
+      onUpdateTier: (call) => updateTierCalls.push(call),
+      onUpsertExpertiseMany: (updates) => persistedUpdates.push(...updates),
+    });
+
+    await updateExpertiseIncremental({
+      githubUsername: "crystalp",
+      filesChanged: ["src/handlers/review.ts"],
+      type: "pr_authored",
+      profileStore: mockStore,
+      logger,
+    });
+
+    expect(updateTierCalls).toHaveLength(1);
+    expect(persistedUpdates.length).toBeGreaterThan(0);
+
+    const expectedOverallScore = persistedUpdates
+      .map((entry) => entry.score)
+      .sort((a, b) => b - a)
+      .slice(0, 5)
+      .reduce((sum, score, _index, arr) => sum + score / arr.length, 0);
+
+    expect(updateTierCalls[0]!.overallScore).toBeCloseTo(expectedOverallScore, 6);
+  });
+
   test("persists the existing tier when recalculation dependencies fail open", async () => {
     const updateTierCalls: Array<{
       profileId: number;
@@ -557,6 +603,7 @@ function createIncrementalMockStore(params: {
     tier: ContributorTier;
     overallScore: number;
   }) => void;
+  onUpsertExpertiseMany?: (updates: readonly { dimension: string; topic: string; score: number }[]) => void;
 } = {}): ContributorProfileStore {
   const profile = params.profile ?? makeProfile();
   const expertise = params.expertise ?? [];
@@ -570,7 +617,9 @@ function createIncrementalMockStore(params: {
     setOptedOut: async () => {},
     getExpertise: async () => expertise,
     upsertExpertise: async () => {},
-    upsertExpertiseMany: async () => {},
+    upsertExpertiseMany: async (updates) => {
+      params.onUpsertExpertiseMany?.(updates);
+    },
     updateTier: async (profileId, tier, overallScore) => {
       params.onUpdateTier?.({ profileId, tier, overallScore });
     },
