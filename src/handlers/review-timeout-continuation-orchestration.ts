@@ -71,6 +71,7 @@ export async function handleReviewTimeoutContinuationOutcome(params: {
   };
   turnBudgetExhausted: boolean;
   reviewOutputKey: string;
+  canonicalReviewOutputKey: string;
   changedFileCount: number;
   reviewBoundedness: TimeoutRetryJobParams["reviewBoundedness"];
   knowledgeStore: (Pick<KnowledgeStore, "getCheckpoint" | "saveCheckpoint" | "updateCheckpointCommentId" | "upsertContinuationFamilyState"> & TimeoutRetryJobParams["knowledgeStore"]) | undefined;
@@ -175,7 +176,7 @@ export async function handleReviewTimeoutContinuationOutcome(params: {
         owner: params.owner,
         repo: params.repo,
         prNumber: params.pr.number,
-        reviewOutputKey: params.reviewOutputKey,
+        reviewOutputKey: params.canonicalReviewOutputKey,
         logger: params.logger,
         baseLog: params.baseLog,
       },
@@ -282,7 +283,7 @@ export async function handleReviewTimeoutContinuationOutcome(params: {
     const timeoutBudgetDetails = normalizeReviewTimeoutBudgetDetails(params.appliedTimeoutBudget);
 
     const timeoutPublicationContext = resolveReviewTimeoutPublicationContext({
-      reviewOutputKey: params.reviewOutputKey,
+      reviewOutputKey: params.canonicalReviewOutputKey,
       checkpoint,
       hasPublishedInlines,
       hasPartialResults,
@@ -315,6 +316,7 @@ export async function handleReviewTimeoutContinuationOutcome(params: {
       repo: params.repo,
       prNumber: params.pr.number,
       reviewOutputKey: params.reviewOutputKey,
+      canonicalReviewOutputKey: params.canonicalReviewOutputKey,
       botHandles: params.reviewBotHandles,
       canPublishVisibleOutput: params.canPublishVisibleOutput,
       setReviewWorkPhase: params.setReviewWorkPhase,
@@ -483,6 +485,7 @@ export async function handleReviewTimeoutContinuationOutcome(params: {
           partialCommentId,
           getCheckpoint: retryOutcomeCheckpointLookup,
           reviewOutputKey: params.reviewOutputKey,
+          canonicalReviewOutputKey: params.canonicalReviewOutputKey,
           firstPassOutcome: params.result,
           baseCheckpoint: checkpoint,
           timeoutDurationSeconds: params.timeoutDuration,

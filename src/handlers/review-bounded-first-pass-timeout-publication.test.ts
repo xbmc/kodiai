@@ -13,6 +13,7 @@ function baseParams(
     repo: "kodiai",
     prNumber: 42,
     reviewOutputKey: "xbmc/kodiai#42:delivery",
+    canonicalReviewOutputKey: "xbmc/kodiai#42:canonical",
     botHandles: ["kodiai"],
     canPublishVisibleOutput: mock(() => true),
     setReviewWorkPhase: mock(() => undefined),

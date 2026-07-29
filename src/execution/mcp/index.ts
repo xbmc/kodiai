@@ -281,21 +281,21 @@ export function buildMcpServerFactoriesWithLoaders(
 
   if (enableCommentTools) {
     factories.github_comment = () =>
-      loaders.comment().createCommentServer(
-        deps.getOctokit,
-        deps.owner,
-        deps.repo,
-        deps.botHandles ?? DEFAULT_BOT_HANDLES,
-        deps.reviewOutputKey,
-        deps.onPublish,
-        deps.prNumber,
-        deps.onPublishEvent,
-        deps.logger,
-        reviewOutputPublicationGate,
-        commentPublicationState,
+      loaders.comment().createCommentServer({
+        getOctokit: deps.getOctokit,
+        owner: deps.owner,
+        repo: deps.repo,
+        botHandles: deps.botHandles ?? DEFAULT_BOT_HANDLES,
+        reviewOutputKey: deps.reviewOutputKey,
+        onPublish: deps.onPublish,
+        prNumber: deps.prNumber,
+        onPublishEvent: deps.onPublishEvent,
+        logger: deps.logger,
+        publicationGate: reviewOutputPublicationGate,
+        publicationState: commentPublicationState,
         candidateVerificationRequired,
-        deps.canonicalReviewOutputKey ?? deps.reviewOutputKey,
-      ) as McpSdkServerConfigWithInstance;
+        canonicalReviewOutputKey: deps.canonicalReviewOutputKey ?? deps.reviewOutputKey,
+      }) as McpSdkServerConfigWithInstance;
   }
 
   if (deps.prNumber !== undefined && deps.commentId !== undefined) {

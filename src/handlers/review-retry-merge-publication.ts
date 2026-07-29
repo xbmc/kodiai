@@ -33,6 +33,7 @@ export async function publishRetryMergeContinuationResults(params: {
   attemptId: string;
   deliveryId: string;
   reviewOutputKey: string;
+  canonicalReviewOutputKey: string;
   retryReviewOutputKey: string;
   retryConclusion: string;
   partialCommentId?: number;
@@ -74,7 +75,7 @@ export async function publishRetryMergeContinuationResults(params: {
     prNumber: params.prNumber,
     attemptId: params.attemptId,
     deliveryId: params.deliveryId,
-    reviewOutputKey: params.reviewOutputKey,
+    reviewOutputKey: params.canonicalReviewOutputKey,
     retryReviewOutputKey: params.retryReviewOutputKey,
     commentIdToUpdate,
     mergeBody: params.mergeContext.body,

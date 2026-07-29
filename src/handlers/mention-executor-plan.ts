@@ -42,7 +42,7 @@ export function resolveMentionExecutorPlan(params: {
         prNumber: params.mention.prNumber,
         action: "mention-review",
         deliveryId: params.deliveryId,
-        headSha: params.mention.headRef ?? "unknown-head-sha",
+        headSha: params.mention.headSha ?? "unknown-head-sha",
       })
     : undefined;
   const canonicalReviewSurfaceKey = params.explicitReviewRequest && params.mention.prNumber !== undefined

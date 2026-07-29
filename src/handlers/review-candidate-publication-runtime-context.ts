@@ -44,6 +44,7 @@ export function resolveReviewCandidatePublicationRuntimeContext(params: {
     approval: params.approval,
     adapter: params.adapter.summary,
     publisher: publishedFindings.summary,
+    publisherDetailsOnlyFindings: publishedFindings.detailsOnlyFindings,
     convertedProcessedFindingCount: publishedFindings.findings.length,
     directPublication: {
       attempted: params.directPublication.attempted,

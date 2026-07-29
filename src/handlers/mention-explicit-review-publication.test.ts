@@ -139,6 +139,31 @@ describe("publishExplicitMentionReviewResult", () => {
     expect(call.body).toContain("<!-- kodiai:review-output-key:review-key -->");
   });
 
+  test("publishes an approval-shaped comment instead of a pull review when autoApprove is false", async () => {
+    const harness = createOctokit({});
+    const result = await publishExplicitMentionReviewResult(baseParams({
+      octokit: harness.octokit as never,
+      autoApprove: false,
+    }));
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        outputPublished: true,
+        resolution: "comment-approval",
+        fallbackDelivery: null,
+      },
+    });
+    expect(harness.createReview).not.toHaveBeenCalled();
+    const createComment = harness.octokit.rest.issues.createComment as unknown as {
+      mock: { calls: unknown[][] };
+    };
+    expect(createComment.mock.calls).toHaveLength(1);
+    const call = createComment.mock.calls[0]![0] as { body: string };
+    expect(call.body).toContain("Decision: APPROVE");
+    expect(call.body).toContain("<!-- kodiai:review-output-key:review-key -->");
+  });
+
   test("suppresses fallback when failed approval publish is visible on recheck", async () => {
     const harness = createOctokit({
       createReviewThrows: true,

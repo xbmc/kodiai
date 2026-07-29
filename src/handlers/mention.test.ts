@@ -10301,18 +10301,14 @@ describe("createMentionHandler review command", () => {
       prNumber,
       action: "mention-review",
       deliveryId: "delivery-pr-issue-comment-mention",
-      headSha: "feature",
+      headSha: "feature-sha",
     });
-    // The idempotency check/marker now key off the trigger-agnostic canonical
-    // surface key (no action/delivery segments), not the full reviewOutputKey
-    // above -- the fixture's pulls.get() mock doesn't return head.sha, so the
-    // canonical key falls back to "unknown-head-sha" (see mention-executor-plan.ts).
     const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber,
-      headSha: "unknown-head-sha",
+      headSha: "feature-sha",
     });
     const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
 
@@ -10350,7 +10346,7 @@ describe("createMentionHandler review command", () => {
               title: "Test PR",
               body: "",
               user: { login: "octocat" },
-              head: { ref: "feature" },
+              head: { ref: "feature", sha: "feature-sha" },
               base: { ref: "main" },
             },
           }),
@@ -10450,18 +10446,14 @@ describe("createMentionHandler review command", () => {
       prNumber,
       action: "mention-review",
       deliveryId: "delivery-pr-issue-comment-mention",
-      headSha: "feature",
+      headSha: "feature-sha",
     });
-    // The idempotency check/recheck now key off the trigger-agnostic canonical
-    // surface key (no action/delivery segments), not the full reviewOutputKey
-    // above -- the fixture's pulls.get() mock doesn't return head.sha, so the
-    // canonical key falls back to "unknown-head-sha" (see mention-executor-plan.ts).
     const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber,
-      headSha: "unknown-head-sha",
+      headSha: "feature-sha",
     });
     const marker = buildReviewOutputMarker(canonicalReviewSurfaceKey);
     let listReviewsCalls = 0;
@@ -10500,7 +10492,7 @@ describe("createMentionHandler review command", () => {
               title: "Test PR",
               body: "",
               user: { login: "octocat" },
-              head: { ref: "feature" },
+              head: { ref: "feature", sha: "feature-sha" },
               base: { ref: "main" },
             },
           }),
@@ -10606,7 +10598,7 @@ describe("createMentionHandler review command", () => {
       prNumber,
       action: "mention-review",
       deliveryId: "delivery-pr-issue-comment-mention",
-      headSha: "feature",
+      headSha: "feature-sha",
     });
 
     const eventRouter: EventRouter = {
@@ -10643,7 +10635,7 @@ describe("createMentionHandler review command", () => {
               title: "Test PR",
               body: "",
               user: { login: "octocat" },
-              head: { ref: "feature" },
+              head: { ref: "feature", sha: "feature-sha" },
               base: { ref: "main" },
             },
           }),
@@ -10749,7 +10741,7 @@ describe("createMentionHandler review command", () => {
       prNumber,
       action: "mention-review",
       deliveryId: "delivery-pr-issue-comment-mention",
-      headSha: "feature",
+      headSha: "feature-sha",
     });
 
     const eventRouter: EventRouter = {
@@ -10786,7 +10778,7 @@ describe("createMentionHandler review command", () => {
               title: "Test PR",
               body: "",
               user: { login: "octocat" },
-              head: { ref: "feature" },
+              head: { ref: "feature", sha: "feature-sha" },
               base: { ref: "main" },
             },
           }),

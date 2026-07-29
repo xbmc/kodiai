@@ -125,7 +125,7 @@ function formatReviewCandidatePublicationOutcomeBucket(
 
   const mode = sanitizeReviewCandidatePublicationBucketMode(bucket.mode, key);
   const safeReasons = bucket.reasons
-    .map((reason) => sanitizeReviewCandidatePublicationToken(String(reason)))
+    .map((reason) => sanitizeReviewCandidatePublicationReason(String(reason)))
     .filter(isSafeReviewCandidatePublicationBucketReason);
   const redactedReasons = mode === "degraded" ? 0 : bucket.reasons.length - safeReasons.length;
   const cappedReasons = safeReasons.slice(0, MAX_REVIEW_CANDIDATE_PUBLICATION_BUCKET_REASONS);

@@ -136,6 +136,45 @@ describe("review candidate publication runtime classifier", () => {
     expect(JSON.stringify(result)).not.toContain("sk-unsafe");
   });
 
+  test("surfaces the publisher's moved-to-details findings instead of misclassifying them as malformed", () => {
+    const publisherFinding = {
+      fingerprint: "rcf-0000000000000002",
+      lifecycle: "approved" as const,
+      severity: "major" as const,
+      category: "correctness" as const,
+      title: "Line no longer commentable",
+      location: { path: "src/other.ts", line: 7 },
+      reason: "line-not-commentable-in-pr-diff" as const,
+      excerpt: "safe excerpt",
+    };
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 1 }),
+      publisher: {
+        ...publisher([]),
+        counts: {
+          input: 0,
+          processed: 0,
+          skipped: 0,
+          blocked: 0,
+          failed: 0,
+          malformed: 0,
+          detailsOnlyFindings: 1,
+          movedToDetails: 1,
+          detailsOnlyOmitted: 0,
+        },
+        movedToDetails: {
+          ...emptyMovedToDetailsSummary(),
+          counts: { total: 1, fromFixEligibility: 0, fromPublisherResult: 1, omitted: 0 },
+        },
+      },
+      publisherDetailsOnlyFindings: [publisherFinding],
+    }));
+
+    expect(result.mode).not.toBe("degraded");
+    expect(result.reasons).not.toContain("malformed-moved-to-details");
+    expect(result.detailsOnlyFindings).toEqual([publisherFinding]);
+  });
+
   test("classifies attempted fallback as disallowed when policy blocks direct publication", () => {
     const result = classifyReviewCandidatePublicationRuntime(input({
       approval: approval({ approved: 1, fallbackDisallowed: 1 }),
@@ -145,7 +184,8 @@ describe("review candidate publication runtime classifier", () => {
     }));
 
     expect(result.mode).toBe("fallback-disallowed");
-    expect(result.counts).toMatchObject({ fallbackDisallowed: 1, directPublished: 0 });
+    // approval.fallbackDisallowed (1) + the directPublication policy-block (1) = 2 distinct denials.
+    expect(result.counts).toMatchObject({ fallbackDisallowed: 2, directPublished: 0 });
     expect(result.reasons).toContain("direct-fallback-disallowed");
   });
 
@@ -316,7 +356,8 @@ describe("review candidate publication runtime classifier", () => {
     expect(buckets.failed!.reasons).toEqual(expect.arrayContaining(["candidate-publisher-failed", "line-not-commentable-in-pr-diff"]));
     expect(buckets.movedToDetails).toMatchObject({ mode: "moved-to-details", count: 2 });
     expect(buckets.movedToDetails!.reasons).toEqual(expect.arrayContaining(["candidate-moved-to-details"]));
-    expect(buckets.fallbackDisallowed).toMatchObject({ mode: "fallback-disallowed", count: 1 });
+    // approval.fallbackDisallowed (1) + the directPublication policy-block (1) = 2 distinct denials.
+    expect(buckets.fallbackDisallowed).toMatchObject({ mode: "fallback-disallowed", count: 2 });
     expect(buckets.fallbackDisallowed!.reasons).toEqual(expect.arrayContaining(["direct-fallback-disallowed", "direct-fallback-blocked-before-publishing-token-redacted"]));
     expect(buckets.degraded).toMatchObject({ mode: "degraded", count: 1 });
     expect(buckets.degraded!.reasons).toEqual(expect.arrayContaining(["candidate-publisher-malformed", "malformed-publisher-result", "diff-redacted-redacted-prompt-redacted"]));

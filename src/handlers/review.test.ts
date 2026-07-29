@@ -2103,10 +2103,11 @@ describe("createReviewHandler review_requested idempotency", () => {
         getInstallationToken: async () => "token",
       } as unknown as GitHubApp,
       executor: {
-        execute: async (context: { reviewOutputKey?: string }) => {
+        execute: async (context: { reviewOutputKey?: string; canonicalReviewOutputKey?: string }) => {
           executeCount++;
-          if (context.reviewOutputKey) {
-            publishedMarkers.add(buildReviewOutputMarker(context.reviewOutputKey));
+          const publishedKey = context.canonicalReviewOutputKey ?? context.reviewOutputKey;
+          if (publishedKey) {
+            publishedMarkers.add(buildReviewOutputMarker(publishedKey));
           }
           return {
             conclusion: "success",
@@ -2201,10 +2202,11 @@ describe("createReviewHandler review_requested idempotency", () => {
         getInstallationToken: async () => "token",
       } as unknown as GitHubApp,
       executor: {
-        execute: async (context: { reviewOutputKey?: string }) => {
+        execute: async (context: { reviewOutputKey?: string; canonicalReviewOutputKey?: string }) => {
           executeCount++;
-          if (context.reviewOutputKey) {
-            publishedMarkers.add(buildReviewOutputMarker(context.reviewOutputKey));
+          const publishedKey = context.canonicalReviewOutputKey ?? context.reviewOutputKey;
+          if (publishedKey) {
+            publishedMarkers.add(buildReviewOutputMarker(publishedKey));
           }
           return {
             conclusion: "success",
@@ -10615,13 +10617,11 @@ describe("createReviewHandler timeout resilience", () => {
     expect(partial!).toContain("follow-up review is pending (timeout budget: remote runtime 505s + infra overhead 180s = total 685s).");
     expect(partial!).toContain("Found two issues before timeout.");
     expect(partial!).toContain("Scheduling a reduced-scope retry.");
-    expect(partial!).toContain(buildReviewOutputMarker(buildReviewOutputKey({
+    expect(partial!).toContain(buildReviewOutputMarker(buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
       repo: "repo",
       prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
       headSha: "abcdef1234567890",
     })));
     expect(partial!).toContain("<summary>Review Details</summary>");
@@ -11584,6 +11584,13 @@ describe("createReviewHandler timeout resilience", () => {
       headSha: "abcdef1234567890",
     });
     const retryReviewOutputKey = `${reviewOutputKey}-retry-1`;
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      headSha: "abcdef1234567890",
+    });
     checkpointState.set(reviewOutputKey, {
       findingCount: 0,
       filesReviewed: ["README.md"],
@@ -11764,7 +11771,7 @@ describe("createReviewHandler timeout resilience", () => {
     expect(finalComment).not.toContain("Bounded first-pass review");
     expect(finalComment).not.toContain("follow-up review is pending");
     expect(finalComment).not.toContain("- Bounded first-pass:");
-    expect(finalComment).toContain(buildReviewOutputMarker(reviewOutputKey));
+    expect(finalComment).toContain(buildReviewOutputMarker(canonicalReviewSurfaceKey));
 
     await workspaceFixture.cleanup();
   });
@@ -11791,6 +11798,13 @@ describe("createReviewHandler timeout resilience", () => {
       headSha: "abcdef1234567890",
     });
     const retryReviewOutputKey = `${reviewOutputKey}-retry-1`;
+    const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      headSha: "abcdef1234567890",
+    });
     checkpointState.set(reviewOutputKey, {
       findingCount: 2,
       filesReviewed: ["README.md"],
@@ -11861,7 +11875,7 @@ describe("createReviewHandler timeout resilience", () => {
                       "```",
                       "**Carry forward timeout finding**",
                       "",
-                      buildReviewOutputMarker(reviewOutputKey),
+                      buildReviewOutputMarker(canonicalReviewSurfaceKey),
                     ].join("\n"),
                   },
                   {
@@ -11874,7 +11888,7 @@ describe("createReviewHandler timeout resilience", () => {
                       "```",
                       "**New continuation finding**",
                       "",
-                      buildReviewOutputMarker(reviewOutputKey),
+                      buildReviewOutputMarker(canonicalReviewSurfaceKey),
                     ].join("\n"),
                   },
                 ]
@@ -12061,7 +12075,7 @@ describe("createReviewHandler timeout resilience", () => {
       body.includes("<summary>Review Details</summary>")
     );
     expect(initialPartialComment).toContain("stopped at timeout after covering 1 of 3 files from checkpoint evidence");
-    expect(initialPartialComment).toContain(buildReviewOutputMarker(reviewOutputKey));
+    expect(initialPartialComment).toContain(buildReviewOutputMarker(canonicalReviewSurfaceKey));
     expect(initialReviewDetails).toBe(initialPartialComment);
     expect(initialReviewDetails).toContain("- Covered scope: 1/3 changed files");
     expect(initialReviewDetails).toContain("- Continuation state: follow-up review pending for remaining scope");
@@ -12077,7 +12091,7 @@ describe("createReviewHandler timeout resilience", () => {
     expect(mergedPartialComment).toContain("Retry complete -- analyzed 2 of 3 files total after a reduced-scope follow-up.");
     expect(mergedPartialComment).toContain("Continuation revisions: 2 new findings, 0 still-open findings, and 2 resolved or revised findings.");
     expect(mergedPartialComment).toContain("stopped at timeout after covering 2 of 3 files from checkpoint evidence");
-    expect(mergedPartialComment).toContain(buildReviewOutputMarker(reviewOutputKey));
+    expect(mergedPartialComment).toContain(buildReviewOutputMarker(canonicalReviewSurfaceKey));
     expect(mergedPartialComment).toContain("<summary>Review Details</summary>");
     expect(mergedPartialComment).toContain("- Covered scope: 2/3 changed files");
     expect(mergedPartialComment).toContain("- Remaining scope: 1/3 changed files");

@@ -14,7 +14,7 @@ function makeMention(overrides: Partial<MentionEvent> = {}): MentionEvent {
     commentBody: "@kodiai review this PR",
     commentAuthor: "mona",
     commentCreatedAt: "2026-07-06T12:00:00Z",
-    headRef: "head-sha",
+    headRef: "feature-branch",
     headSha: "head-sha",
     baseRef: "main",
     headRepoOwner: "octo-org",
