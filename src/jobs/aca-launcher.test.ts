@@ -417,6 +417,56 @@ describe("launchAcaJob", () => {
     }
   });
 
+  test("throws a clear error instead of an uncaught SyntaxError when Azure returns a 2xx with a non-JSON body", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
+    const originalIdentityHeader = process.env["IDENTITY_HEADER"];
+    const logger = makeLogger();
+
+    process.env["IDENTITY_ENDPOINT"] = "https://identity.example/token";
+    process.env["IDENTITY_HEADER"] = "identity-header";
+
+    globalThis.fetch = (async (input) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.startsWith("https://identity.example/token")) {
+        return jsonResponse({ access_token: "test-access-token" });
+      }
+      return new Response("<html>202 Accepted</html>", {
+        status: 202,
+        headers: { "content-type": "text/html" },
+      });
+    }) as typeof fetch;
+
+    try {
+      await expect(launchAcaJob({
+        resourceGroup: "rg-kodiai",
+        jobName: "caj-kodiai-agent",
+        spec: buildAcaJobSpec({
+          jobName: "caj-kodiai-agent",
+          image: "kodiairegistry.azurecr.io/kodiai-agent:latest",
+          workspaceDir: "/mnt/kodiai-workspaces/test-job",
+          mcpBearerToken: "test-token",
+          mcpBaseUrl: "http://ca-kodiai",
+        }),
+        logger: logger as unknown as Logger,
+      })).rejects.toThrow(/non-JSON body.*may already be running unmonitored/s);
+
+      expect(logger.error).toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalIdentityEndpoint === undefined) {
+        delete process.env["IDENTITY_ENDPOINT"];
+      } else {
+        process.env["IDENTITY_ENDPOINT"] = originalIdentityEndpoint;
+      }
+      if (originalIdentityHeader === undefined) {
+        delete process.env["IDENTITY_HEADER"];
+      } else {
+        process.env["IDENTITY_HEADER"] = originalIdentityHeader;
+      }
+    }
+  });
+
   test("reuses a valid managed identity token across launch, poll, and cancel", async () => {
     const originalFetch = globalThis.fetch;
     const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];

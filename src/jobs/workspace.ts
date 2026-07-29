@@ -782,8 +782,18 @@ export function createWorkspaceManager(
       logger.info({ owner, repo, ref, dir, fork: !!forkContext }, "Workspace created");
 
       const cleanup = async (): Promise<void> => {
-        await rm(dir, { recursive: true, force: true });
-        logger.debug({ dir }, "Workspace cleaned up");
+        try {
+          await rm(dir, { recursive: true, force: true });
+          logger.debug({ dir }, "Workspace cleaned up");
+        } catch (cleanupError: unknown) {
+          logger.warn(
+            {
+              err: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+              dir,
+            },
+            "Failed to clean up workspace (idempotent, never throws -- directory may still contain a credential and needs manual removal)",
+          );
+        }
       };
 
       return { dir, cleanup, token };

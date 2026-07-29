@@ -67,19 +67,29 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
   });
   const inflightEnsureForks = new Map<string, Promise<{ forkOwner: string; forkRepo: string }>>();
 
+  /**
+   * Poll the upstream's fork list (rather than guessing the fork's own repo
+   * name via repos.get) so a same-named, unrelated repo the bot account
+   * already owns can never be mistaken for the fork just requested via
+   * createFork -- GitHub renames a new fork on name collision, so only the
+   * upstream's own fork listing reliably reflects where it actually landed.
+   */
   async function waitForForkReady(owner: string, repo: string): Promise<{ forkOwner: string; forkRepo: string }> {
     const deadline = Date.now() + FORK_POLL_TIMEOUT_MS;
 
     while (Date.now() < deadline) {
       try {
         const response = await retryGitHubTransient(() =>
-          botClient.octokit.rest.repos.get({ owner, repo })
+          botClient.octokit.rest.repos.listForks({ owner, repo, per_page: 100 })
         );
-        const parts = response.data.full_name.split("/") as [string, string];
-        const [forkOwner, forkRepo] = parts;
-        return { forkOwner, forkRepo };
+        const ownFork = response.data.find((fork) => fork.owner?.login === botClient.login);
+        if (ownFork) {
+          const parts = ownFork.full_name.split("/") as [string, string];
+          const [forkOwner, forkRepo] = parts;
+          return { forkOwner, forkRepo };
+        }
       } catch {
-        // Fork not ready yet
+        // Fork not ready yet, or listing failed transiently.
       }
       await sleep(FORK_POLL_INTERVAL_MS);
     }
@@ -121,7 +131,7 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
       throw error;
     }
 
-    const result = await waitForForkReady(botClient.login, repo);
+    const result = await waitForForkReady(owner, repo);
     forkCache.set(cacheKey, result);
     logger.info({ owner, repo, forkOwner: result.forkOwner, forkRepo: result.forkRepo }, "Fork created and ready");
     return result;
