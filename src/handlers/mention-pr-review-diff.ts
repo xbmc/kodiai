@@ -1,22 +1,57 @@
-import { $ } from "bun";
 import type { Logger } from "pino";
+import { runCommandWithCappedLines } from "../lib/capped-process.ts";
 import { collectDiffContext } from "../review-orchestration/review-diff-collection.ts";
 import { scanLinesForFabricatedContent } from "../lib/fabricated-content-detector.ts";
 import type { MentionEvent } from "./mention-types.ts";
 
-export async function scanDiffForFabricatedContent(dir: string): Promise<string[]> {
-  let diffText: string;
+export const FABRICATED_CONTENT_DIFF_MAX_BYTES = 2 * 1024 * 1024;
+
+export type FabricatedContentScanResult = {
+  warnings: string[];
+  complete: boolean;
+  reason?: "command-failed" | "output-truncated";
+};
+
+type RunDiffLines = (params: Parameters<typeof runCommandWithCappedLines>[0]) =>
+  ReturnType<typeof runCommandWithCappedLines>;
+
+export async function scanDiffForFabricatedContent(
+  dir: string,
+  runDiffLines: RunDiffLines = runCommandWithCappedLines,
+): Promise<FabricatedContentScanResult> {
+  const addedLines: string[] = [];
+  let result: Awaited<ReturnType<RunDiffLines>>;
   try {
-    diffText = (await $`git -C ${dir} diff HEAD~1 HEAD`.quiet()).text();
+    result = await runDiffLines({
+      command: "git",
+      args: ["-C", dir, "diff", "HEAD~1", "HEAD"],
+      maxStdoutBytes: FABRICATED_CONTENT_DIFF_MAX_BYTES,
+      onStdoutLine: (line) => {
+        if (line.startsWith("+") && !line.startsWith("+++")) {
+          addedLines.push(line);
+        }
+      },
+    });
   } catch {
-    return [];
+    return { warnings: [], complete: false, reason: "command-failed" };
   }
 
-  const addedLines = diffText
-    .split("\n")
-    .filter((line) => line.startsWith("+") && !line.startsWith("+++"));
+  if (result.stdoutTruncated) {
+    return {
+      warnings: scanLinesForFabricatedContent(addedLines),
+      complete: false,
+      reason: "output-truncated",
+    };
+  }
 
-  return scanLinesForFabricatedContent(addedLines);
+  if (result.exitCode !== 0 || result.timedOut) {
+    return { warnings: [], complete: false, reason: "command-failed" };
+  }
+
+  return {
+    warnings: scanLinesForFabricatedContent(addedLines),
+    complete: true,
+  };
 }
 
 export async function collectPrReviewPromptDiff(input: {

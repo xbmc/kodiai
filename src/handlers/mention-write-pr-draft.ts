@@ -1,7 +1,11 @@
 import { $ } from "bun";
 import { summarizeWriteRequest } from "../lib/write-request-formatting.ts";
+import type { FabricatedContentScanResult } from "./mention-pr-review-diff.ts";
 import { scanDiffForFabricatedContent } from "./mention-pr-review-diff.ts";
 import { generatePrBody, generatePrTitle } from "./mention-write-formatters.ts";
+
+const INCOMPLETE_FABRICATED_CONTENT_SCAN_WARNING =
+  "Fabricated-content scan incomplete; review the generated changes manually.";
 
 export type MentionWritePullRequestDraft = {
   title: string;
@@ -23,7 +27,7 @@ export async function buildMentionWritePullRequestDraft(params: {
   deliveryId: string;
   headSha: string;
   getDiffStat?: (workspaceDir: string) => Promise<string>;
-  scanFabricatedContent?: (workspaceDir: string) => Promise<string[]>;
+  scanFabricatedContent?: (workspaceDir: string) => Promise<FabricatedContentScanResult>;
 }): Promise<MentionWritePullRequestDraft> {
   let diffStat = "";
   try {
@@ -35,12 +39,20 @@ export async function buildMentionWritePullRequestDraft(params: {
     // diff stat is best-effort and must not block PR creation.
   }
 
-  let warnings: string[] = [];
+  let scanResult: FabricatedContentScanResult = {
+    warnings: [],
+    complete: false,
+    reason: "command-failed",
+  };
   try {
-    warnings = await (params.scanFabricatedContent?.(params.workspaceDir)
+    scanResult = await (params.scanFabricatedContent?.(params.workspaceDir)
       ?? scanDiffForFabricatedContent(params.workspaceDir));
   } catch {
     // fabrication scanning is best-effort and must not block PR creation.
+  }
+  const warnings = [...scanResult.warnings];
+  if (!scanResult.complete) {
+    warnings.push(INCOMPLETE_FABRICATED_CONTENT_SCAN_WARNING);
   }
 
   const requestSummary = summarizeWriteRequest(params.writeRequest);
