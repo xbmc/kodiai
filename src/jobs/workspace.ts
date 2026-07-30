@@ -119,6 +119,9 @@ function makeAuthUrl(strippedUrl: string, token: string | undefined): string {
 const GIT_NETWORK_TIMEOUT_MS = 120_000;
 
 export const STAGED_SECRET_SCAN_MAX_BYTES = 8 * 1024 * 1024;
+export const STAGED_PATHS_MAX_BYTES = 1024 * 1024;
+export const STAGED_PATHS_MAX_FILES = 10_000;
+export const STAGED_GIT_TIMEOUT_MS = 30_000;
 
 async function runGitNetworkCommand(options: {
   args: string[];
@@ -309,14 +312,104 @@ function findHighEntropyTokens(addedLines: string[]): string | undefined {
   return undefined;
 }
 
-type StagedSecretScanState = {
-  currentPath?: string;
-  addedLinesByPath: Map<string, string[]>;
-};
-
 type RunStagedDiffLines = (
   params: Parameters<typeof runCommandWithCappedLines>[0],
 ) => ReturnType<typeof runCommandWithCappedLines>;
+
+type RunStagedPathCommand = (
+  params: Parameters<typeof runCommandWithCappedOutput>[0],
+) => ReturnType<typeof runCommandWithCappedOutput>;
+
+function incompleteStagedScan(maxBytes: number): WritePolicyError {
+  return new WritePolicyError(
+    "write-policy-secret-scan-incomplete",
+    "Write blocked: staged secret scan was incomplete",
+    { rule: "secretScan", maxBytes },
+  );
+}
+
+function processResultIsIncomplete(result: CappedProcessResult): boolean {
+  return result.timedOut
+    || result.exitCode !== 0
+    || result.stdoutTruncated
+    || result.stderrTruncated;
+}
+
+export async function getBoundedStagedPaths(options: {
+  dir: string;
+  runStagedPathCommand?: RunStagedPathCommand;
+}): Promise<string[]> {
+  const runStagedPathCommand = options.runStagedPathCommand ?? runCommandWithCappedOutput;
+  let result: CappedProcessResult;
+  try {
+    result = await runStagedPathCommand({
+      command: "git",
+      args: [
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--cached",
+        "--name-only",
+        "-z",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--",
+      ],
+      cwd: options.dir,
+      timeoutMs: STAGED_GIT_TIMEOUT_MS,
+      maxStdoutBytes: STAGED_PATHS_MAX_BYTES,
+    });
+  } catch {
+    throw incompleteStagedScan(STAGED_PATHS_MAX_BYTES);
+  }
+
+  if (processResultIsIncomplete(result)) {
+    throw incompleteStagedScan(STAGED_PATHS_MAX_BYTES);
+  }
+
+  if (result.stdout.length === 0) return [];
+  if (
+    !result.stdout.endsWith("\0")
+    || result.stdout.includes("\uFFFD")
+    || new TextEncoder().encode(result.stdout).byteLength > STAGED_PATHS_MAX_BYTES
+  ) {
+    throw incompleteStagedScan(STAGED_PATHS_MAX_BYTES);
+  }
+
+  const paths = result.stdout.slice(0, -1).split("\0");
+  if (
+    paths.length > STAGED_PATHS_MAX_FILES
+    || paths.some((path) => path.length === 0)
+    || new Set(paths).size !== paths.length
+  ) {
+    throw incompleteStagedScan(STAGED_PATHS_MAX_BYTES);
+  }
+
+  return paths;
+}
+
+function bestEffortDiffPath(line: string, stagedPaths: Set<string>): string | undefined {
+  const header = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+  const candidate = header?.[2];
+  return candidate && stagedPaths.has(candidate) ? candidate : undefined;
+}
+
+function isRegularDiffMetadata(line: string): boolean {
+  return line.length === 0
+    || line.startsWith("index ")
+    || line.startsWith("old mode ")
+    || line.startsWith("new mode ")
+    || line.startsWith("new file mode ")
+    || line.startsWith("deleted file mode ")
+    || line.startsWith("similarity index ")
+    || line.startsWith("dissimilarity index ")
+    || line.startsWith("rename from ")
+    || line.startsWith("rename to ")
+    || line.startsWith("copy from ")
+    || line.startsWith("copy to ")
+    || line.startsWith("--- ")
+    || line.startsWith("+++ ");
+}
 
 export async function enforceWritePolicy(options: {
   dir: string;
@@ -384,95 +477,150 @@ export async function enforceWritePolicy(options: {
 
   if (secretScanEnabled) {
     const stagedPathSet = new Set(stagedPaths);
-    const scanState: StagedSecretScanState = {
-      addedLinesByPath: new Map(),
-    };
+    const regexDetectors = buildSecretRegexes();
+    const regexHits = new Map<string, { path?: string }>();
+    let entropyHit: { message: string; path?: string } | undefined;
+    let currentPath: string | undefined;
+    let sawRegularDiff = false;
+    let regularDiffCount = 0;
     let insideHunk = false;
+    let oldLinesRemaining = 0;
+    let newLinesRemaining = 0;
+    let canAcceptNoNewlineMarker = false;
+    let parseIncomplete = false;
     let scanResult: Awaited<ReturnType<RunStagedDiffLines>>;
     try {
       scanResult = await runStagedDiffLines({
         command: "git",
-        args: ["-C", dir, "diff", "--cached", "--"],
+        args: ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--"],
+        cwd: dir,
+        timeoutMs: STAGED_GIT_TIMEOUT_MS,
         maxStdoutBytes: STAGED_SECRET_SCAN_MAX_BYTES,
         onStdoutLine: (line) => {
-          const header = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
-          if (header) {
-            scanState.currentPath = header[2] ?? header[1];
+          if (line === "\\ No newline at end of file") {
+            if (!canAcceptNoNewlineMarker) parseIncomplete = true;
+            canAcceptNoNewlineMarker = false;
+            return;
+          }
+          canAcceptNoNewlineMarker = false;
+
+          if (line.startsWith("diff --cc ") || line.startsWith("diff --combined ")) {
+            parseIncomplete = true;
+            return;
+          }
+
+          if (line.startsWith("diff --git ")) {
+            if (insideHunk) parseIncomplete = true;
+            sawRegularDiff = true;
+            regularDiffCount += 1;
+            currentPath = bestEffortDiffPath(line, stagedPathSet);
             insideHunk = false;
+            oldLinesRemaining = 0;
+            newLinesRemaining = 0;
+            return;
+          }
+
+          if (line.startsWith("GIT binary patch") || line.startsWith("Binary files ")) {
+            parseIncomplete = true;
+            return;
+          }
+
+          if (line.startsWith("@@@")) {
+            parseIncomplete = true;
             return;
           }
 
           if (line.startsWith("@@")) {
+            if (!sawRegularDiff || insideHunk) {
+              parseIncomplete = true;
+              return;
+            }
+            const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$/.exec(line);
+            if (!hunk) {
+              parseIncomplete = true;
+              return;
+            }
+            oldLinesRemaining = hunk[2] === undefined ? 1 : Number(hunk[2]);
+            newLinesRemaining = hunk[4] === undefined ? 1 : Number(hunk[4]);
             insideHunk = true;
+            if (oldLinesRemaining === 0 && newLinesRemaining === 0) {
+              insideHunk = false;
+            }
             return;
           }
 
-          const currentPath = scanState.currentPath;
-          if (
-            !currentPath
-            || !stagedPathSet.has(currentPath)
-            || !line.startsWith("+")
-            || (!insideHunk && line.startsWith("+++"))
-          ) {
+          if (!insideHunk) {
+            if (!isRegularDiffMetadata(line)) parseIncomplete = true;
             return;
           }
 
-          const addedLines = scanState.addedLinesByPath.get(currentPath) ?? [];
-          addedLines.push(line.slice(1));
-          scanState.addedLinesByPath.set(currentPath, addedLines);
+          let addedLine: string | undefined;
+          if (line.startsWith("+")) {
+            newLinesRemaining -= 1;
+            addedLine = line.slice(1);
+          } else if (line.startsWith("-")) {
+            oldLinesRemaining -= 1;
+          } else if (line.startsWith(" ")) {
+            oldLinesRemaining -= 1;
+            newLinesRemaining -= 1;
+          } else {
+            parseIncomplete = true;
+            return;
+          }
+
+          if (oldLinesRemaining < 0 || newLinesRemaining < 0) {
+            parseIncomplete = true;
+            return;
+          }
+
+          canAcceptNoNewlineMarker = true;
+          if (addedLine !== undefined) {
+            for (const { name, regex } of regexDetectors) {
+              if (!regexHits.has(name) && regex.test(addedLine)) {
+                regexHits.set(name, { path: currentPath });
+              }
+            }
+            if (!entropyHit) {
+              const message = findHighEntropyTokens([addedLine]);
+              if (message) entropyHit = { message, path: currentPath };
+            }
+          }
+
+          if (oldLinesRemaining === 0 && newLinesRemaining === 0) {
+            insideHunk = false;
+          }
         },
       });
     } catch {
-      throw new WritePolicyError(
-        "write-policy-secret-scan-incomplete",
-        "Write blocked: staged secret scan was incomplete",
-        { rule: "secretScan", maxBytes: STAGED_SECRET_SCAN_MAX_BYTES },
-      );
+      throw incompleteStagedScan(STAGED_SECRET_SCAN_MAX_BYTES);
     }
 
     if (
-      scanResult.timedOut
-      || scanResult.exitCode !== 0
-      || scanResult.stdoutTruncated
-      || scanResult.stderrTruncated
+      processResultIsIncomplete(scanResult)
+      || parseIncomplete
+      || insideHunk
+      || regularDiffCount !== stagedPaths.length
     ) {
-      throw new WritePolicyError(
-        "write-policy-secret-scan-incomplete",
-        "Write blocked: staged secret scan was incomplete",
-        { rule: "secretScan", maxBytes: STAGED_SECRET_SCAN_MAX_BYTES },
-      );
+      throw incompleteStagedScan(STAGED_SECRET_SCAN_MAX_BYTES);
     }
 
-    for (const { name, regex } of buildSecretRegexes()) {
-      let path: string | undefined;
-      for (const p of stagedPaths) {
-        const added = (scanState.addedLinesByPath.get(p) ?? []).join("\n");
-        if (regex.test(added)) {
-          path = p;
-          break;
-        }
-      }
-
-      if (path) {
+    for (const { name } of regexDetectors) {
+      const hit = regexHits.get(name);
+      if (hit) {
         throw new WritePolicyError(
           "write-policy-secret-detected",
           `Write blocked: suspected secret detected (${name}) in staged additions`,
-          { path, rule: "secretScan", detector: `regex:${name}` },
+          { path: hit.path, rule: "secretScan", detector: `regex:${name}` },
         );
       }
     }
 
-    // Best-effort entropy scan on added lines only.
-    for (const path of stagedPaths) {
-      const perFileAdded = scanState.addedLinesByPath.get(path) ?? [];
-      const entropyHit = findHighEntropyTokens(perFileAdded);
-      if (entropyHit) {
-        throw new WritePolicyError(
-          "write-policy-secret-detected",
-          `Write blocked: suspected secret detected (entropy): ${entropyHit}`,
-          { path, rule: "secretScan", detector: "entropy" },
-        );
-      }
+    if (entropyHit) {
+      throw new WritePolicyError(
+        "write-policy-secret-detected",
+        `Write blocked: suspected secret detected (entropy): ${entropyHit.message}`,
+        { path: entropyHit.path, rule: "secretScan", detector: "entropy" },
+      );
     }
   }
 }
@@ -498,12 +646,11 @@ export async function createBranchCommitAndPush(options: {
     await $`git -C ${dir} add -A`.quiet();
 
     // Ensure there is something to commit.
-    const staged = (await $`git -C ${dir} -c core.quotePath=false diff --cached --name-only`.quiet()).text().trim();
-    if (staged.length === 0) {
+    const stagedPaths = await getBoundedStagedPaths({ dir });
+    if (stagedPaths.length === 0) {
       throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }
 
-    const stagedPaths = staged.split("\n").map((s) => s.trim()).filter(Boolean);
     await enforceWritePolicy({
       dir,
       stagedPaths,
@@ -551,12 +698,11 @@ export async function commitAndPushToRemoteRef(options: {
   try {
     await $`git -C ${dir} add -A`.quiet();
 
-    const staged = (await $`git -C ${dir} -c core.quotePath=false diff --cached --name-only`.quiet()).text().trim();
-    if (staged.length === 0) {
+    const stagedPaths = await getBoundedStagedPaths({ dir });
+    if (stagedPaths.length === 0) {
       throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }
 
-    const stagedPaths = staged.split("\n").map((s) => s.trim()).filter(Boolean);
     await enforceWritePolicy({
       dir,
       stagedPaths,

@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
 import type { CappedProcessResult } from "../lib/capped-process.ts";
 import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
 import {
   enforceWritePolicy,
+  getBoundedStagedPaths,
   WritePolicyError,
   buildAuthFetchUrl,
   createWorkspaceManager,
@@ -18,6 +19,37 @@ import type { GitHubApp } from "../auth/github-app.ts";
 
 async function createTempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "kodiai-workspace-test-"));
+}
+
+async function createRepoWithStagedFile(
+  relativePath: string,
+  content: string | Uint8Array,
+): Promise<string> {
+  const dir = await createTempDir();
+  await $`git -C ${dir} init`.quiet();
+  const parent = dirname(join(dir, relativePath));
+  await mkdir(parent, { recursive: true });
+  await writeFile(join(dir, relativePath), content);
+  const add = Bun.spawn(["git", "-C", dir, "add", "--", relativePath], {
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  const exitCode = await add.exited;
+  if (exitCode !== 0) {
+    throw new Error(`git add failed with exit code ${exitCode}`);
+  }
+  return dir;
+}
+
+async function runGitForTest(dir: string, args: string[]): Promise<void> {
+  const proc = Bun.spawn(["git", "-C", dir, ...args], {
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`git ${args[0] ?? "command"} failed with exit code ${exitCode}`);
+  }
 }
 
 function stagedDiffResult(
@@ -33,6 +65,99 @@ function stagedDiffResult(
     ...overrides,
   };
 }
+
+describe("getBoundedStagedPaths", () => {
+  test("parses exact NUL-delimited paths with bounded safe Git options", async () => {
+    let received: Parameters<NonNullable<Parameters<typeof getBoundedStagedPaths>[0]["runStagedPathCommand"]>>[0] | undefined;
+    const paths = await getBoundedStagedPaths({
+      dir: "/workspace",
+      runStagedPathCommand: async (params) => {
+        received = params;
+        return stagedDiffResult({
+          stdout: " leading.ts\0trailing.ts \0tab\tname.ts\0line\nbreak.ts\0",
+        });
+      },
+    });
+
+    expect(paths).toEqual([
+      " leading.ts",
+      "trailing.ts ",
+      "tab\tname.ts",
+      "line\nbreak.ts",
+    ]);
+    expect(received?.timeoutMs).toBe(30_000);
+    expect(received?.maxStdoutBytes).toBe(1024 * 1024);
+    expect(received?.args).toContain("--name-only");
+    expect(received?.args).toContain("-z");
+    expect(received?.args).toContain("--no-ext-diff");
+    expect(received?.args).toContain("--no-textconv");
+  });
+
+  test("returns an empty path list for an empty staged diff", async () => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => stagedDiffResult(),
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  test.each([
+    ["timeout", stagedDiffResult({ timedOut: true })],
+    ["nonzero exit", stagedDiffResult({ exitCode: 1, stderr: "sensitive stderr" })],
+    ["stdout truncation", stagedDiffResult({ stdoutTruncated: true })],
+    ["stderr truncation", stagedDiffResult({ stderrTruncated: true })],
+  ])("fails closed when path discovery has a %s", async (_name, result) => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => result,
+      }),
+    ).rejects.toMatchObject({
+      code: "write-policy-secret-scan-incomplete",
+      rule: "secretScan",
+      maxBytes: 1024 * 1024,
+      message: "Write blocked: staged secret scan was incomplete",
+    });
+  });
+
+  test("fails closed when path discovery throws", async () => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => {
+          throw new Error("runner failed with sensitive details");
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "write-policy-secret-scan-incomplete",
+      maxBytes: 1024 * 1024,
+      message: "Write blocked: staged secret scan was incomplete",
+    });
+  });
+
+  test.each([
+    ["missing NUL terminator", "src/value.ts"],
+    ["replacement character", "src/\uFFFDvalue.ts\0"],
+    ["duplicate record", "src/value.ts\0src/value.ts\0"],
+    ["empty record", "src/value.ts\0\0"],
+    ["byte-count overflow", `${"a".repeat(1024 * 1024)}\0`],
+    [
+      "file-count overflow",
+      `${Array.from({ length: 10_001 }, (_, index) => `f${index}`).join("\0")}\0`,
+    ],
+  ])("fails closed for %s in path discovery output", async (_name, stdout) => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => stagedDiffResult({ stdout }),
+      }),
+    ).rejects.toMatchObject({
+      code: "write-policy-secret-scan-incomplete",
+      maxBytes: 1024 * 1024,
+    });
+  });
+});
 
 describe("enforceWritePolicy", () => {
   test("passes when no denyPaths or allowPaths are configured", async () => {
@@ -191,7 +316,7 @@ describe("enforceWritePolicy", () => {
     }
   });
 
-  test("scans only added lines belonging to staged paths", async () => {
+  test("scans added lines even when a diff header cannot be attributed to stagedPaths", async () => {
     const dir = await createTempDir();
     try {
       await expect(
@@ -203,10 +328,38 @@ describe("enforceWritePolicy", () => {
           secretScanEnabled: true,
           runStagedDiffLines: async (params) => {
             params.onStdoutLine("diff --git a/src/other.ts b/src/other.ts");
+            params.onStdoutLine("--- /dev/null");
+            params.onStdoutLine("+++ b/src/other.ts");
+            params.onStdoutLine("@@ -0,0 +1 @@");
             params.onStdoutLine("+const token = 'ghp_123456789012345678901234567890123456';");
+            return stagedDiffResult();
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-detected",
+        rule: "secretScan",
+        detector: "regex:github-pat",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ignores removed and context lines while scanning regular hunks", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
             params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
             params.onStdoutLine("--- a/src/value.ts");
             params.onStdoutLine("+++ b/src/value.ts");
+            params.onStdoutLine("@@ -1,2 +1,2 @@");
             params.onStdoutLine("-const token = 'ghp_123456789012345678901234567890123456';");
             params.onStdoutLine(" const token = 'ghp_123456789012345678901234567890123456';");
             params.onStdoutLine("+export const value = 1;");
@@ -232,6 +385,7 @@ describe("enforceWritePolicy", () => {
           runStagedDiffLines: async (params) => {
             params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
             params.onStdoutLine("+++ b/src/value.ts");
+            params.onStdoutLine("@@ -0,0 +1 @@");
             params.onStdoutLine("+const token = 'ghp_123456789012345678901234567890123456';");
             return stagedDiffResult();
           },
@@ -241,6 +395,96 @@ describe("enforceWritePolicy", () => {
         rule: "secretScan",
         path: "src/value.ts",
         detector: "regex:github-pat",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("uses a finite timeout and disables external and textconv diff drivers", async () => {
+    const dir = await createTempDir();
+    try {
+      let received: Parameters<NonNullable<Parameters<typeof enforceWritePolicy>[0]["runStagedDiffLines"]>>[0] | undefined;
+      await enforceWritePolicy({
+        dir,
+        stagedPaths: ["src/value.ts"],
+        allowPaths: [],
+        denyPaths: [],
+        secretScanEnabled: true,
+        runStagedDiffLines: async (params) => {
+          received = params;
+          params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
+          params.onStdoutLine("--- /dev/null");
+          params.onStdoutLine("+++ b/src/value.ts");
+          params.onStdoutLine("@@ -0,0 +1 @@");
+          params.onStdoutLine("+export const value = 1;");
+          return stagedDiffResult();
+        },
+      });
+
+      expect(received?.timeoutMs).toBe(30_000);
+      expect(received?.args).toContain("--no-ext-diff");
+      expect(received?.args).toContain("--no-textconv");
+      expect(received?.maxStdoutBytes).toBe(8 * 1024 * 1024);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    ["combined diff", ["diff --cc src/value.ts", "@@@ -1,1 -1,1 +1,1 @@@", "++secret"]],
+    ["explicit combined diff", ["diff --combined src/value.ts"]],
+    ["binary marker", ["diff --git a/secret.bin b/secret.bin", "Binary files /dev/null and b/secret.bin differ"]],
+    ["Git binary patch", ["diff --git a/secret.bin b/secret.bin", "GIT binary patch", "literal 1", "AcmZQz"]],
+    ["malformed hunk", [
+      "diff --git a/src/value.ts b/src/value.ts",
+      "--- /dev/null",
+      "+++ b/src/value.ts",
+      "@@ -0,0 +1 @@",
+      "+export const value = 1;",
+      "+export const extra = 2;",
+    ]],
+  ])("fails closed for %s output", async (_name, lines) => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
+            for (const line of lines) params.onStdoutLine(line);
+            return stagedDiffResult();
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        rule: "secretScan",
+        maxBytes: 8 * 1024 * 1024,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("fails closed when patch file coverage does not match staged paths", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async () => stagedDiffResult(),
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        rule: "secretScan",
+        maxBytes: 8 * 1024 * 1024,
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -275,6 +519,116 @@ describe("enforceWritePolicy", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test.each([
+    ["leading space", " leading.ts"],
+    ["trailing space", "trailing.ts "],
+    ["tab", "tab\tname.ts"],
+    ["non-ASCII", "café.ts"],
+    ["quote and backslash", "quote\"back\\slash.ts"],
+    ["embedded b/", "src/a b/value.ts"],
+    ["newline", "line\nbreak.ts"],
+  ])("real Git scan detects a secret in a %s path", async (_name, relativePath) => {
+    const dir = await createRepoWithStagedFile(
+      relativePath,
+      "const token = 'ghp_123456789012345678901234567890123456';\n",
+    );
+    try {
+      const stagedPaths = await getBoundedStagedPaths({ dir });
+      expect(stagedPaths).toEqual([relativePath]);
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths,
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-detected",
+        rule: "secretScan",
+        detector: "regex:github-pat",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("real Git scan fails closed for staged binary content", async () => {
+    const secret = new TextEncoder().encode(
+      "ghp_123456789012345678901234567890123456",
+    );
+    const content = new Uint8Array(secret.length + 2);
+    content[0] = 0;
+    content.set(secret, 1);
+    content[content.length - 1] = 10;
+    const dir = await createRepoWithStagedFile("secret.bin", content);
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["secret.bin"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        rule: "secretScan",
+        maxBytes: 8 * 1024 * 1024,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.each(["rename", "copy"])(
+    "real Git scan cannot bypass a secret in a %s destination",
+    async (operation) => {
+      const dir = await createTempDir();
+      const sourcePath = "source.ts";
+      const destinationPath = `dest b/${operation}\tvalue.ts`;
+      try {
+        await $`git -C ${dir} init`.quiet();
+        await $`git -C ${dir} config user.email test@example.com`.quiet();
+        await $`git -C ${dir} config user.name Test`.quiet();
+        await writeFile(join(dir, sourcePath), "export const value = 1;\n");
+        await runGitForTest(dir, ["add", "--", sourcePath]);
+        await $`git -C ${dir} commit -m baseline`.quiet();
+
+        await mkdir(dirname(join(dir, destinationPath)), { recursive: true });
+        if (operation === "rename") {
+          await runGitForTest(dir, ["mv", "--", sourcePath, destinationPath]);
+        } else {
+          await writeFile(join(dir, destinationPath), "export const value = 1;\n");
+        }
+        await writeFile(
+          join(dir, destinationPath),
+          "export const value = 1;\nconst token = 'ghp_123456789012345678901234567890123456';\n",
+        );
+        await runGitForTest(dir, ["add", "--", destinationPath]);
+
+        const stagedPaths = await getBoundedStagedPaths({ dir });
+        expect(stagedPaths).toContain(destinationPath);
+
+        await expect(
+          enforceWritePolicy({
+            dir,
+            stagedPaths,
+            allowPaths: [],
+            denyPaths: [],
+            secretScanEnabled: true,
+          }),
+        ).rejects.toMatchObject({
+          code: "write-policy-secret-detected",
+          rule: "secretScan",
+          detector: "regex:github-pat",
+        });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("buildWritePolicyRefusalMessage", () => {
