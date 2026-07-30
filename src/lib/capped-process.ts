@@ -3,10 +3,23 @@ type CappedTextDecoderOptions = {
   ignoreBOM?: boolean;
 };
 
+/**
+ * Platform-specific forced-teardown plan.
+ *
+ * Production runs on Linux, where a detached child owns a process group and
+ * negative-PID signaling covers its descendants even after the root exits.
+ * Windows has no equivalent guarantee here: taskkill and direct-child kill are
+ * best-effort because this helper does not own the tree through a Job Object.
+ */
 export type ProcessTreeKillPlan =
   | { kind: "posix-group"; processGroupId: number }
   | { kind: "windows-tree"; command: [string, ...string[]] };
 
+/**
+ * Builds the platform teardown plan without claiming Windows tree ownership.
+ * POSIX returns a process-group target; Windows returns a best-effort taskkill
+ * command because Job Object ownership is not implemented.
+ */
 export function buildProcessTreeKillPlan(
   platform: NodeJS.Platform,
   pid: number,
@@ -21,6 +34,15 @@ export function buildProcessTreeKillPlan(
 
 const WINDOWS_TREE_KILL_TIMEOUT_MS = 100;
 
+/**
+ * Result from a bounded subprocess helper.
+ *
+ * Timeout/cap teardown bounds caller completion on every platform by canceling
+ * both readers. Cleanup of descendants that remain in the spawned process group
+ * is guaranteed only on POSIX. Windows taskkill/direct-kill cleanup is
+ * best-effort; descendants may survive after the root exits because this helper
+ * does not use a Job Object.
+ */
 export type CappedProcessResult = {
   exitCode: number;
   stdout: string;
@@ -124,7 +146,13 @@ async function readTextWithByteLimit(
   };
 }
 
-type CappedProcessParams = {
+/**
+ * Shared capped-process parameters.
+ *
+ * The helper's return is bounded on Windows, but production Linux/POSIX is the
+ * only supported path with process-group ownership for descendant cleanup.
+ */
+export type CappedProcessParams = {
   command: string;
   args: string[];
   cwd?: string;
@@ -274,23 +302,34 @@ async function runCommandWithCappedStreams(
   }
 }
 
+/**
+ * Runs a command with bounded captured output.
+ *
+ * POSIX forced teardown covers the detached process group. Windows bounds this
+ * call via reader cancellation while taskkill/direct kill remain best-effort;
+ * Windows descendant cleanup is not guaranteed without Job Object ownership.
+ */
 export async function runCommandWithCappedOutput(
   params: CappedProcessParams,
 ): Promise<CappedProcessResult> {
   return await runCommandWithCappedStreams(params);
 }
 
-export async function runCommandWithCappedLines(params: {
-  command: string;
-  args: string[];
-  cwd?: string;
-  env?: Record<string, string | undefined>;
-  timeoutMs?: number;
-  maxStdoutBytes: number;
-  maxStderrBytes?: number;
-  stdoutDecoderOptions?: CappedTextDecoderOptions;
+/** Parameters for capped line streaming; platform cleanup limits match the base parameters. */
+export type CappedLinesProcessParams = CappedProcessParams & {
   onStdoutLine(line: string): void;
-}): Promise<CappedProcessResult> {
+};
+
+/**
+ * Runs a command with bounded line-streamed stdout and no retained stdout text.
+ *
+ * POSIX forced teardown covers the detached process group. On Windows, reader
+ * cancellation bounds this call, but taskkill/direct kill are best-effort and
+ * full descendant cleanup is not guaranteed because no Job Object is owned.
+ */
+export async function runCommandWithCappedLines(
+  params: CappedLinesProcessParams,
+): Promise<CappedProcessResult> {
   return await runCommandWithCappedStreams(params, {
     captureText: false,
     onLine: params.onStdoutLine,

@@ -187,11 +187,17 @@ test("output-cap teardown bounds completion when the child ignores SIGTERM", asy
 });
 
 test("fatal final decoder flush tears down a resistant child before rejecting", async () => {
+  // process.execPath is Bun in this suite, and Bun keeps its stdout pipe open
+  // after closeSync(1). Resolve Node so fd 1 closure produces an immediate EOF.
+  const nodeExecutable = Bun.which("node");
+  expect(nodeExecutable).not.toBeNull();
+  if (!nodeExecutable) return;
+
   const operation = runCommandWithCappedOutput({
-    command: "bash",
+    command: nodeExecutable,
     args: [
-      "-c",
-      "printf '\\303'; exec 1>&-; trap '' TERM; sleep 0.8",
+      "-e",
+      "const fs = require('node:fs'); fs.writeSync(1, Buffer.from([0xc3])); fs.closeSync(1); process.on('SIGTERM', () => {}); setTimeout(() => process.exit(0), 800)",
     ],
     maxStdoutBytes: 64,
     stdoutDecoderOptions: { fatal: true },
