@@ -92,7 +92,8 @@ const gistPublisher = createGistPublisher(botUserClient, logger);
 const requestTracker = createRequestTracker();
 
 // Job infrastructure
-const jobQueue = createJobQueue(logger, { requestTracker });
+const jobQueueHardTimeoutMs = parseInt(process.env.JOB_QUEUE_HARD_TIMEOUT_MS ?? "", 10) || undefined;
+const jobQueue = createJobQueue(logger, { requestTracker, hardTimeoutMs: jobQueueHardTimeoutMs });
 const reviewWorkCoordinator = createReviewWorkCoordinator();
 const workspaceManager = createWorkspaceManager(githubApp, logger);
 
