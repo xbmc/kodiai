@@ -17,7 +17,7 @@ async function readTextWithByteLimit(
     captureText?: boolean;
     onLine?: (line: string) => void;
   } = {},
-): Promise<{ text: string; truncated: boolean }> {
+): Promise<{ text: string; truncated: boolean; finalLine?: string }> {
   if (!stream) return { text: "", truncated: false };
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -34,7 +34,8 @@ async function readTextWithByteLimit(
     lineCarry += text;
     let newlineIndex = lineCarry.indexOf("\n");
     while (newlineIndex >= 0) {
-      options.onLine(lineCarry.slice(0, newlineIndex));
+      const line = lineCarry.slice(0, newlineIndex);
+      options.onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
       lineCarry = lineCarry.slice(newlineIndex + 1);
       newlineIndex = lineCarry.indexOf("\n");
     }
@@ -71,11 +72,13 @@ async function readTextWithByteLimit(
     reader.releaseLock();
   }
 
-  if (!truncated && options.onLine && lineCarry.length > 0) {
-    options.onLine(lineCarry);
-  }
-
-  return { text: chunks.join(""), truncated };
+  return {
+    text: chunks.join(""),
+    truncated,
+    finalLine: !truncated && options.onLine && lineCarry.length > 0
+      ? lineCarry
+      : undefined,
+  };
 }
 
 type CappedProcessParams = {
@@ -124,6 +127,10 @@ async function runCommandWithCappedStreams(
     params.maxStderrBytes ?? 64 * 1024,
     kill,
   );
+  // Readers can reject before proc.exited settles. Mark both promises handled
+  // immediately, while still awaiting the originals below to propagate errors.
+  void stdoutPromise.catch(() => undefined);
+  void stderrPromise.catch(() => undefined);
 
   const exitCode = params.timeoutMs && params.timeoutMs > 0 && Number.isFinite(params.timeoutMs)
     ? await raceWithTimeout(proc.exited, {
@@ -136,6 +143,9 @@ async function runCommandWithCappedStreams(
       })
     : await proc.exited;
   const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+  if (!killed && stdoutOptions.onLine && stdout.finalLine !== undefined) {
+    stdoutOptions.onLine(stdout.finalLine);
+  }
   return {
     exitCode,
     stdout: stdout.text,
