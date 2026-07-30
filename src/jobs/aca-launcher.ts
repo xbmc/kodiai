@@ -9,6 +9,7 @@
 import { join } from "node:path";
 import { $ } from "bun";
 import type { Logger } from "pino";
+import { readTextFileBounded } from "../lib/bounded-file.ts";
 import { runWithAbortSignalTimeout, sleep } from "../lib/with-timeout.ts";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ export const APPLICATION_SECRET_NAMES: readonly string[] = [
 ] as const;
 
 export const DEFAULT_ACA_REQUEST_TIMEOUT_MS = 30_000;
+export const MAX_JOB_RESULT_BYTES = 16 * 1024 * 1024;
 const AZURE_TOKEN_CACHE_REFRESH_MARGIN_MS = 60_000;
 const AZURE_TOKEN_CACHE_DEFAULT_TTL_MS = 5 * 60_000;
 const MAX_DIAGNOSTICS_TAIL_BYTES = 256 * 1024;
@@ -582,7 +584,7 @@ export async function cancelAcaJob(opts: {
  */
 export async function readJobResult(workspaceDir: string): Promise<unknown> {
   const resultPath = join(workspaceDir, "result.json");
-  const text = await Bun.file(resultPath).text();
+  const text = await readTextFileBounded(resultPath, MAX_JOB_RESULT_BYTES);
   return JSON.parse(text) as unknown;
 }
 
