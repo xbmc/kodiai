@@ -4,6 +4,27 @@ import {
   runCommandWithCappedOutput,
 } from "./capped-process.ts";
 
+const OUTER_TIMEOUT = Symbol("outer timeout");
+
+async function settleWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T | typeof OUTER_TIMEOUT> {
+  return await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => resolve(OUTER_TIMEOUT), timeoutMs);
+    void promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
 test("streams complete stdout lines without retaining stdout", async () => {
   const lines: string[] = [];
   const result = await runCommandWithCappedLines({
@@ -110,4 +131,56 @@ test("rejects invalid UTF-8 when fatal stdout decoding is requested", async () =
       stdoutDecoderOptions: { fatal: true, ignoreBOM: true },
     }),
   ).rejects.toBeInstanceOf(TypeError);
+});
+
+test("timeout bounds completion when the direct child ignores SIGTERM", async () => {
+  const outcome = await settleWithin(runCommandWithCappedLines({
+    command: process.execPath,
+    args: [
+      "-e",
+      "process.on('SIGTERM', () => {}); process.stdout.write('ready\\n'); setTimeout(() => process.exit(0), 800)",
+    ],
+    timeoutMs: 30,
+    maxStdoutBytes: 64,
+    onStdoutLine: () => undefined,
+  }), 300);
+
+  expect(outcome).not.toBe(OUTER_TIMEOUT);
+  if (outcome === OUTER_TIMEOUT) return;
+  expect(outcome.timedOut).toBe(true);
+  expect(outcome.exitCode).toBe(124);
+});
+
+test("timeout bounds completion when a descendant retains the output pipes", async () => {
+  const outcome = await settleWithin(runCommandWithCappedLines({
+    command: process.execPath,
+    args: [
+      "-e",
+      "const { spawn } = require('node:child_process'); const child = spawn(process.execPath, ['-e', 'setTimeout(() => process.exit(0), 800)'], { stdio: 'inherit' }); child.unref(); process.exit(0)",
+    ],
+    timeoutMs: 30,
+    maxStdoutBytes: 64,
+    onStdoutLine: () => undefined,
+  }), 300);
+
+  expect(outcome).not.toBe(OUTER_TIMEOUT);
+  if (outcome === OUTER_TIMEOUT) return;
+  expect(outcome.timedOut).toBe(true);
+  expect(outcome.exitCode).toBe(124);
+});
+
+test("output-cap teardown bounds completion when the child ignores SIGTERM", async () => {
+  const outcome = await settleWithin(runCommandWithCappedOutput({
+    command: process.execPath,
+    args: [
+      "-e",
+      "process.on('SIGTERM', () => {}); process.stdout.write('123456'); setTimeout(() => process.exit(0), 800)",
+    ],
+    maxStdoutBytes: 3,
+  }), 300);
+
+  expect(outcome).not.toBe(OUTER_TIMEOUT);
+  if (outcome === OUTER_TIMEOUT) return;
+  expect(outcome.stdout).toBe("123");
+  expect(outcome.stdoutTruncated).toBe(true);
 });

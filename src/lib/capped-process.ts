@@ -1,5 +1,3 @@
-import { raceWithTimeout } from "./with-timeout.ts";
-
 type CappedTextDecoderOptions = {
   fatal?: boolean;
   ignoreBOM?: boolean;
@@ -22,6 +20,7 @@ async function readTextWithByteLimit(
     captureText?: boolean;
     onLine?: (line: string) => void;
     decoderOptions?: CappedTextDecoderOptions;
+    teardownSignal?: AbortSignal;
   } = {},
 ): Promise<{ text: string; truncated: boolean; finalLine?: string }> {
   if (!stream) return { text: "", truncated: false };
@@ -32,6 +31,10 @@ async function readTextWithByteLimit(
   let lineCarry = "";
   let bytesRead = 0;
   let truncated = false;
+  const cancelReader = (): void => {
+    void reader.cancel().catch(() => undefined);
+  };
+  options.teardownSignal?.addEventListener("abort", cancelReader, { once: true });
 
   const acceptDecodedText = (text: string): void => {
     if (captureText) chunks.push(text);
@@ -70,11 +73,17 @@ async function readTextWithByteLimit(
       acceptDecodedText(decoder.decode(value, { stream: true }));
     }
   } catch (error) {
-    onLimit();
+    const teardownAlreadyForced = options.teardownSignal?.aborted ?? false;
+    if (!teardownAlreadyForced) onLimit();
     await reader.cancel().catch(() => undefined);
-    throw error;
+    if (!teardownAlreadyForced) throw error;
   } finally {
-    acceptDecodedText(decoder.decode());
+    try {
+      acceptDecodedText(decoder.decode());
+    } catch (error) {
+      if (!options.teardownSignal?.aborted) throw error;
+    }
+    options.teardownSignal?.removeEventListener("abort", cancelReader);
     reader.releaseLock();
   }
 
@@ -106,62 +115,93 @@ async function runCommandWithCappedStreams(
     decoderOptions?: CappedTextDecoderOptions;
   } = {},
 ): Promise<CappedProcessResult> {
+  const supportsProcessGroups = process.platform !== "win32";
   const proc = Bun.spawn([params.command, ...params.args], {
     cwd: params.cwd,
     env: params.env ? { ...process.env, ...params.env } : undefined,
     stdout: "pipe",
     stderr: "pipe",
+    detached: supportsProcessGroups,
   });
-  let killed = false;
+  const teardownController = new AbortController();
+  let forcedTeardown = false;
   let timedOut = false;
-  const kill = (): void => {
-    if (killed) return;
-    killed = true;
+
+  let resolveForcedExit: (exitCode: number) => void = () => undefined;
+  const forcedExit = new Promise<number>((resolve) => {
+    resolveForcedExit = resolve;
+  });
+
+  const signalProcessTree = (signal: NodeJS.Signals): void => {
+    if (supportsProcessGroups) {
+      try {
+        process.kill(-proc.pid, signal);
+        return;
+      } catch {
+        // Fall back to signaling the direct child if the group no longer exists.
+      }
+    }
     try {
-      proc.kill();
+      proc.kill(signal);
     } catch {
       // Ignore kill races; the process may have already exited.
     }
   };
 
+  const forceTeardown = (): void => {
+    if (forcedTeardown) return;
+    forcedTeardown = true;
+    teardownController.abort();
+    signalProcessTree("SIGTERM");
+    signalProcessTree("SIGKILL");
+    resolveForcedExit(137);
+  };
+
   const stdoutPromise = readTextWithByteLimit(
     proc.stdout,
     params.maxStdoutBytes,
-    kill,
-    { ...stdoutOptions, decoderOptions: params.stdoutDecoderOptions },
+    forceTeardown,
+    {
+      ...stdoutOptions,
+      decoderOptions: params.stdoutDecoderOptions,
+      teardownSignal: teardownController.signal,
+    },
   );
   const stderrPromise = readTextWithByteLimit(
     proc.stderr,
     params.maxStderrBytes ?? 64 * 1024,
-    kill,
+    forceTeardown,
+    { teardownSignal: teardownController.signal },
   );
   // Readers can reject before proc.exited settles. Mark both promises handled
   // immediately, while still awaiting the originals below to propagate errors.
   void stdoutPromise.catch(() => undefined);
   void stderrPromise.catch(() => undefined);
 
-  const exitCode = params.timeoutMs && params.timeoutMs > 0 && Number.isFinite(params.timeoutMs)
-    ? await raceWithTimeout(proc.exited, {
-        timeoutMs: params.timeoutMs,
-        timeoutValue: 124,
-        onTimeout: () => {
-          timedOut = true;
-          kill();
-        },
-      })
-    : await proc.exited;
-  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
-  if (!killed && stdoutOptions.onLine && stdout.finalLine !== undefined) {
-    stdoutOptions.onLine(stdout.finalLine);
+  const timeout = params.timeoutMs && params.timeoutMs > 0 && Number.isFinite(params.timeoutMs)
+    ? setTimeout(() => {
+        timedOut = true;
+        forceTeardown();
+      }, params.timeoutMs)
+    : undefined;
+
+  try {
+    const processExitCode = await Promise.race([proc.exited, forcedExit]);
+    const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+    if (!forcedTeardown && stdoutOptions.onLine && stdout.finalLine !== undefined) {
+      stdoutOptions.onLine(stdout.finalLine);
+    }
+    return {
+      exitCode: timedOut ? 124 : processExitCode,
+      stdout: stdout.text,
+      stderr: stderr.text,
+      timedOut,
+      stdoutTruncated: stdout.truncated,
+      stderrTruncated: stderr.truncated,
+    };
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
-  return {
-    exitCode,
-    stdout: stdout.text,
-    stderr: stderr.text,
-    timedOut,
-    stdoutTruncated: stdout.truncated,
-    stderrTruncated: stderr.truncated,
-  };
 }
 
 export async function runCommandWithCappedOutput(
