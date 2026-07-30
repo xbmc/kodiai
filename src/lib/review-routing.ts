@@ -73,6 +73,8 @@ export function resolveReviewTaskRouting(params: {
   };
 }
 
+const HEADER_FILE_EXTENSION_PATTERN = /\.(h|hh|hpp|hxx|h\+\+)$/;
+
 export function hasSemanticReviewFanout(changedFiles: readonly string[] | undefined): boolean {
   if (!changedFiles || changedFiles.length === 0) {
     return false;
@@ -81,8 +83,13 @@ export function hasSemanticReviewFanout(changedFiles: readonly string[] | undefi
   return changedFiles.some((filePath) => {
     const normalized = filePath.toLowerCase().replace(/\\/g, "/");
     const isGuiPath = normalized.includes("/guilib/") || normalized.startsWith("guilib/");
+    // A changed C/C++/Objective-C header is an interface change: every file
+    // that #includes it is a hidden reviewer of this diff, regardless of repo
+    // or naming convention -- not just xbmc/xbmc's own GUI subsystem.
+    const isHeaderFile = HEADER_FILE_EXTENSION_PATTERN.test(normalized);
 
     return isGuiPath
+      || isHeaderFile
       || normalized.includes("guiwindow")
       || normalized.includes("guicontrol")
       || normalized.includes("buttoncontrol")

@@ -96,6 +96,26 @@ describe("review-routing", () => {
     })).toBe(SEMANTIC_FANOUT_REVIEW_MAX_TURNS);
   });
 
+  test("raises low-risk full-review turn budget for any changed C/C++/Objective-C header, not just xbmc/xbmc GUI paths", () => {
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_FULL,
+      timeoutRiskLevel: "low",
+      baseMaxTurns: 25,
+      changedFiles: [
+        "XBMC Remote/AppDelegate.m",
+        "XBMC Remote/ECSlidingViewController/ECSlidingViewController.h",
+        "XBMC Remote/NowPlaying.h",
+      ],
+    })).toBe(SEMANTIC_FANOUT_REVIEW_MAX_TURNS);
+
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_FULL,
+      timeoutRiskLevel: "low",
+      baseMaxTurns: 25,
+      changedFiles: ["include/widget.hpp"],
+    })).toBe(SEMANTIC_FANOUT_REVIEW_MAX_TURNS);
+  });
+
   test("does not raise turn budget for unrelated event or message paths", () => {
     expect(resolveReviewMaxTurnsOverride({
       taskType: TASK_TYPES.REVIEW_FULL,
