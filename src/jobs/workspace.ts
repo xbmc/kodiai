@@ -122,6 +122,7 @@ export const STAGED_SECRET_SCAN_MAX_BYTES = 8 * 1024 * 1024;
 export const STAGED_PATHS_MAX_BYTES = 1024 * 1024;
 export const STAGED_PATHS_MAX_FILES = 10_000;
 export const STAGED_GIT_TIMEOUT_MS = 30_000;
+export const STAGED_GIT_CONTROL_MAX_BYTES = 64 * 1024;
 
 async function runGitNetworkCommand(options: {
   args: string[];
@@ -320,6 +321,13 @@ type RunStagedPathCommand = (
   params: Parameters<typeof runCommandWithCappedOutput>[0],
 ) => ReturnType<typeof runCommandWithCappedOutput>;
 
+type RunGitControlCommand = RunStagedPathCommand;
+
+export type StagedSnapshot = {
+  parentOid: string;
+  treeOid: string;
+};
+
 function incompleteStagedScan(maxBytes: number): WritePolicyError {
   return new WritePolicyError(
     "write-policy-secret-scan-incomplete",
@@ -335,10 +343,102 @@ function processResultIsIncomplete(result: CappedProcessResult): boolean {
     || result.stderrTruncated;
 }
 
-export async function getBoundedStagedPaths(options: {
+function isGitOid(value: string): boolean {
+  return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value);
+}
+
+function assertStagedSnapshot(snapshot: StagedSnapshot, maxBytes: number): void {
+  if (!isGitOid(snapshot.parentOid) || !isGitOid(snapshot.treeOid)) {
+    throw incompleteStagedScan(maxBytes);
+  }
+}
+
+function parseGitOidOutput(stdout: string): string | undefined {
+  const match = /^((?:[0-9a-f]{40}|[0-9a-f]{64}))\r?\n?$/.exec(stdout);
+  return match?.[1];
+}
+
+async function runGitControl(options: {
+  dir: string;
+  args: string[];
+  runGitControlCommand: RunGitControlCommand;
+}): Promise<CappedProcessResult> {
+  let result: CappedProcessResult;
+  try {
+    result = await options.runGitControlCommand({
+      command: "git",
+      args: options.args,
+      cwd: options.dir,
+      timeoutMs: STAGED_GIT_TIMEOUT_MS,
+      maxStdoutBytes: STAGED_GIT_CONTROL_MAX_BYTES,
+    });
+  } catch {
+    throw incompleteStagedScan(STAGED_GIT_CONTROL_MAX_BYTES);
+  }
+  if (processResultIsIncomplete(result)) {
+    throw incompleteStagedScan(STAGED_GIT_CONTROL_MAX_BYTES);
+  }
+  return result;
+}
+
+export async function captureStagedSnapshot(options: {
+  dir: string;
+  runGitControlCommand?: RunGitControlCommand;
+}): Promise<StagedSnapshot> {
+  const runner = options.runGitControlCommand ?? runCommandWithCappedOutput;
+  const parentResult = await runGitControl({
+    dir: options.dir,
+    args: ["rev-parse", "--verify", "HEAD^{commit}"],
+    runGitControlCommand: runner,
+  });
+  const treeResult = await runGitControl({
+    dir: options.dir,
+    args: ["write-tree"],
+    runGitControlCommand: runner,
+  });
+  const parentOid = parseGitOidOutput(parentResult.stdout);
+  const treeOid = parseGitOidOutput(treeResult.stdout);
+  if (!parentOid || !treeOid) {
+    throw incompleteStagedScan(STAGED_GIT_CONTROL_MAX_BYTES);
+  }
+  return { parentOid, treeOid };
+}
+
+export async function commitStagedSnapshot(options: StagedSnapshot & {
+  dir: string;
+  commitMessage: string;
+  runGitControlCommand?: RunGitControlCommand;
+}): Promise<string> {
+  assertStagedSnapshot(options, STAGED_GIT_CONTROL_MAX_BYTES);
+  const runner = options.runGitControlCommand ?? runCommandWithCappedOutput;
+  const commitResult = await runGitControl({
+    dir: options.dir,
+    args: [
+      "commit-tree",
+      options.treeOid,
+      "-p",
+      options.parentOid,
+      "-m",
+      options.commitMessage,
+    ],
+    runGitControlCommand: runner,
+  });
+  const commitOid = parseGitOidOutput(commitResult.stdout);
+  if (!commitOid) throw incompleteStagedScan(STAGED_GIT_CONTROL_MAX_BYTES);
+
+  await runGitControl({
+    dir: options.dir,
+    args: ["update-ref", "HEAD", commitOid, options.parentOid],
+    runGitControlCommand: runner,
+  });
+  return commitOid;
+}
+
+export async function getBoundedStagedPaths(options: StagedSnapshot & {
   dir: string;
   runStagedPathCommand?: RunStagedPathCommand;
 }): Promise<string[]> {
+  assertStagedSnapshot(options, STAGED_PATHS_MAX_BYTES);
   const runStagedPathCommand = options.runStagedPathCommand ?? runCommandWithCappedOutput;
   let result: CappedProcessResult;
   try {
@@ -348,7 +448,8 @@ export async function getBoundedStagedPaths(options: {
         "-c",
         "core.quotePath=false",
         "diff",
-        "--cached",
+        options.parentOid,
+        options.treeOid,
         "--name-only",
         "-z",
         "--no-ext-diff",
@@ -358,6 +459,7 @@ export async function getBoundedStagedPaths(options: {
       cwd: options.dir,
       timeoutMs: STAGED_GIT_TIMEOUT_MS,
       maxStdoutBytes: STAGED_PATHS_MAX_BYTES,
+      stdoutDecoderOptions: { fatal: true, ignoreBOM: true },
     });
   } catch {
     throw incompleteStagedScan(STAGED_PATHS_MAX_BYTES);
@@ -370,7 +472,6 @@ export async function getBoundedStagedPaths(options: {
   if (result.stdout.length === 0) return [];
   if (
     !result.stdout.endsWith("\0")
-    || result.stdout.includes("\uFFFD")
     || new TextEncoder().encode(result.stdout).byteLength > STAGED_PATHS_MAX_BYTES
   ) {
     throw incompleteStagedScan(STAGED_PATHS_MAX_BYTES);
@@ -411,12 +512,13 @@ function isRegularDiffMetadata(line: string): boolean {
     || line.startsWith("+++ ");
 }
 
-export async function enforceWritePolicy(options: {
+export async function enforceWritePolicy(options: StagedSnapshot & {
   dir: string;
   stagedPaths: string[];
   allowPaths: string[];
   denyPaths: string[];
   secretScanEnabled: boolean;
+  runStagedPathCommand?: RunStagedPathCommand;
   runStagedDiffLines?: RunStagedDiffLines;
 }): Promise<void> {
   const {
@@ -427,6 +529,20 @@ export async function enforceWritePolicy(options: {
     secretScanEnabled,
     runStagedDiffLines = runCommandWithCappedLines,
   } = options;
+
+  assertStagedSnapshot(options, STAGED_SECRET_SCAN_MAX_BYTES);
+  const verifiedStagedPaths = await getBoundedStagedPaths({
+    dir,
+    parentOid: options.parentOid,
+    treeOid: options.treeOid,
+    runStagedPathCommand: options.runStagedPathCommand,
+  });
+  if (
+    verifiedStagedPaths.length !== stagedPaths.length
+    || verifiedStagedPaths.some((path, index) => path !== stagedPaths[index])
+  ) {
+    throw incompleteStagedScan(STAGED_PATHS_MAX_BYTES);
+  }
 
   let denyMatchers: Array<(path: string) => boolean>;
   try {
@@ -481,18 +597,35 @@ export async function enforceWritePolicy(options: {
     const regexHits = new Map<string, { path?: string }>();
     let entropyHit: { message: string; path?: string } | undefined;
     let currentPath: string | undefined;
+    let currentFileAddedLines: string[] = [];
     let sawRegularDiff = false;
-    let regularDiffCount = 0;
     let insideHunk = false;
     let oldLinesRemaining = 0;
     let newLinesRemaining = 0;
     let canAcceptNoNewlineMarker = false;
     let parseIncomplete = false;
+    const flushCurrentFileRegexes = (): void => {
+      if (currentFileAddedLines.length === 0) return;
+      const addedText = currentFileAddedLines.join("\n");
+      for (const { name, regex } of regexDetectors) {
+        if (!regexHits.has(name) && regex.test(addedText)) {
+          regexHits.set(name, { path: currentPath });
+        }
+      }
+      currentFileAddedLines = [];
+    };
     let scanResult: Awaited<ReturnType<RunStagedDiffLines>>;
     try {
       scanResult = await runStagedDiffLines({
         command: "git",
-        args: ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--"],
+        args: [
+          "diff",
+          options.parentOid,
+          options.treeOid,
+          "--no-ext-diff",
+          "--no-textconv",
+          "--",
+        ],
         cwd: dir,
         timeoutMs: STAGED_GIT_TIMEOUT_MS,
         maxStdoutBytes: STAGED_SECRET_SCAN_MAX_BYTES,
@@ -511,8 +644,8 @@ export async function enforceWritePolicy(options: {
 
           if (line.startsWith("diff --git ")) {
             if (insideHunk) parseIncomplete = true;
+            flushCurrentFileRegexes();
             sawRegularDiff = true;
-            regularDiffCount += 1;
             currentPath = bestEffortDiffPath(line, stagedPathSet);
             insideHunk = false;
             oldLinesRemaining = 0;
@@ -575,11 +708,7 @@ export async function enforceWritePolicy(options: {
 
           canAcceptNoNewlineMarker = true;
           if (addedLine !== undefined) {
-            for (const { name, regex } of regexDetectors) {
-              if (!regexHits.has(name) && regex.test(addedLine)) {
-                regexHits.set(name, { path: currentPath });
-              }
-            }
+            currentFileAddedLines.push(addedLine);
             if (!entropyHit) {
               const message = findHighEntropyTokens([addedLine]);
               if (message) entropyHit = { message, path: currentPath };
@@ -595,11 +724,12 @@ export async function enforceWritePolicy(options: {
       throw incompleteStagedScan(STAGED_SECRET_SCAN_MAX_BYTES);
     }
 
+    flushCurrentFileRegexes();
+
     if (
       processResultIsIncomplete(scanResult)
       || parseIncomplete
       || insideHunk
-      || regularDiffCount !== stagedPaths.length
     ) {
       throw incompleteStagedScan(STAGED_SECRET_SCAN_MAX_BYTES);
     }
@@ -646,21 +776,22 @@ export async function createBranchCommitAndPush(options: {
     await $`git -C ${dir} add -A`.quiet();
 
     // Ensure there is something to commit.
-    const stagedPaths = await getBoundedStagedPaths({ dir });
+    const snapshot = await captureStagedSnapshot({ dir });
+    const stagedPaths = await getBoundedStagedPaths({ dir, ...snapshot });
     if (stagedPaths.length === 0) {
       throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }
 
     await enforceWritePolicy({
       dir,
+      ...snapshot,
       stagedPaths,
       allowPaths: options.policy?.allowPaths ?? [],
       denyPaths: options.policy?.denyPaths ?? [],
       secretScanEnabled: options.policy?.secretScanEnabled ?? true,
     });
 
-    await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
-    const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
+    const headSha = await commitStagedSnapshot({ dir, ...snapshot, commitMessage });
 
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
@@ -698,21 +829,22 @@ export async function commitAndPushToRemoteRef(options: {
   try {
     await $`git -C ${dir} add -A`.quiet();
 
-    const stagedPaths = await getBoundedStagedPaths({ dir });
+    const snapshot = await captureStagedSnapshot({ dir });
+    const stagedPaths = await getBoundedStagedPaths({ dir, ...snapshot });
     if (stagedPaths.length === 0) {
       throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }
 
     await enforceWritePolicy({
       dir,
+      ...snapshot,
       stagedPaths,
       allowPaths: options.policy?.allowPaths ?? [],
       denyPaths: options.policy?.denyPaths ?? [],
       secretScanEnabled: options.policy?.secretScanEnabled ?? true,
     });
 
-    await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
-    const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
+    const headSha = await commitStagedSnapshot({ dir, ...snapshot, commitMessage });
 
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();

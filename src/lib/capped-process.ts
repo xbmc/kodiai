@@ -1,5 +1,10 @@
 import { raceWithTimeout } from "./with-timeout.ts";
 
+type CappedTextDecoderOptions = {
+  fatal?: boolean;
+  ignoreBOM?: boolean;
+};
+
 export type CappedProcessResult = {
   exitCode: number;
   stdout: string;
@@ -16,11 +21,12 @@ async function readTextWithByteLimit(
   options: {
     captureText?: boolean;
     onLine?: (line: string) => void;
+    decoderOptions?: CappedTextDecoderOptions;
   } = {},
 ): Promise<{ text: string; truncated: boolean; finalLine?: string }> {
   if (!stream) return { text: "", truncated: false };
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", options.decoderOptions);
   const captureText = options.captureText ?? true;
   const chunks: string[] = [];
   let lineCarry = "";
@@ -89,6 +95,7 @@ type CappedProcessParams = {
   timeoutMs?: number;
   maxStdoutBytes: number;
   maxStderrBytes?: number;
+  stdoutDecoderOptions?: CappedTextDecoderOptions;
 };
 
 async function runCommandWithCappedStreams(
@@ -96,6 +103,7 @@ async function runCommandWithCappedStreams(
   stdoutOptions: {
     captureText?: boolean;
     onLine?: (line: string) => void;
+    decoderOptions?: CappedTextDecoderOptions;
   } = {},
 ): Promise<CappedProcessResult> {
   const proc = Bun.spawn([params.command, ...params.args], {
@@ -120,7 +128,7 @@ async function runCommandWithCappedStreams(
     proc.stdout,
     params.maxStdoutBytes,
     kill,
-    stdoutOptions,
+    { ...stdoutOptions, decoderOptions: params.stdoutDecoderOptions },
   );
   const stderrPromise = readTextWithByteLimit(
     proc.stderr,
@@ -170,6 +178,7 @@ export async function runCommandWithCappedLines(params: {
   timeoutMs?: number;
   maxStdoutBytes: number;
   maxStderrBytes?: number;
+  stdoutDecoderOptions?: CappedTextDecoderOptions;
   onStdoutLine(line: string): void;
 }): Promise<CappedProcessResult> {
   return await runCommandWithCappedStreams(params, {

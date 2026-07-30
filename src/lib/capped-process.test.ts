@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { runCommandWithCappedLines } from "./capped-process.ts";
+import {
+  runCommandWithCappedLines,
+  runCommandWithCappedOutput,
+} from "./capped-process.ts";
 
 test("streams complete stdout lines without retaining stdout", async () => {
   const lines: string[] = [];
@@ -82,4 +85,29 @@ test("strips CRLF terminators split across stdout chunks", async () => {
   });
 
   expect(lines).toEqual(["a", "b"]);
+});
+
+test("preserves an initial UTF-8 BOM when requested", async () => {
+  const result = await runCommandWithCappedOutput({
+    command: process.execPath,
+    args: [
+      "-e",
+      "process.stdout.write(Buffer.from([0xef, 0xbb, 0xbf, 0x70, 0x61, 0x74, 0x68, 0x00]))",
+    ],
+    maxStdoutBytes: 64,
+    stdoutDecoderOptions: { fatal: true, ignoreBOM: true },
+  });
+
+  expect(result.stdout).toBe("\uFEFFpath\0");
+});
+
+test("rejects invalid UTF-8 when fatal stdout decoding is requested", async () => {
+  await expect(
+    runCommandWithCappedOutput({
+      command: process.execPath,
+      args: ["-e", "process.stdout.write(Buffer.from([0x66, 0x80, 0x00]))"],
+      maxStdoutBytes: 64,
+      stdoutDecoderOptions: { fatal: true, ignoreBOM: true },
+    }),
+  ).rejects.toBeInstanceOf(TypeError);
 });
