@@ -5,6 +5,7 @@ import { scanLinesForFabricatedContent } from "../lib/fabricated-content-detecto
 import type { MentionEvent } from "./mention-types.ts";
 
 export const FABRICATED_CONTENT_DIFF_MAX_BYTES = 2 * 1024 * 1024;
+export const FABRICATED_CONTENT_MAX_WARNINGS = 100;
 
 export type FabricatedContentScanResult = {
   warnings: string[];
@@ -19,7 +20,8 @@ export async function scanDiffForFabricatedContent(
   dir: string,
   runDiffLines: RunDiffLines = runCommandWithCappedLines,
 ): Promise<FabricatedContentScanResult> {
-  const addedLines: string[] = [];
+  const warnings = new Set<string>();
+  let insideHunk = false;
   let result: Awaited<ReturnType<RunDiffLines>>;
   try {
     result = await runDiffLines({
@@ -27,8 +29,20 @@ export async function scanDiffForFabricatedContent(
       args: ["-C", dir, "diff", "HEAD~1", "HEAD"],
       maxStdoutBytes: FABRICATED_CONTENT_DIFF_MAX_BYTES,
       onStdoutLine: (line) => {
-        if (line.startsWith("+") && !line.startsWith("+++")) {
-          addedLines.push(line);
+        if (line.startsWith("diff --git ")) {
+          insideHunk = false;
+          return;
+        }
+        if (line.startsWith("@@")) {
+          insideHunk = true;
+          return;
+        }
+        if (!insideHunk || !line.startsWith("+") || warnings.size >= FABRICATED_CONTENT_MAX_WARNINGS) {
+          return;
+        }
+        for (const warning of scanLinesForFabricatedContent([line])) {
+          warnings.add(warning);
+          if (warnings.size >= FABRICATED_CONTENT_MAX_WARNINGS) break;
         }
       },
     });
@@ -36,20 +50,24 @@ export async function scanDiffForFabricatedContent(
     return { warnings: [], complete: false, reason: "command-failed" };
   }
 
+  if (result.timedOut) {
+    return { warnings: [], complete: false, reason: "command-failed" };
+  }
+
   if (result.stdoutTruncated) {
     return {
-      warnings: scanLinesForFabricatedContent(addedLines),
+      warnings: [...warnings],
       complete: false,
       reason: "output-truncated",
     };
   }
 
-  if (result.exitCode !== 0 || result.timedOut) {
+  if (result.exitCode !== 0) {
     return { warnings: [], complete: false, reason: "command-failed" };
   }
 
   return {
-    warnings: scanLinesForFabricatedContent(addedLines),
+    warnings: [...warnings],
     complete: true,
   };
 }
