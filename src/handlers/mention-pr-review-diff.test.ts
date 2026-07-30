@@ -43,6 +43,7 @@ describe("scanDiffForFabricatedContent", () => {
       "diff",
       "--no-ext-diff",
       "--no-textconv",
+      "--text",
       "HEAD~1",
       "HEAD",
     ]);
@@ -298,6 +299,38 @@ describe("scanDiffForFabricatedContent", () => {
       await $`git -C ${dir} add -- generated.txt`.quiet();
       await $`git -C ${dir} commit -m suspicious`.quiet();
       await $`git -C ${dir} config diff.external true`.quiet();
+
+      const result = await scanDiffForFabricatedContent(dir);
+
+      expect(result).toEqual({
+        warnings: [
+          `Suspicious low-entropy hex pattern in added line: \`${repeatedHex}...\``,
+        ],
+        complete: true,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("forces raw hunks for a custom diff driver marked binary", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-fabricated-binary-scan-"));
+    const repeatedHex = "a".repeat(40);
+
+    try {
+      await $`git -C ${dir} init --initial-branch=main`.quiet();
+      await $`git -C ${dir} config user.email test@example.com`.quiet();
+      await $`git -C ${dir} config user.name "Test User"`.quiet();
+      await Bun.write(join(dir, ".gitattributes"), "generated.txt diff=custom\n");
+      await Bun.write(join(dir, "generated.txt"), "baseline\n");
+      await $`git -C ${dir} add -- .gitattributes generated.txt`.quiet();
+      await $`git -C ${dir} commit -m baseline`.quiet();
+
+      await $`git -C ${dir} config diff.custom.textconv true`.quiet();
+      await $`git -C ${dir} config diff.custom.binary true`.quiet();
+      await Bun.write(join(dir, "generated.txt"), `baseline\nhash=${repeatedHex}\n`);
+      await $`git -C ${dir} add -- generated.txt`.quiet();
+      await $`git -C ${dir} commit -m suspicious`.quiet();
 
       const result = await scanDiffForFabricatedContent(dir);
 

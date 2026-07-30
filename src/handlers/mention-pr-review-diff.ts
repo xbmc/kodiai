@@ -36,6 +36,7 @@ export async function scanDiffForFabricatedContent(
         "diff",
         "--no-ext-diff",
         "--no-textconv",
+        "--text",
         "HEAD~1",
         "HEAD",
       ],
