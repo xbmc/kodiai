@@ -6,6 +6,8 @@ import type { MentionEvent } from "./mention-types.ts";
 
 export const FABRICATED_CONTENT_DIFF_MAX_BYTES = 2 * 1024 * 1024;
 export const FABRICATED_CONTENT_MAX_WARNINGS = 100;
+const FABRICATED_CONTENT_WARNING_OVERFLOW =
+  "Additional fabricated-content warnings omitted after reaching the limit.";
 
 export type FabricatedContentScanResult = {
   warnings: string[];
@@ -21,7 +23,8 @@ export async function scanDiffForFabricatedContent(
   runDiffLines: RunDiffLines = runCommandWithCappedLines,
 ): Promise<FabricatedContentScanResult> {
   const warnings = new Set<string>();
-  let insideHunk = false;
+  let warningOverflow = false;
+  let hunkPrefixWidth = 0;
   let result: Awaited<ReturnType<RunDiffLines>>;
   try {
     result = await runDiffLines({
@@ -29,20 +32,39 @@ export async function scanDiffForFabricatedContent(
       args: ["-C", dir, "diff", "HEAD~1", "HEAD"],
       maxStdoutBytes: FABRICATED_CONTENT_DIFF_MAX_BYTES,
       onStdoutLine: (line) => {
-        if (line.startsWith("diff --git ")) {
-          insideHunk = false;
+        if (
+          line.startsWith("diff --git ")
+          || line.startsWith("diff --cc ")
+          || line.startsWith("diff --combined ")
+        ) {
+          hunkPrefixWidth = 0;
           return;
         }
-        if (line.startsWith("@@")) {
-          insideHunk = true;
+
+        const hunkHeader = /^(@{2,}) /.exec(line);
+        const hunkMarkerWidth = hunkHeader?.[1]?.length;
+        if (hunkMarkerWidth !== undefined) {
+          hunkPrefixWidth = hunkMarkerWidth - 1;
           return;
         }
-        if (!insideHunk || !line.startsWith("+") || warnings.size >= FABRICATED_CONTENT_MAX_WARNINGS) {
+
+        if (hunkPrefixWidth === 0) {
           return;
         }
-        for (const warning of scanLinesForFabricatedContent([line])) {
-          warnings.add(warning);
-          if (warnings.size >= FABRICATED_CONTENT_MAX_WARNINGS) break;
+
+        const hunkPrefix = line.slice(0, hunkPrefixWidth);
+        if (!hunkPrefix.includes("+")) {
+          return;
+        }
+
+        const addedContent = `+${line.slice(hunkPrefixWidth)}`;
+        for (const warning of scanLinesForFabricatedContent([addedContent])) {
+          if (warnings.has(warning)) continue;
+          if (warnings.size < FABRICATED_CONTENT_MAX_WARNINGS - 1) {
+            warnings.add(warning);
+          } else {
+            warningOverflow = true;
+          }
         }
       },
     });
@@ -56,7 +78,9 @@ export async function scanDiffForFabricatedContent(
 
   if (result.stdoutTruncated) {
     return {
-      warnings: [...warnings],
+      warnings: warningOverflow
+        ? [...warnings, FABRICATED_CONTENT_WARNING_OVERFLOW]
+        : [...warnings],
       complete: false,
       reason: "output-truncated",
     };
@@ -67,7 +91,9 @@ export async function scanDiffForFabricatedContent(
   }
 
   return {
-    warnings: [...warnings],
+    warnings: warningOverflow
+      ? [...warnings, FABRICATED_CONTENT_WARNING_OVERFLOW]
+      : [...warnings],
     complete: true,
   };
 }

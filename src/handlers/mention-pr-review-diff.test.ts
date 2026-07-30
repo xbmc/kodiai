@@ -148,10 +148,10 @@ describe("scanDiffForFabricatedContent", () => {
     ]);
   });
 
-  test("caps distinct detector warnings", async () => {
+  test("caps distinct detector warnings and represents overflow", async () => {
     const result = await scanDiffForFabricatedContent("/tmp/workspace", async (params) => {
-      params.onStdoutLine("@@ -0,0 +1,1000 @@");
-      for (let index = 0; index < 1_000; index += 1) {
+      params.onStdoutLine("@@ -0,0 +1,101 @@");
+      for (let index = 0; index < 101; index += 1) {
         const hex = index
           .toString(2)
           .padStart(40, "0")
@@ -171,5 +171,70 @@ describe("scanDiffForFabricatedContent", () => {
 
     expect(result.warnings).toHaveLength(FABRICATED_CONTENT_MAX_WARNINGS);
     expect(new Set(result.warnings).size).toBe(FABRICATED_CONTENT_MAX_WARNINGS);
+    expect(result.warnings.filter((warning) => (
+      warning === "Additional fabricated-content warnings omitted after reaching the limit."
+    ))).toHaveLength(1);
+    expect(result.warnings.at(-1)).toBe(
+      "Additional fabricated-content warnings omitted after reaching the limit.",
+    );
+    expect(result.complete).toBe(true);
+    expect(result.reason).toBeUndefined();
+  });
+
+  test("resets hunk state at combined diff file boundaries", async () => {
+    const hunkHex = "a".repeat(40);
+    const headerHex = "b".repeat(40);
+
+    for (const boundary of [
+      "diff --cc combined.ts",
+      "diff --combined combined.ts",
+    ]) {
+      const result = await scanDiffForFabricatedContent("/tmp/workspace", async (params) => {
+        params.onStdoutLine("diff --git a/generated.ts b/generated.ts");
+        params.onStdoutLine("@@ -0,0 +1 @@");
+        params.onStdoutLine(`+hash=${hunkHex}`);
+        params.onStdoutLine(boundary);
+        params.onStdoutLine("--- a/combined.ts");
+        params.onStdoutLine(`+++ b/${headerHex}`);
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        };
+      });
+
+      expect(result.warnings).toEqual([
+        `Suspicious low-entropy hex pattern in added line: \`${hunkHex}...\``,
+      ]);
+    }
+  });
+
+  test("scans combined hunk additions from a non-first parent", async () => {
+    const repeatedHex = "a".repeat(40);
+    const result = await scanDiffForFabricatedContent("/tmp/workspace", async (params) => {
+      params.onStdoutLine("diff --cc generated.ts");
+      params.onStdoutLine("--- a/generated.ts");
+      params.onStdoutLine("+++ b/generated.ts");
+      params.onStdoutLine("@@@ -0,0 -0,0 +1 @@@");
+      params.onStdoutLine(` +hash=${repeatedHex}`);
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      };
+    });
+
+    expect(result).toEqual({
+      warnings: [
+        `Suspicious low-entropy hex pattern in added line: \`${repeatedHex}...\``,
+      ],
+      complete: true,
+    });
   });
 });
