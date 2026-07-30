@@ -13,13 +13,32 @@ async function readTextWithByteLimit(
   stream: ReadableStream<Uint8Array> | null,
   maxBytes: number,
   onLimit: () => void,
+  options: {
+    captureText?: boolean;
+    onLine?: (line: string) => void;
+  } = {},
 ): Promise<{ text: string; truncated: boolean }> {
   if (!stream) return { text: "", truncated: false };
   const reader = stream.getReader();
   const decoder = new TextDecoder();
+  const captureText = options.captureText ?? true;
   const chunks: string[] = [];
+  let lineCarry = "";
   let bytesRead = 0;
   let truncated = false;
+
+  const acceptDecodedText = (text: string): void => {
+    if (captureText) chunks.push(text);
+    if (!options.onLine || text.length === 0) return;
+
+    lineCarry += text;
+    let newlineIndex = lineCarry.indexOf("\n");
+    while (newlineIndex >= 0) {
+      options.onLine(lineCarry.slice(0, newlineIndex));
+      lineCarry = lineCarry.slice(newlineIndex + 1);
+      newlineIndex = lineCarry.indexOf("\n");
+    }
+  };
 
   try {
     while (true) {
@@ -33,7 +52,7 @@ async function readTextWithByteLimit(
         break;
       }
       if (value.byteLength > remaining) {
-        chunks.push(decoder.decode(value.slice(0, remaining), { stream: true }));
+        acceptDecodedText(decoder.decode(value.slice(0, remaining), { stream: true }));
         bytesRead += remaining;
         truncated = true;
         onLimit();
@@ -41,17 +60,25 @@ async function readTextWithByteLimit(
         break;
       }
       bytesRead += value.byteLength;
-      chunks.push(decoder.decode(value, { stream: true }));
+      acceptDecodedText(decoder.decode(value, { stream: true }));
     }
+  } catch (error) {
+    onLimit();
+    await reader.cancel().catch(() => undefined);
+    throw error;
   } finally {
-    chunks.push(decoder.decode());
+    acceptDecodedText(decoder.decode());
     reader.releaseLock();
+  }
+
+  if (!truncated && options.onLine && lineCarry.length > 0) {
+    options.onLine(lineCarry);
   }
 
   return { text: chunks.join(""), truncated };
 }
 
-export async function runCommandWithCappedOutput(params: {
+type CappedProcessParams = {
   command: string;
   args: string[];
   cwd?: string;
@@ -59,7 +86,15 @@ export async function runCommandWithCappedOutput(params: {
   timeoutMs?: number;
   maxStdoutBytes: number;
   maxStderrBytes?: number;
-}): Promise<CappedProcessResult> {
+};
+
+async function runCommandWithCappedStreams(
+  params: CappedProcessParams,
+  stdoutOptions: {
+    captureText?: boolean;
+    onLine?: (line: string) => void;
+  } = {},
+): Promise<CappedProcessResult> {
   const proc = Bun.spawn([params.command, ...params.args], {
     cwd: params.cwd,
     env: params.env ? { ...process.env, ...params.env } : undefined,
@@ -82,6 +117,7 @@ export async function runCommandWithCappedOutput(params: {
     proc.stdout,
     params.maxStdoutBytes,
     kill,
+    stdoutOptions,
   );
   const stderrPromise = readTextWithByteLimit(
     proc.stderr,
@@ -108,4 +144,26 @@ export async function runCommandWithCappedOutput(params: {
     stdoutTruncated: stdout.truncated,
     stderrTruncated: stderr.truncated,
   };
+}
+
+export async function runCommandWithCappedOutput(
+  params: CappedProcessParams,
+): Promise<CappedProcessResult> {
+  return await runCommandWithCappedStreams(params);
+}
+
+export async function runCommandWithCappedLines(params: {
+  command: string;
+  args: string[];
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  timeoutMs?: number;
+  maxStdoutBytes: number;
+  maxStderrBytes?: number;
+  onStdoutLine(line: string): void;
+}): Promise<CappedProcessResult> {
+  return await runCommandWithCappedStreams(params, {
+    captureText: false,
+    onLine: params.onStdoutLine,
+  });
 }
