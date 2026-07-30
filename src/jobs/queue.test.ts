@@ -262,3 +262,30 @@ test("createJobQueue releases drain tracking when a job throws", async () => {
 
   expect(counts.active).toBe(0);
 });
+
+test("createJobQueue abandons a job that stalls forever instead of blocking its lane forever", async () => {
+  const { tracker, counts } = createRequestTrackerFake();
+  const queue = createJobQueue(createNoopLogger(), { requestTracker: tracker, hardTimeoutMs: 20 });
+
+  const hungJob = queue.enqueue(
+    7,
+    () => new Promise<void>(() => undefined),
+    { key: "same-pr", jobType: "pull-request-review" },
+  );
+
+  await expect(hungJob).rejects.toThrow(/hard timeout/i);
+  expect(counts.active).toBe(0);
+
+  // The lane must be released so a later job for the same key can still run,
+  // instead of queuing forever behind the abandoned one.
+  const nextJobRan = await queue.enqueue(7, async () => "ran", { key: "same-pr" });
+  expect(nextJobRan).toBe("ran");
+});
+
+test("createJobQueue does not time out jobs that finish within the hard timeout budget", async () => {
+  const queue = createJobQueue(createNoopLogger(), { hardTimeoutMs: 10_000 });
+
+  const result = await queue.enqueue(7, async () => "done");
+
+  expect(result).toBe("done");
+});
