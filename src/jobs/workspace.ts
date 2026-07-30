@@ -105,6 +105,13 @@ export function validateBranchName(branchName: string): void {
   }
 }
 
+export function buildImmutablePushRefspec(commitOid: string, destination: string): string {
+  const destinationRef = destination.startsWith("refs/")
+    ? destination
+    : `refs/heads/${destination}`;
+  return `${commitOid}:${destinationRef}`;
+}
+
 /**
  * Given a stripped (no-credential) remote URL and an optional token, return the
  * auth-injected URL for use in a single git command.  If token is absent, the
@@ -820,7 +827,7 @@ export async function createBranchCommitAndPush(options: {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
     await runGitNetworkCommand({
-      args: ["push", pushUrl, `${headSha}:${branchName}`],
+      args: ["push", pushUrl, buildImmutablePushRefspec(headSha, branchName)],
       cwd: dir,
       token,
       operation: "push",
@@ -873,7 +880,7 @@ export async function commitAndPushToRemoteRef(options: {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
     await runGitNetworkCommand({
-      args: ["push", pushUrl, `${headSha}:${remoteRef}`],
+      args: ["push", pushUrl, buildImmutablePushRefspec(headSha, remoteRef)],
       cwd: dir,
       token,
       operation: "push",
@@ -902,7 +909,7 @@ export async function pushHeadToRemoteRef(options: {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
     await runGitNetworkCommand({
-      args: ["push", pushUrl, `${headSha}:${remoteRef}`],
+      args: ["push", pushUrl, buildImmutablePushRefspec(headSha, remoteRef)],
       cwd: dir,
       token,
       operation: "push",

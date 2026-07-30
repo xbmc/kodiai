@@ -12,6 +12,7 @@ import {
   commitStagedSnapshot,
   WritePolicyError,
   buildAuthFetchUrl,
+  buildImmutablePushRefspec,
   createWorkspaceManager,
   commitAndPushToRemoteRef,
   cleanupStaleAzureFilesWorkspaceDirs,
@@ -77,6 +78,20 @@ function stagedDiffResult(
 const TEST_PARENT_OID = "1".repeat(40);
 const TEST_TREE_OID = "2".repeat(40);
 const TEST_COMMIT_OID = "3".repeat(40);
+
+describe("buildImmutablePushRefspec", () => {
+  test("uses the immutable commit OID and fully qualifies a branch destination", () => {
+    expect(buildImmutablePushRefspec(TEST_COMMIT_OID, "kodiai/write/new-branch")).toBe(
+      `${TEST_COMMIT_OID}:refs/heads/kodiai/write/new-branch`,
+    );
+  });
+
+  test("preserves an already fully qualified destination", () => {
+    expect(buildImmutablePushRefspec(TEST_COMMIT_OID, "refs/heads/existing-branch")).toBe(
+      `${TEST_COMMIT_OID}:refs/heads/existing-branch`,
+    );
+  });
+});
 
 async function testImmutableRange(dir: string): Promise<{
   parentOid: string;
@@ -1116,6 +1131,34 @@ async function setupBareAndClone(bareDir: string, cloneDir: string): Promise<str
 }
 
 describe("immutable staged write snapshot", () => {
+  test("pushes an immutable commit OID to a new slash-delimited branch", async () => {
+    const tmpBase = await createTempDir();
+    const bareDir = join(tmpBase, "bare.git");
+    const cloneDir = join(tmpBase, "clone");
+    try {
+      await setupBareAndClone(bareDir, cloneDir);
+      await $`git -C ${cloneDir} checkout -B main refs/remotes/origin/main`.quiet();
+      await writeFile(join(cloneDir, "allowed.ts"), "export const allowed = true;\n");
+
+      const result = await commitAndPushToRemoteRef({
+        dir: cloneDir,
+        remoteRef: "kodiai/write/new-branch",
+        commitMessage: "create bot branch",
+        policy: {
+          allowPaths: ["allowed.ts"],
+          secretScanEnabled: false,
+        },
+      });
+
+      const remoteHead = (
+        await $`git --git-dir ${bareDir} rev-parse refs/heads/kodiai/write/new-branch`.quiet()
+      ).text().trim();
+      expect(remoteHead).toBe(result.headSha);
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+
   test("commits the scanned tree even when a hook replaces the index with same-count paths", async () => {
     const tmpBase = await createTempDir();
     const bareDir = join(tmpBase, "bare.git");
