@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { $ } from "bun";
 import {
+  FABRICATED_CONTENT_DIFF_TIMEOUT_MS,
   FABRICATED_CONTENT_MAX_WARNINGS,
   scanDiffForFabricatedContent,
 } from "./mention-pr-review-diff.ts";
@@ -7,11 +12,16 @@ import {
 describe("scanDiffForFabricatedContent", () => {
   test("retains detector warnings and reports truncated diff output", async () => {
     const repeatedHex = "a".repeat(40);
+    let invocation: {
+      command: string;
+      args: string[];
+      env?: Record<string, string | undefined>;
+      timeoutMs?: number;
+      maxStdoutBytes: number;
+    } | undefined;
 
     const result = await scanDiffForFabricatedContent("/tmp/workspace", async (params) => {
-      expect(params.command).toBe("git");
-      expect(params.args).toEqual(["-C", "/tmp/workspace", "diff", "HEAD~1", "HEAD"]);
-      expect(params.maxStdoutBytes).toBe(2 * 1024 * 1024);
+      invocation = params;
       params.onStdoutLine("+++ b/generated.ts");
       params.onStdoutLine("@@ -0,0 +1 @@");
       params.onStdoutLine(`+hash=${repeatedHex}`);
@@ -26,6 +36,19 @@ describe("scanDiffForFabricatedContent", () => {
       };
     });
 
+    expect(invocation?.command).toBe("git");
+    expect(invocation?.args).toEqual([
+      "-C",
+      "/tmp/workspace",
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "HEAD~1",
+      "HEAD",
+    ]);
+    expect(invocation?.env).toEqual({ GIT_NO_REPLACE_OBJECTS: "1" });
+    expect(invocation?.timeoutMs).toBe(FABRICATED_CONTENT_DIFF_TIMEOUT_MS);
+    expect(invocation?.maxStdoutBytes).toBe(2 * 1024 * 1024);
     expect(result).toEqual({
       warnings: [
         `Suspicious low-entropy hex pattern in added line: \`${repeatedHex}...\``,
@@ -45,6 +68,27 @@ describe("scanDiffForFabricatedContent", () => {
         timedOut: false,
         stdoutTruncated: false,
         stderrTruncated: false,
+      };
+    });
+
+    expect(result).toEqual({
+      warnings: [],
+      complete: false,
+      reason: "command-failed",
+    });
+  });
+
+  test("reports stderr truncation as command failure without findings", async () => {
+    const result = await scanDiffForFabricatedContent("/tmp/workspace", async (params) => {
+      params.onStdoutLine("@@ -0,0 +1 @@");
+      params.onStdoutLine(`+hash=${"a".repeat(40)}`);
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "bounded stderr",
+        timedOut: false,
+        stdoutTruncated: false,
+        stderrTruncated: true,
       };
     });
 
@@ -236,5 +280,35 @@ describe("scanDiffForFabricatedContent", () => {
       ],
       complete: true,
     });
+  });
+
+  test("ignores a repository-configured external diff that suppresses output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-fabricated-scan-"));
+    const repeatedHex = "a".repeat(40);
+
+    try {
+      await $`git -C ${dir} init --initial-branch=main`.quiet();
+      await $`git -C ${dir} config user.email test@example.com`.quiet();
+      await $`git -C ${dir} config user.name "Test User"`.quiet();
+      await Bun.write(join(dir, "generated.txt"), "baseline\n");
+      await $`git -C ${dir} add -- generated.txt`.quiet();
+      await $`git -C ${dir} commit -m baseline`.quiet();
+
+      await Bun.write(join(dir, "generated.txt"), `baseline\nhash=${repeatedHex}\n`);
+      await $`git -C ${dir} add -- generated.txt`.quiet();
+      await $`git -C ${dir} commit -m suspicious`.quiet();
+      await $`git -C ${dir} config diff.external true`.quiet();
+
+      const result = await scanDiffForFabricatedContent(dir);
+
+      expect(result).toEqual({
+        warnings: [
+          `Suspicious low-entropy hex pattern in added line: \`${repeatedHex}...\``,
+        ],
+        complete: true,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

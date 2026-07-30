@@ -5,6 +5,7 @@ import { scanLinesForFabricatedContent } from "../lib/fabricated-content-detecto
 import type { MentionEvent } from "./mention-types.ts";
 
 export const FABRICATED_CONTENT_DIFF_MAX_BYTES = 2 * 1024 * 1024;
+export const FABRICATED_CONTENT_DIFF_TIMEOUT_MS = 30_000;
 export const FABRICATED_CONTENT_MAX_WARNINGS = 100;
 const FABRICATED_CONTENT_WARNING_OVERFLOW =
   "Additional fabricated-content warnings omitted after reaching the limit.";
@@ -29,7 +30,17 @@ export async function scanDiffForFabricatedContent(
   try {
     result = await runDiffLines({
       command: "git",
-      args: ["-C", dir, "diff", "HEAD~1", "HEAD"],
+      args: [
+        "-C",
+        dir,
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "HEAD~1",
+        "HEAD",
+      ],
+      env: { GIT_NO_REPLACE_OBJECTS: "1" },
+      timeoutMs: FABRICATED_CONTENT_DIFF_TIMEOUT_MS,
       maxStdoutBytes: FABRICATED_CONTENT_DIFF_MAX_BYTES,
       onStdoutLine: (line) => {
         if (
@@ -73,6 +84,10 @@ export async function scanDiffForFabricatedContent(
   }
 
   if (result.timedOut) {
+    return { warnings: [], complete: false, reason: "command-failed" };
+  }
+
+  if (result.stderrTruncated) {
     return { warnings: [], complete: false, reason: "command-failed" };
   }
 
