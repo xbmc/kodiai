@@ -8,10 +8,20 @@ import type {
   JobSnapshot,
 } from "./types.ts";
 import type { RequestTracker } from "../lifecycle/types.ts";
+import { rejectWithTimeout } from "../lib/with-timeout.ts";
 
 const DEFAULT_JOB_LANE: JobLane = "review";
 const QUEUED_PHASE = "queued";
 const RUNNING_PHASE = "running";
+
+// Last-resort watchdog: a job whose work stalls on an unbounded I/O call (e.g.
+// a network-mounted workspace filesystem hang) would otherwise never settle,
+// permanently occupying its lane and its RequestTracker slot -- blocking every
+// later job for the same key forever and starving the deploy drain check
+// (see src/routes/health.ts's /internal/drain-status). This does not cancel
+// the stalled work (JS has no such mechanism); it abandons waiting on it so
+// the queue and the request tracker can move on.
+const DEFAULT_JOB_HARD_TIMEOUT_MS = 20 * 60 * 1000;
 
 type InstallationQueueScopes = Map<string, PQueue>;
 type InstallationActiveJobs = Map<string, JobSnapshot>;
@@ -28,8 +38,12 @@ type InstallationActiveJobs = Map<string, JobSnapshot>;
  * enqueue until completion, so graceful-shutdown drain waits for queued jobs
  * even when the caller fire-and-forgets the enqueue promise.
  */
-export function createJobQueue(logger: Logger, opts?: { requestTracker?: RequestTracker }): JobQueue {
+export function createJobQueue(
+  logger: Logger,
+  opts?: { requestTracker?: RequestTracker; hardTimeoutMs?: number },
+): JobQueue {
   const requestTracker = opts?.requestTracker;
+  const hardTimeoutMs = opts?.hardTimeoutMs ?? DEFAULT_JOB_HARD_TIMEOUT_MS;
   const queueScopes = new Map<number, InstallationQueueScopes>();
   const activeJobs = new Map<number, InstallationActiveJobs>();
   let nextJobId = 1;
@@ -239,7 +253,13 @@ export function createJobQueue(logger: Logger, opts?: { requestTracker?: Request
           );
 
           try {
-            const value = await fn(waitMetadata);
+            const value = await rejectWithTimeout(fn(waitMetadata), {
+              timeoutMs: hardTimeoutMs,
+              createTimeoutError: () =>
+                new Error(
+                  `Job exceeded hard timeout of ${hardTimeoutMs}ms and was abandoned (jobType=${context?.jobType ?? "unknown"}, key=${key}); likely stalled on an unbounded I/O call`,
+                ),
+            });
             logger.info(
               {
                 jobId,
