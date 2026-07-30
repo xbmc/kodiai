@@ -3,6 +3,24 @@ type CappedTextDecoderOptions = {
   ignoreBOM?: boolean;
 };
 
+export type ProcessTreeKillPlan =
+  | { kind: "posix-group"; processGroupId: number }
+  | { kind: "windows-tree"; command: [string, ...string[]] };
+
+export function buildProcessTreeKillPlan(
+  platform: NodeJS.Platform,
+  pid: number,
+): ProcessTreeKillPlan {
+  return platform === "win32"
+    ? {
+        kind: "windows-tree",
+        command: ["taskkill.exe", "/PID", String(pid), "/T", "/F"],
+      }
+    : { kind: "posix-group", processGroupId: -pid };
+}
+
+const WINDOWS_TREE_KILL_TIMEOUT_MS = 100;
+
 export type CappedProcessResult = {
   exitCode: number;
   stdout: string;
@@ -78,13 +96,23 @@ async function readTextWithByteLimit(
     await reader.cancel().catch(() => undefined);
     if (!teardownAlreadyForced) throw error;
   } finally {
+    let finalDecodeError: unknown;
+    let finalDecodeFailed = false;
     try {
-      acceptDecodedText(decoder.decode());
-    } catch (error) {
-      if (!options.teardownSignal?.aborted) throw error;
+      try {
+        acceptDecodedText(decoder.decode());
+      } catch (error) {
+        if (!options.teardownSignal?.aborted) {
+          finalDecodeError = error;
+          finalDecodeFailed = true;
+          onLimit();
+        }
+      }
+    } finally {
+      options.teardownSignal?.removeEventListener("abort", cancelReader);
+      reader.releaseLock();
     }
-    options.teardownSignal?.removeEventListener("abort", cancelReader);
-    reader.releaseLock();
+    if (finalDecodeFailed) throw finalDecodeError;
   }
 
   return {
@@ -123,6 +151,7 @@ async function runCommandWithCappedStreams(
     stderr: "pipe",
     detached: supportsProcessGroups,
   });
+  const processTreeKillPlan = buildProcessTreeKillPlan(process.platform, proc.pid);
   const teardownController = new AbortController();
   let forcedTeardown = false;
   let timedOut = false;
@@ -132,15 +161,7 @@ async function runCommandWithCappedStreams(
     resolveForcedExit = resolve;
   });
 
-  const signalProcessTree = (signal: NodeJS.Signals): void => {
-    if (supportsProcessGroups) {
-      try {
-        process.kill(-proc.pid, signal);
-        return;
-      } catch {
-        // Fall back to signaling the direct child if the group no longer exists.
-      }
-    }
+  const killDirectChild = (signal: NodeJS.Signals): void => {
     try {
       proc.kill(signal);
     } catch {
@@ -148,12 +169,61 @@ async function runCommandWithCappedStreams(
     }
   };
 
+  const signalPosixProcessGroup = (signal: NodeJS.Signals): void => {
+    if (processTreeKillPlan.kind === "posix-group") {
+      try {
+        process.kill(processTreeKillPlan.processGroupId, signal);
+        return;
+      } catch {
+        // Fall back to signaling the direct child if the group no longer exists.
+      }
+    }
+    killDirectChild(signal);
+  };
+
+  const terminateWindowsProcessTree = (): void => {
+    if (processTreeKillPlan.kind !== "windows-tree") return;
+    let taskkill: ReturnType<typeof Bun.spawn>;
+    try {
+      taskkill = Bun.spawn(processTreeKillPlan.command, {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+    } catch {
+      killDirectChild("SIGKILL");
+      return;
+    }
+
+    taskkill.unref();
+    let completed = false;
+    const finish = (): void => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeout);
+      killDirectChild("SIGKILL");
+    };
+    const timeout = setTimeout(() => {
+      try {
+        taskkill.kill("SIGKILL");
+      } catch {
+        // Ignore kill races; taskkill may have already exited.
+      }
+      finish();
+    }, WINDOWS_TREE_KILL_TIMEOUT_MS);
+    void taskkill.exited.then(finish, finish);
+  };
+
   const forceTeardown = (): void => {
     if (forcedTeardown) return;
     forcedTeardown = true;
     teardownController.abort();
-    signalProcessTree("SIGTERM");
-    signalProcessTree("SIGKILL");
+    if (processTreeKillPlan.kind === "windows-tree") {
+      terminateWindowsProcessTree();
+    } else {
+      signalPosixProcessGroup("SIGTERM");
+      signalPosixProcessGroup("SIGKILL");
+    }
     resolveForcedExit(137);
   };
 

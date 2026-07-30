@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  buildProcessTreeKillPlan,
   runCommandWithCappedLines,
   runCommandWithCappedOutput,
 } from "./capped-process.ts";
@@ -183,4 +184,38 @@ test("output-cap teardown bounds completion when the child ignores SIGTERM", asy
   if (outcome === OUTER_TIMEOUT) return;
   expect(outcome.stdout).toBe("123");
   expect(outcome.stdoutTruncated).toBe(true);
+});
+
+test("fatal final decoder flush tears down a resistant child before rejecting", async () => {
+  const operation = runCommandWithCappedOutput({
+    command: "bash",
+    args: [
+      "-c",
+      "printf '\\303'; exec 1>&-; trap '' TERM; sleep 0.8",
+    ],
+    maxStdoutBytes: 64,
+    stdoutDecoderOptions: { fatal: true },
+  }).then(
+    () => "resolved" as const,
+    (error: unknown) => error,
+  );
+  const outcome = await settleWithin(operation, 300);
+
+  expect(outcome).not.toBe(OUTER_TIMEOUT);
+  if (outcome === OUTER_TIMEOUT) return;
+  expect(outcome).toBeInstanceOf(TypeError);
+});
+
+test("builds a Windows taskkill plan for the complete process tree", () => {
+  expect(buildProcessTreeKillPlan("win32", 4321)).toEqual({
+    kind: "windows-tree",
+    command: ["taskkill.exe", "/PID", "4321", "/T", "/F"],
+  });
+});
+
+test("builds a POSIX process-group kill plan", () => {
+  expect(buildProcessTreeKillPlan("linux", 4321)).toEqual({
+    kind: "posix-group",
+    processGroupId: -4321,
+  });
 });
