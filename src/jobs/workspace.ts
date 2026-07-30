@@ -323,6 +323,8 @@ type RunStagedPathCommand = (
 
 type RunGitControlCommand = RunStagedPathCommand;
 
+const GIT_NO_REPLACE_OBJECTS_ENV = { GIT_NO_REPLACE_OBJECTS: "1" };
+
 export type StagedSnapshot = {
   parentOid: string;
   treeOid: string;
@@ -369,6 +371,7 @@ async function runGitControl(options: {
       command: "git",
       args: options.args,
       cwd: options.dir,
+      env: GIT_NO_REPLACE_OBJECTS_ENV,
       timeoutMs: STAGED_GIT_TIMEOUT_MS,
       maxStdoutBytes: STAGED_GIT_CONTROL_MAX_BYTES,
     });
@@ -414,6 +417,8 @@ export async function commitStagedSnapshot(options: StagedSnapshot & {
   const commitResult = await runGitControl({
     dir: options.dir,
     args: [
+      "-c",
+      "core.hooksPath=/dev/null",
       "commit-tree",
       options.treeOid,
       "-p",
@@ -428,9 +433,25 @@ export async function commitStagedSnapshot(options: StagedSnapshot & {
 
   await runGitControl({
     dir: options.dir,
-    args: ["update-ref", "HEAD", commitOid, options.parentOid],
+    args: [
+      "-c",
+      "core.hooksPath=/dev/null",
+      "update-ref",
+      "HEAD",
+      commitOid,
+      options.parentOid,
+    ],
     runGitControlCommand: runner,
   });
+
+  const headResult = await runGitControl({
+    dir: options.dir,
+    args: ["rev-parse", "--verify", "HEAD"],
+    runGitControlCommand: runner,
+  });
+  if (parseGitOidOutput(headResult.stdout) !== commitOid) {
+    throw incompleteStagedScan(STAGED_GIT_CONTROL_MAX_BYTES);
+  }
   return commitOid;
 }
 
@@ -457,6 +478,7 @@ export async function getBoundedStagedPaths(options: StagedSnapshot & {
         "--",
       ],
       cwd: options.dir,
+      env: GIT_NO_REPLACE_OBJECTS_ENV,
       timeoutMs: STAGED_GIT_TIMEOUT_MS,
       maxStdoutBytes: STAGED_PATHS_MAX_BYTES,
       stdoutDecoderOptions: { fatal: true, ignoreBOM: true },
@@ -627,6 +649,7 @@ export async function enforceWritePolicy(options: StagedSnapshot & {
           "--",
         ],
         cwd: dir,
+        env: GIT_NO_REPLACE_OBJECTS_ENV,
         timeoutMs: STAGED_GIT_TIMEOUT_MS,
         maxStdoutBytes: STAGED_SECRET_SCAN_MAX_BYTES,
         onStdoutLine: (line) => {
@@ -797,7 +820,7 @@ export async function createBranchCommitAndPush(options: {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
     await runGitNetworkCommand({
-      args: ["push", pushUrl, `HEAD:${branchName}`],
+      args: ["push", pushUrl, `${headSha}:${branchName}`],
       cwd: dir,
       token,
       operation: "push",
@@ -850,7 +873,7 @@ export async function commitAndPushToRemoteRef(options: {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
     await runGitNetworkCommand({
-      args: ["push", pushUrl, `HEAD:${remoteRef}`],
+      args: ["push", pushUrl, `${headSha}:${remoteRef}`],
       cwd: dir,
       token,
       operation: "push",
@@ -879,7 +902,7 @@ export async function pushHeadToRemoteRef(options: {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
     await runGitNetworkCommand({
-      args: ["push", pushUrl, `HEAD:${remoteRef}`],
+      args: ["push", pushUrl, `${headSha}:${remoteRef}`],
       cwd: dir,
       token,
       operation: "push",

@@ -118,7 +118,12 @@ async function enforceWritePolicy(
 
 describe("immutable Git snapshot commands", () => {
   test("captures validated parent and index tree OIDs with bounded commands", async () => {
-    const calls: Array<{ args: string[]; timeoutMs?: number; maxStdoutBytes: number }> = [];
+    const calls: Array<{
+      args: string[];
+      env?: Record<string, string | undefined>;
+      timeoutMs?: number;
+      maxStdoutBytes: number;
+    }> = [];
     const snapshot = await captureStagedSnapshot({
       dir: "/workspace",
       runGitControlCommand: async (params) => {
@@ -137,6 +142,54 @@ describe("immutable Git snapshot commands", () => {
     ]);
     expect(calls.every((call) => call.timeoutMs === 30_000)).toBe(true);
     expect(calls.every((call) => call.maxStdoutBytes === 64 * 1024)).toBe(true);
+    expect(calls.every((call) => call.env?.GIT_NO_REPLACE_OBJECTS === "1")).toBe(true);
+  });
+
+  test("disables hooks and verifies HEAD after committing the exact tree", async () => {
+    const calls: Array<{
+      args: string[];
+      env?: Record<string, string | undefined>;
+    }> = [];
+    const commitOid = await commitStagedSnapshot({
+      dir: "/workspace",
+      parentOid: TEST_PARENT_OID,
+      treeOid: TEST_TREE_OID,
+      commitMessage: "safe message",
+      runGitControlCommand: async (params) => {
+        calls.push(params);
+        if (params.args.includes("commit-tree")) {
+          return stagedDiffResult({ stdout: `${TEST_COMMIT_OID}\n` });
+        }
+        if (params.args.includes("rev-parse")) {
+          return stagedDiffResult({ stdout: `${TEST_COMMIT_OID}\n` });
+        }
+        return stagedDiffResult();
+      },
+    });
+
+    expect(commitOid).toBe(TEST_COMMIT_OID);
+    expect(calls.map((call) => call.args)).toEqual([
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit-tree",
+        TEST_TREE_OID,
+        "-p",
+        TEST_PARENT_OID,
+        "-m",
+        "safe message",
+      ],
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "update-ref",
+        "HEAD",
+        TEST_COMMIT_OID,
+        TEST_PARENT_OID,
+      ],
+      ["rev-parse", "--verify", "HEAD"],
+    ]);
+    expect(calls.every((call) => call.env?.GIT_NO_REPLACE_OBJECTS === "1")).toBe(true);
   });
 
   test("fails closed without leaking details when atomic HEAD update fails", async () => {
@@ -148,7 +201,7 @@ describe("immutable Git snapshot commands", () => {
       commitMessage: "safe message",
       runGitControlCommand: async (params) => {
         calls.push(params.args);
-        if (params.args[0] === "commit-tree") {
+        if (params.args.includes("commit-tree")) {
           return stagedDiffResult({ stdout: `${TEST_COMMIT_OID}\n` });
         }
         return stagedDiffResult({
@@ -163,8 +216,24 @@ describe("immutable Git snapshot commands", () => {
       message: "Write blocked: staged secret scan was incomplete",
     });
     expect(calls).toEqual([
-      ["commit-tree", TEST_TREE_OID, "-p", TEST_PARENT_OID, "-m", "safe message"],
-      ["update-ref", "HEAD", TEST_COMMIT_OID, TEST_PARENT_OID],
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit-tree",
+        TEST_TREE_OID,
+        "-p",
+        TEST_PARENT_OID,
+        "-m",
+        "safe message",
+      ],
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "update-ref",
+        "HEAD",
+        TEST_COMMIT_OID,
+        TEST_PARENT_OID,
+      ],
     ]);
   });
 });
@@ -191,6 +260,7 @@ describe("getBoundedStagedPaths", () => {
     expect(received?.timeoutMs).toBe(30_000);
     expect(received?.maxStdoutBytes).toBe(1024 * 1024);
     expect(received?.stdoutDecoderOptions).toEqual({ fatal: true, ignoreBOM: true });
+    expect(received?.env).toEqual({ GIT_NO_REPLACE_OBJECTS: "1" });
     expect(received?.args).toContain("--name-only");
     expect(received?.args).toContain("-z");
     expect(received?.args).toContain("--no-ext-diff");
@@ -605,6 +675,7 @@ describe("enforceWritePolicy", () => {
       expect(received?.args).toContain(TEST_TREE_OID);
       expect(received?.args).not.toContain("--cached");
       expect(received?.maxStdoutBytes).toBe(8 * 1024 * 1024);
+      expect(received?.env).toEqual({ GIT_NO_REPLACE_OBJECTS: "1" });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1089,6 +1160,90 @@ describe("immutable staged write snapshot", () => {
         .trim();
       expect(result.headSha).toBe(localHead);
       expect(remoteHead).toBe(localHead);
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+
+  test("replacement objects cannot hide denied content from the immutable diff", async () => {
+    const tmpBase = await createTempDir();
+    const bareDir = join(tmpBase, "bare.git");
+    const cloneDir = join(tmpBase, "clone");
+    try {
+      await setupBareAndClone(bareDir, cloneDir);
+      await $`git -C ${cloneDir} checkout -B main refs/remotes/origin/main`.quiet();
+      const parentOid = (await $`git -C ${cloneDir} rev-parse HEAD`.quiet()).text().trim();
+
+      await writeFile(join(cloneDir, "denied.ts"), "export const denied = true;\n");
+      await runGitForTest(cloneDir, ["add", "--", "denied.ts"]);
+      const replacementTree = (await $`git -C ${cloneDir} write-tree`.quiet()).text().trim();
+      const replacementCommit = (
+        await $`git -C ${cloneDir} commit-tree ${replacementTree} -p ${parentOid} -m replacement`.quiet()
+      ).text().trim();
+      await $`git -C ${cloneDir} reset --hard ${parentOid}`.quiet();
+      await $`git -C ${cloneDir} replace ${parentOid} ${replacementCommit}`.quiet();
+
+      await writeFile(join(cloneDir, "allowed.ts"), "export const allowed = true;\n");
+      await writeFile(join(cloneDir, "denied.ts"), "export const denied = true;\n");
+
+      await expect(
+        commitAndPushToRemoteRef({
+          dir: cloneDir,
+          remoteRef: "main",
+          commitMessage: "replacement-safe write",
+          policy: {
+            allowPaths: ["allowed.ts"],
+            secretScanEnabled: false,
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-not-allowed",
+        path: "denied.ts",
+      });
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+
+  test("reference transaction hooks cannot change the commit pushed to the remote", async () => {
+    const tmpBase = await createTempDir();
+    const bareDir = join(tmpBase, "bare.git");
+    const cloneDir = join(tmpBase, "clone");
+    try {
+      await setupBareAndClone(bareDir, cloneDir);
+      await $`git -C ${cloneDir} checkout -B main refs/remotes/origin/main`.quiet();
+      const parentOid = (await $`git -C ${cloneDir} rev-parse HEAD`.quiet()).text().trim();
+      await writeFile(join(cloneDir, "allowed.ts"), "export const allowed = true;\n");
+
+      const hookPath = join(cloneDir, ".git", "hooks", "reference-transaction");
+      await writeFile(
+        hookPath,
+        [
+          "#!/bin/sh",
+          'if [ "$1" = "committed" ]; then',
+          `  printf '%s\\n' '${parentOid}' > "$(git rev-parse --git-path refs/heads/main)"`,
+          "fi",
+          "",
+        ].join("\n"),
+      );
+      await chmod(hookPath, 0o755);
+
+      const result = await commitAndPushToRemoteRef({
+        dir: cloneDir,
+        remoteRef: "main",
+        commitMessage: "hook-safe write",
+        policy: {
+          allowPaths: ["allowed.ts"],
+          secretScanEnabled: false,
+        },
+      });
+
+      const remoteHead = (await $`git --git-dir ${bareDir} rev-parse refs/heads/main`.quiet())
+        .text()
+        .trim();
+      expect(remoteHead).toBe(result.headSha);
+      await expect($`git --git-dir ${bareDir} show ${result.headSha}:allowed.ts`.quiet().text())
+        .resolves.toContain("allowed");
     } finally {
       await rm(tmpBase, { recursive: true, force: true });
     }
