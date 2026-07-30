@@ -6,7 +6,11 @@ import { $ } from "bun";
 import picomatch from "picomatch";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
-import { runCommandWithCappedOutput, type CappedProcessResult } from "../lib/capped-process.ts";
+import {
+  runCommandWithCappedLines,
+  runCommandWithCappedOutput,
+  type CappedProcessResult,
+} from "../lib/capped-process.ts";
 import { WritePolicyError } from "../lib/write-policy-error.ts";
 import type { WorkspaceManager, Workspace, CloneOptions } from "./types.ts";
 
@@ -113,6 +117,8 @@ function makeAuthUrl(strippedUrl: string, token: string | undefined): string {
 }
 
 const GIT_NETWORK_TIMEOUT_MS = 120_000;
+
+export const STAGED_SECRET_SCAN_MAX_BYTES = 8 * 1024 * 1024;
 
 async function runGitNetworkCommand(options: {
   args: string[];
@@ -303,31 +309,14 @@ function findHighEntropyTokens(addedLines: string[]): string | undefined {
   return undefined;
 }
 
-function extractAddedLines(patch: string): string[] {
-  return patch
-    .split("\n")
-    .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-    .map((l) => l.slice(1));
-}
+type StagedSecretScanState = {
+  currentPath?: string;
+  addedLinesByPath: Map<string, string[]>;
+};
 
-function splitGitDiffByPath(patch: string): Map<string, string> {
-  const patches = new Map<string, string>();
-  const starts: Array<{ index: number; path: string }> = [];
-  const headerRegex = /^diff --git a\/(.+) b\/(.+)$/gm;
-  for (const match of patch.matchAll(headerRegex)) {
-    starts.push({ index: match.index ?? 0, path: match[2] ?? match[1] ?? "" });
-  }
-
-  for (let i = 0; i < starts.length; i++) {
-    const current = starts[i]!;
-    const next = starts[i + 1]?.index ?? patch.length;
-    if (current.path) {
-      patches.set(current.path, patch.slice(current.index, next));
-    }
-  }
-
-  return patches;
-}
+type RunStagedDiffLines = (
+  params: Parameters<typeof runCommandWithCappedLines>[0],
+) => ReturnType<typeof runCommandWithCappedLines>;
 
 export async function enforceWritePolicy(options: {
   dir: string;
@@ -335,8 +324,16 @@ export async function enforceWritePolicy(options: {
   allowPaths: string[];
   denyPaths: string[];
   secretScanEnabled: boolean;
+  runStagedDiffLines?: RunStagedDiffLines;
 }): Promise<void> {
-  const { dir, stagedPaths, allowPaths, denyPaths, secretScanEnabled } = options;
+  const {
+    dir,
+    stagedPaths,
+    allowPaths,
+    denyPaths,
+    secretScanEnabled,
+    runStagedDiffLines = runCommandWithCappedLines,
+  } = options;
 
   let denyMatchers: Array<(path: string) => boolean>;
   try {
@@ -386,23 +383,70 @@ export async function enforceWritePolicy(options: {
   }
 
   if (secretScanEnabled) {
-    const perFilePatches = new Map<string, string>();
-    const addedLinesByPath = new Map<string, string[]>();
-    const addedTextByPath = new Map<string, string>();
-    const stagedPatch = (await $`git -C ${dir} diff --cached --`.quiet()).text();
-    const patchesByPath = splitGitDiffByPath(stagedPatch);
-    for (const p of stagedPaths) {
-      const patch = patchesByPath.get(p) ?? "";
-      perFilePatches.set(p, patch);
-      const addedLines = extractAddedLines(patch);
-      addedLinesByPath.set(p, addedLines);
-      addedTextByPath.set(p, addedLines.join("\n"));
+    const stagedPathSet = new Set(stagedPaths);
+    const scanState: StagedSecretScanState = {
+      addedLinesByPath: new Map(),
+    };
+    let insideHunk = false;
+    let scanResult: Awaited<ReturnType<RunStagedDiffLines>>;
+    try {
+      scanResult = await runStagedDiffLines({
+        command: "git",
+        args: ["-C", dir, "diff", "--cached", "--"],
+        maxStdoutBytes: STAGED_SECRET_SCAN_MAX_BYTES,
+        onStdoutLine: (line) => {
+          const header = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+          if (header) {
+            scanState.currentPath = header[2] ?? header[1];
+            insideHunk = false;
+            return;
+          }
+
+          if (line.startsWith("@@")) {
+            insideHunk = true;
+            return;
+          }
+
+          const currentPath = scanState.currentPath;
+          if (
+            !currentPath
+            || !stagedPathSet.has(currentPath)
+            || !line.startsWith("+")
+            || (!insideHunk && line.startsWith("+++"))
+          ) {
+            return;
+          }
+
+          const addedLines = scanState.addedLinesByPath.get(currentPath) ?? [];
+          addedLines.push(line.slice(1));
+          scanState.addedLinesByPath.set(currentPath, addedLines);
+        },
+      });
+    } catch {
+      throw new WritePolicyError(
+        "write-policy-secret-scan-incomplete",
+        "Write blocked: staged secret scan was incomplete",
+        { rule: "secretScan", maxBytes: STAGED_SECRET_SCAN_MAX_BYTES },
+      );
+    }
+
+    if (
+      scanResult.timedOut
+      || scanResult.exitCode !== 0
+      || scanResult.stdoutTruncated
+      || scanResult.stderrTruncated
+    ) {
+      throw new WritePolicyError(
+        "write-policy-secret-scan-incomplete",
+        "Write blocked: staged secret scan was incomplete",
+        { rule: "secretScan", maxBytes: STAGED_SECRET_SCAN_MAX_BYTES },
+      );
     }
 
     for (const { name, regex } of buildSecretRegexes()) {
       let path: string | undefined;
       for (const p of stagedPaths) {
-        const added = addedTextByPath.get(p) ?? "";
+        const added = (scanState.addedLinesByPath.get(p) ?? []).join("\n");
         if (regex.test(added)) {
           path = p;
           break;
@@ -419,22 +463,16 @@ export async function enforceWritePolicy(options: {
     }
 
     // Best-effort entropy scan on added lines only.
-    const addedLines = stagedPaths.flatMap((p) => addedLinesByPath.get(p) ?? []);
-    const entropyHit = findHighEntropyTokens(addedLines);
-    if (entropyHit) {
-      let path: string | undefined;
-      for (const p of stagedPaths) {
-        const perFileAdded = addedLinesByPath.get(p) ?? [];
-        if (findHighEntropyTokens(perFileAdded)) {
-          path = p;
-          break;
-        }
+    for (const path of stagedPaths) {
+      const perFileAdded = scanState.addedLinesByPath.get(path) ?? [];
+      const entropyHit = findHighEntropyTokens(perFileAdded);
+      if (entropyHit) {
+        throw new WritePolicyError(
+          "write-policy-secret-detected",
+          `Write blocked: suspected secret detected (entropy): ${entropyHit}`,
+          { path, rule: "secretScan", detector: "entropy" },
+        );
       }
-      throw new WritePolicyError(
-        "write-policy-secret-detected",
-        `Write blocked: suspected secret detected (entropy): ${entropyHit}`,
-        { path, rule: "secretScan", detector: "entropy" },
-      );
     }
   }
 }

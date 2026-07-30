@@ -3,6 +3,7 @@ export class WritePolicyError extends Error {
     | "write-policy-denied-path"
     | "write-policy-not-allowed"
     | "write-policy-secret-detected"
+    | "write-policy-secret-scan-incomplete"
     | "write-policy-no-changes";
 
   /** Best-effort file path involved in the refusal. */
@@ -17,6 +18,9 @@ export class WritePolicyError extends Error {
   /** Best-effort secret detector identifier (for secretScan rules). */
   readonly detector?: string;
 
+  /** Maximum bytes accepted by a bounded policy scan. */
+  readonly maxBytes?: number;
+
   constructor(
     code: WritePolicyError["code"],
     message: string,
@@ -25,6 +29,7 @@ export class WritePolicyError extends Error {
       rule?: WritePolicyError["rule"];
       pattern?: string;
       detector?: string;
+      maxBytes?: number;
     },
   ) {
     super(message);
@@ -34,5 +39,6 @@ export class WritePolicyError extends Error {
     this.rule = meta?.rule;
     this.pattern = meta?.pattern;
     this.detector = meta?.detector;
+    this.maxBytes = meta?.maxBytes;
   }
 }
