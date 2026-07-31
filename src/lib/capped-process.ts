@@ -1,3 +1,5 @@
+import { scheduleTimeout } from "./with-timeout.ts";
+
 type CappedTextDecoderOptions = {
   fatal?: boolean;
   ignoreBOM?: boolean;
@@ -33,6 +35,25 @@ export function buildProcessTreeKillPlan(
 }
 
 const WINDOWS_TREE_KILL_TIMEOUT_MS = 100;
+
+function settleFromFirst<T>(first: Promise<T>, second: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const resolveFirst = (value: T): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const rejectFirst = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+
+    void first.then(resolveFirst, rejectFirst);
+    void second.then(resolveFirst, rejectFirst);
+  });
+}
 
 /**
  * Result from a bounded subprocess helper.
@@ -228,10 +249,10 @@ async function runCommandWithCappedStreams(
     const finish = (): void => {
       if (completed) return;
       completed = true;
-      clearTimeout(timeout);
+      timeout.clear();
       killDirectChild("SIGKILL");
     };
-    const timeout = setTimeout(() => {
+    const timeout = scheduleTimeout(() => {
       try {
         taskkill.kill("SIGKILL");
       } catch {
@@ -277,14 +298,14 @@ async function runCommandWithCappedStreams(
   void stderrPromise.catch(() => undefined);
 
   const timeout = params.timeoutMs && params.timeoutMs > 0 && Number.isFinite(params.timeoutMs)
-    ? setTimeout(() => {
+    ? scheduleTimeout(() => {
         timedOut = true;
         forceTeardown();
       }, params.timeoutMs)
     : undefined;
 
   try {
-    const processExitCode = await Promise.race([proc.exited, forcedExit]);
+    const processExitCode = await settleFromFirst(proc.exited, forcedExit);
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
     if (!forcedTeardown && stdoutOptions.onLine && stdout.finalLine !== undefined) {
       stdoutOptions.onLine(stdout.finalLine);
@@ -298,7 +319,7 @@ async function runCommandWithCappedStreams(
       stderrTruncated: stderr.truncated,
     };
   } finally {
-    if (timeout) clearTimeout(timeout);
+    timeout?.clear();
   }
 }
 
