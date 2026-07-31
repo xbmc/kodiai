@@ -44,6 +44,7 @@ describe("scanDiffForFabricatedContent", () => {
       "--no-ext-diff",
       "--no-textconv",
       "--text",
+      "--no-color",
       "HEAD~1",
       "HEAD",
     ]);
@@ -331,6 +332,36 @@ describe("scanDiffForFabricatedContent", () => {
       await Bun.write(join(dir, "generated.txt"), `baseline\nhash=${repeatedHex}\n`);
       await $`git -C ${dir} add -- generated.txt`.quiet();
       await $`git -C ${dir} commit -m suspicious`.quiet();
+
+      const result = await scanDiffForFabricatedContent(dir);
+
+      expect(result).toEqual({
+        warnings: [
+          `Suspicious low-entropy hex pattern in added line: \`${repeatedHex}...\``,
+        ],
+        complete: true,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("disables repository-configured color so diff markers remain parseable", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-fabricated-color-scan-"));
+    const repeatedHex = "a".repeat(40);
+
+    try {
+      await $`git -C ${dir} init --initial-branch=main`.quiet();
+      await $`git -C ${dir} config user.email test@example.com`.quiet();
+      await $`git -C ${dir} config user.name "Test User"`.quiet();
+      await Bun.write(join(dir, "generated.txt"), "baseline\n");
+      await $`git -C ${dir} add -- generated.txt`.quiet();
+      await $`git -C ${dir} commit -m baseline`.quiet();
+
+      await Bun.write(join(dir, "generated.txt"), `baseline\nhash=${repeatedHex}\n`);
+      await $`git -C ${dir} add -- generated.txt`.quiet();
+      await $`git -C ${dir} commit -m suspicious`.quiet();
+      await $`git -C ${dir} config color.ui always`.quiet();
 
       const result = await scanDiffForFabricatedContent(dir);
 
