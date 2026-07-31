@@ -9,6 +9,7 @@ import {
 import type { ReviewCandidatePublicationRuntimeResult } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import type { ReviewFindingLifecyclePublicProjection } from "../review-lifecycle/finding-lifecycle.ts";
 import { sanitizeContent, scanOutgoingForSecrets } from "../lib/sanitizer.ts";
+import type { ProcessedFinding } from "./review-processed-finding.ts";
 
 type SeverityCounts = {
   critical: number;
@@ -64,6 +65,19 @@ function formatVisibleFindingLines(runtime: ReviewCandidatePublicationRuntimeRes
         `- **${finding.severity.toUpperCase()}** \`${path}:${line}\` — ${title}`,
         ...(excerpt ? [`  ${excerpt}`] : []),
       ];
+    });
+}
+
+function formatProcessedFindingLines(findings: readonly ProcessedFinding[]): string[] {
+  return findings
+    .filter((finding) => finding.suppressed !== true)
+    .slice(0, MAX_VISIBLE_FINDINGS)
+    .flatMap((finding) => {
+      const path = sanitizePath(finding.filePath);
+      const line = readPositiveInteger(finding.startLine);
+      const title = sanitizeVisibleText(finding.title, MAX_VISIBLE_TITLE_LENGTH);
+      if (!path || !line || !title) return [];
+      return [`- **${String(finding.severity).toUpperCase()}** \`${path}:${line}\` — ${title}`];
     });
 }
 
@@ -127,6 +141,7 @@ export function resolveBlockedReviewFindingsNotice(params: {
   reviewDetailsBlock: string | null;
   candidatePublicationRuntime: ReviewCandidatePublicationRuntimeResult;
   findingLifecycle: ReviewFindingLifecyclePublicProjection | null;
+  visibleFindings?: readonly ProcessedFinding[];
   handlerPublishedReviewOutput: boolean;
 }): BlockedReviewFindingsNotice | null {
   // The handler's own primary output already published a full verdict (APPROVE or
@@ -164,14 +179,17 @@ export function resolveBlockedReviewFindingsNotice(params: {
     .trim();
   const issueLine = `Kodiai found ${findingCount} unpublished ${pluralize(findingCount, "finding")} that ${findingCount === 1 ? "requires" : "require"} human review.`;
   const visibleFindingLines = formatVisibleFindingLines(runtime);
-  const omittedVisibleFindings = Math.max(0, findingCount - visibleFindingLines.filter((line) => line.startsWith("- **")).length);
+  const fallbackFindingLines = visibleFindingLines.length > 0
+    ? visibleFindingLines
+    : formatProcessedFindingLines(params.visibleFindings ?? []);
+  const omittedVisibleFindings = Math.max(0, findingCount - fallbackFindingLines.filter((line) => line.startsWith("- **")).length);
   const body = [
     "Decision: NOT APPROVED",
     "",
     "Issues:",
-    ...(visibleFindingLines.length > 0
+    ...(fallbackFindingLines.length > 0
       ? [
-          ...visibleFindingLines,
+          ...fallbackFindingLines,
           ...(omittedVisibleFindings > 0
             ? [`- ...and ${omittedVisibleFindings} additional ${pluralize(omittedVisibleFindings, "finding")} omitted from this bounded summary.`]
             : []),
@@ -269,6 +287,7 @@ export async function publishBlockedReviewFindingsNoticeForRuntime(params: {
   reviewDetailsBlock: string | null;
   candidatePublicationRuntime: ReviewCandidatePublicationRuntimeResult;
   findingLifecycle: ReviewFindingLifecyclePublicProjection | null;
+  visibleFindings?: readonly ProcessedFinding[];
   processedFindingCount: number;
   handlerPublishedReviewOutput: boolean;
   botHandles: string[];
