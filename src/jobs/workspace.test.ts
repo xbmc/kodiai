@@ -278,6 +278,7 @@ describe("getBoundedStagedPaths", () => {
     expect(received?.env).toEqual({ GIT_NO_REPLACE_OBJECTS: "1" });
     expect(received?.args).toContain("--name-only");
     expect(received?.args).toContain("-z");
+    expect(received?.args).toContain("--no-renames");
     expect(received?.args).toContain("--no-ext-diff");
     expect(received?.args).toContain("--no-textconv");
     expect(received?.args).toContain(TEST_PARENT_OID);
@@ -684,6 +685,7 @@ describe("enforceWritePolicy", () => {
       });
 
       expect(received?.timeoutMs).toBe(30_000);
+      expect(received?.args).toContain("--no-renames");
       expect(received?.args).toContain("--no-ext-diff");
       expect(received?.args).toContain("--no-textconv");
       expect(received?.args).toContain(TEST_PARENT_OID);
@@ -976,6 +978,72 @@ describe("enforceWritePolicy", () => {
       }
     },
   );
+
+  test("real Git rename cannot hide a denied source behind an allowed destination", async () => {
+    const dir = await createTempDir();
+    try {
+      await $`git -C ${dir} init`.quiet();
+      await $`git -C ${dir} config user.email test@example.com`.quiet();
+      await $`git -C ${dir} config user.name Test`.quiet();
+      await writeFile(join(dir, ".kodiai.yml"), "write:\n  enabled: true\n");
+      await runGitForTest(dir, ["add", "--", ".kodiai.yml"]);
+      await $`git -C ${dir} commit -m baseline`.quiet();
+
+      await runGitForTest(dir, ["mv", "--", ".kodiai.yml", "allowed.txt"]);
+      const snapshot = await testImmutableRange(dir);
+      const stagedPaths = await getBoundedStagedPathsProduction({ dir, ...snapshot });
+
+      await expect(
+        enforceWritePolicyProduction({
+          dir,
+          ...snapshot,
+          stagedPaths,
+          allowPaths: ["allowed.txt"],
+          denyPaths: [".kodiai.yml"],
+          secretScanEnabled: false,
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-denied-path",
+        path: ".kodiai.yml",
+        rule: "denyPaths",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("real Git allowed rename applies policy to both paths in deterministic order", async () => {
+    const dir = await createTempDir();
+    const sourcePath = "allowed/a-source.txt";
+    const destinationPath = "allowed/z-destination.txt";
+    try {
+      await $`git -C ${dir} init`.quiet();
+      await $`git -C ${dir} config user.email test@example.com`.quiet();
+      await $`git -C ${dir} config user.name Test`.quiet();
+      await mkdir(dirname(join(dir, sourcePath)), { recursive: true });
+      await writeFile(join(dir, sourcePath), "allowed rename\n");
+      await runGitForTest(dir, ["add", "--", sourcePath]);
+      await $`git -C ${dir} commit -m baseline`.quiet();
+
+      await runGitForTest(dir, ["mv", "--", sourcePath, destinationPath]);
+      const snapshot = await testImmutableRange(dir);
+      const stagedPaths = await getBoundedStagedPathsProduction({ dir, ...snapshot });
+
+      expect(stagedPaths).toEqual([sourcePath, destinationPath]);
+      await expect(
+        enforceWritePolicyProduction({
+          dir,
+          ...snapshot,
+          stagedPaths,
+          allowPaths: ["allowed/**"],
+          denyPaths: [],
+          secretScanEnabled: false,
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("buildWritePolicyRefusalMessage", () => {
