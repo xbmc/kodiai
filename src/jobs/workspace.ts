@@ -142,55 +142,28 @@ const GIT_NETWORK_TIMEOUT_MS = 120_000;
 const GIT_CONTROL_TIMEOUT_MS = 120_000;
 const GIT_CONTROL_MAX_BYTES = 64 * 1024;
 
-async function runGitControlCommand(options: {
-  args: string[];
-  cwd?: string;
-  token?: string;
-  operation: string;
-}): Promise<CappedProcessResult> {
-  const result = await runCommandWithCappedOutput({
-    command: "git",
-    args: options.args,
-    cwd: options.cwd,
-    timeoutMs: GIT_CONTROL_TIMEOUT_MS,
-    maxStdoutBytes: GIT_CONTROL_MAX_BYTES,
-    maxStderrBytes: GIT_CONTROL_MAX_BYTES,
-  });
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.trim();
-    const suffix = result.timedOut
-      ? ` timed out after ${GIT_CONTROL_TIMEOUT_MS}ms`
-      : stderr
-        ? ` failed: ${stderr}`
-        : ` failed with exit code ${result.exitCode}`;
-    const err = new Error(`git ${options.operation}${suffix}`);
-    redactTokenFromError(err, options.token);
-    throw err;
-  }
-  return result;
-}
-
-async function runGitNetworkCommand(options: {
+async function runGitCommand(options: {
   args: string[];
   cwd?: string;
   token?: string;
   allowFailure?: boolean;
   operation: string;
+  timeoutMs?: number;
+  env?: Record<string, string | undefined>;
 }): Promise<CappedProcessResult> {
   const result = await runCommandWithCappedOutput({
     command: "git",
     args: options.args,
     cwd: options.cwd,
-    timeoutMs: GIT_NETWORK_TIMEOUT_MS,
-    maxStdoutBytes: 64 * 1024,
-    maxStderrBytes: 64 * 1024,
-    env: { GIT_TERMINAL_PROMPT: "0" },
+    timeoutMs: options.timeoutMs ?? GIT_NETWORK_TIMEOUT_MS,
+    maxStdoutBytes: GIT_CONTROL_MAX_BYTES,
+    maxStderrBytes: GIT_CONTROL_MAX_BYTES,
+    env: options.env ?? { GIT_TERMINAL_PROMPT: "0" },
   });
-
   if (result.exitCode !== 0 && !options.allowFailure) {
     const stderr = result.stderr.trim();
     const suffix = result.timedOut
-      ? ` timed out after ${GIT_NETWORK_TIMEOUT_MS}ms`
+      ? ` timed out after ${options.timeoutMs ?? GIT_NETWORK_TIMEOUT_MS}ms`
       : stderr
         ? ` failed: ${stderr}`
         : ` failed with exit code ${result.exitCode}`;
@@ -198,7 +171,6 @@ async function runGitNetworkCommand(options: {
     redactTokenFromError(err, options.token);
     throw err;
   }
-
   return result;
 }
 
@@ -237,7 +209,7 @@ export async function fetchRemoteTrackingBranch(options: {
   try {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remoteName}`.quiet()).text().trim();
     const fetchUrl = makeAuthUrl(strippedUrl, token);
-    await runGitNetworkCommand({
+    await runGitCommand({
       args: ["fetch", fetchUrl, `+${branch}:refs/remotes/${remoteName}/${branch}`, `--depth=${depth}`],
       cwd: dir,
       token,
@@ -292,8 +264,8 @@ export async function createBranchCommitAndPush(options: {
   validateBranchName(branchName);
 
   try {
-    await runGitControlCommand({ args: ["-C", dir, "checkout", "-b", branchName], cwd: dir, operation: "checkout" });
-    await runGitControlCommand({ args: ["-C", dir, "add", "-A"], cwd: dir, operation: "add" });
+    await runGitCommand({ args: ["-C", dir, "checkout", "-b", branchName], cwd: dir, operation: "checkout", timeoutMs: GIT_CONTROL_TIMEOUT_MS });
+    await runGitCommand({ args: ["-C", dir, "add", "-A"], cwd: dir, operation: "add", timeoutMs: GIT_CONTROL_TIMEOUT_MS });
 
     // Ensure there is something to commit.
     const snapshot = await captureStagedSnapshot({ dir });
@@ -316,7 +288,7 @@ export async function createBranchCommitAndPush(options: {
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await runGitNetworkCommand({
+    await runGitCommand({
       args: ["push", pushUrl, buildImmutablePushRefspec(headSha, branchName)],
       cwd: dir,
       token,
@@ -347,7 +319,7 @@ export async function commitAndPushToRemoteRef(options: {
   validateBranchName(remoteRef);
 
   try {
-    await runGitControlCommand({ args: ["-C", dir, "add", "-A"], cwd: dir, operation: "add" });
+    await runGitCommand({ args: ["-C", dir, "add", "-A"], cwd: dir, operation: "add", timeoutMs: GIT_CONTROL_TIMEOUT_MS });
 
     const snapshot = await captureStagedSnapshot({ dir });
     const stagedPaths = await getBoundedStagedPaths({ dir, ...snapshot });
@@ -369,7 +341,7 @@ export async function commitAndPushToRemoteRef(options: {
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await runGitNetworkCommand({
+    await runGitCommand({
       args: ["push", pushUrl, buildImmutablePushRefspec(headSha, remoteRef)],
       cwd: dir,
       token,
@@ -398,7 +370,7 @@ export async function pushHeadToRemoteRef(options: {
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await runGitNetworkCommand({
+    await runGitCommand({
       args: ["push", pushUrl, buildImmutablePushRefspec(headSha, remoteRef)],
       cwd: dir,
       token,
@@ -447,7 +419,7 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     const primaryFetchArgs = depth === undefined
       ? ["fetch", fetchUrl, `pull/${prNumber}/head:${localBranch}`]
       : ["fetch", fetchUrl, `pull/${prNumber}/head:${localBranch}`, `--depth=${depth}`];
-    const primaryFetch = await runGitNetworkCommand({
+    const primaryFetch = await runGitCommand({
       args: primaryFetchArgs,
       cwd: dir,
       token,
@@ -472,7 +444,7 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     const fallbackFetchArgs = depth === undefined
       ? ["fetch", fallbackFetchUrl, `${fallbackRef}:${localBranch}`]
       : ["fetch", fallbackFetchUrl, `${fallbackRef}:${localBranch}`, `--depth=${depth}`];
-    await runGitNetworkCommand({
+    await runGitCommand({
       args: fallbackFetchArgs,
       cwd: dir,
       token,
@@ -568,7 +540,7 @@ export function createWorkspaceManager(
         if (forkContext) {
           // Fork-aware clone: clone from the bot-owned fork using bot PAT
           const forkCloneUrl = `https://x-access-token:${forkContext.botPat}@github.com/${forkContext.forkOwner}/${forkContext.forkRepo}.git`;
-          await runGitNetworkCommand({
+          await runGitCommand({
             args: ["clone", `--depth=${depth}`, "--single-branch", "--branch", ref, forkCloneUrl, dir],
             token: forkContext.botPat,
             operation: "clone",
@@ -584,7 +556,7 @@ export function createWorkspaceManager(
         } else {
           // Standard clone from target repo using installation token
           const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
-          await runGitNetworkCommand({
+          await runGitCommand({
             args: ["clone", `--depth=${depth}`, "--single-branch", "--branch", ref, cloneUrl, dir],
             token,
             operation: "clone",

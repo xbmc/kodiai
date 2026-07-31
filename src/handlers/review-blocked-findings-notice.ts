@@ -50,35 +50,47 @@ const MAX_VISIBLE_FINDINGS = 5;
 const MAX_VISIBLE_TITLE_LENGTH = 120;
 const MAX_VISIBLE_EXCERPT_LENGTH = 240;
 
+type VisibleFinding = {
+  path: string;
+  line: number;
+  severity: string;
+  title: string;
+  excerpt?: string;
+};
+
+function formatFindingLines(findings: readonly VisibleFinding[]): string[] {
+  return findings.slice(0, MAX_VISIBLE_FINDINGS).flatMap((finding) => [
+    `- **${finding.severity.toUpperCase()}** \`${finding.path}:${finding.line}\` — ${finding.title}`,
+    ...(finding.excerpt ? [`  ${finding.excerpt}`] : []),
+  ]);
+}
+
 function formatVisibleFindingLines(runtime: ReviewCandidatePublicationRuntimeResult): string[] {
   if (!hasSafeDetailsProjection(runtime)) return [];
 
-  return runtime.detailsOnlyFindings
-    .slice(0, MAX_VISIBLE_FINDINGS)
+  const findings = runtime.detailsOnlyFindings
     .flatMap((finding) => {
       const path = sanitizePath(finding.location.path);
       const line = readPositiveInteger(finding.location.line);
       const title = sanitizeVisibleText(finding.title, MAX_VISIBLE_TITLE_LENGTH);
       if (!path || !line || !title) return [];
       const excerpt = sanitizeVisibleText(finding.excerpt, MAX_VISIBLE_EXCERPT_LENGTH);
-      return [
-        `- **${finding.severity.toUpperCase()}** \`${path}:${line}\` — ${title}`,
-        ...(excerpt ? [`  ${excerpt}`] : []),
-      ];
+      return [{ path, line, severity: finding.severity, title, ...(excerpt ? { excerpt } : {}) }];
     });
+  return formatFindingLines(findings);
 }
 
 function formatProcessedFindingLines(findings: readonly ProcessedFinding[]): string[] {
-  return findings
+  const visibleFindings = findings
     .filter((finding) => finding.suppressed !== true)
-    .slice(0, MAX_VISIBLE_FINDINGS)
     .flatMap((finding) => {
       const path = sanitizePath(finding.filePath);
       const line = readPositiveInteger(finding.startLine);
       const title = sanitizeVisibleText(finding.title, MAX_VISIBLE_TITLE_LENGTH);
       if (!path || !line || !title) return [];
-      return [`- **${String(finding.severity).toUpperCase()}** \`${path}:${line}\` — ${title}`];
+      return [{ path, line, severity: String(finding.severity), title }];
     });
+  return formatFindingLines(visibleFindings);
 }
 
 function hasSafeDetailsProjection(runtime: ReviewCandidatePublicationRuntimeResult): boolean {
