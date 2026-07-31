@@ -209,7 +209,7 @@ git commit -m "fix: bound config and agent result reads"
 
 **Interfaces:**
 - Consumes: existing `runCommandWithCappedOutput` process and timeout conventions.
-- Produces: `runCommandWithCappedLines(params): Promise<Omit<CappedProcessResult, "stdout"> & { stdout: "" }>` with `onStdoutLine(line: string): void` and no accumulated stdout text.
+- Produces: `runCommandWithCappedLines(params): Promise<CappedProcessResult>` with `onStdoutLine(line: string): void`; the returned `stdout` is always empty and no stdout text is accumulated.
 
 - [ ] **Step 1: Write failing streaming tests**
 
@@ -251,7 +251,7 @@ Expected: FAIL because `runCommandWithCappedLines` is not exported.
 
 - [ ] **Step 3: Implement line streaming without duplicating process orchestration**
 
-Refactor the private stream reader so it accepts an optional line sink and `captureText` flag. Maintain a decoder carry string, call `onStdoutLine` only for newline-terminated lines, and deliver the final unterminated line only when the stream completes without truncation. `runCommandWithCappedOutput` must retain byte-for-byte existing behavior.
+Refactor the private stream reader so it accepts an optional line sink and `captureText` flag. Maintain a decoder carry string, call `onStdoutLine` for newline-terminated lines and once for a final unterminated line when the stream completes without truncation. `runCommandWithCappedOutput` must retain byte-for-byte existing behavior.
 
 Expose this exact parameter extension:
 

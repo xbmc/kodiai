@@ -139,6 +139,36 @@ function makeAuthUrl(strippedUrl: string, token: string | undefined): string {
 }
 
 const GIT_NETWORK_TIMEOUT_MS = 120_000;
+const GIT_CONTROL_TIMEOUT_MS = 120_000;
+const GIT_CONTROL_MAX_BYTES = 64 * 1024;
+
+async function runGitControlCommand(options: {
+  args: string[];
+  cwd?: string;
+  token?: string;
+  operation: string;
+}): Promise<CappedProcessResult> {
+  const result = await runCommandWithCappedOutput({
+    command: "git",
+    args: options.args,
+    cwd: options.cwd,
+    timeoutMs: GIT_CONTROL_TIMEOUT_MS,
+    maxStdoutBytes: GIT_CONTROL_MAX_BYTES,
+    maxStderrBytes: GIT_CONTROL_MAX_BYTES,
+  });
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.trim();
+    const suffix = result.timedOut
+      ? ` timed out after ${GIT_CONTROL_TIMEOUT_MS}ms`
+      : stderr
+        ? ` failed: ${stderr}`
+        : ` failed with exit code ${result.exitCode}`;
+    const err = new Error(`git ${options.operation}${suffix}`);
+    redactTokenFromError(err, options.token);
+    throw err;
+  }
+  return result;
+}
 
 async function runGitNetworkCommand(options: {
   args: string[];
@@ -262,8 +292,8 @@ export async function createBranchCommitAndPush(options: {
   validateBranchName(branchName);
 
   try {
-    await $`git -C ${dir} checkout -b ${branchName}`.quiet();
-    await $`git -C ${dir} add -A`.quiet();
+    await runGitControlCommand({ args: ["-C", dir, "checkout", "-b", branchName], cwd: dir, operation: "checkout" });
+    await runGitControlCommand({ args: ["-C", dir, "add", "-A"], cwd: dir, operation: "add" });
 
     // Ensure there is something to commit.
     const snapshot = await captureStagedSnapshot({ dir });
@@ -317,7 +347,7 @@ export async function commitAndPushToRemoteRef(options: {
   validateBranchName(remoteRef);
 
   try {
-    await $`git -C ${dir} add -A`.quiet();
+    await runGitControlCommand({ args: ["-C", dir, "add", "-A"], cwd: dir, operation: "add" });
 
     const snapshot = await captureStagedSnapshot({ dir });
     const stagedPaths = await getBoundedStagedPaths({ dir, ...snapshot });

@@ -14,7 +14,29 @@ export async function readTextFileBounded(path: string, maxBytes: number): Promi
     throw new RangeError("maxBytes must be a non-negative safe integer");
   }
   const file = Bun.file(path);
-  if (!(await file.exists())) return await file.text();
   if (file.size > maxBytes) throw new BoundedFileTooLargeError(path, file.size, maxBytes);
-  return await file.text();
+  const reader = file.stream().getReader();
+  const chunks: Uint8Array[] = [];
+  let bytesRead = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const remaining = maxBytes - bytesRead;
+      if (value.byteLength > remaining) {
+        throw new BoundedFileTooLargeError(path, maxBytes + 1, maxBytes);
+      }
+      chunks.push(value);
+      bytesRead += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(bytesRead);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
