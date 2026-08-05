@@ -71,6 +71,7 @@ function sanitizedCandidatePublicationCounts(
     candidateDetailsOnlyFindings: nonNegativeCount(counts.candidateDetailsOnlyFindings),
     candidateDetailsOnlyOmitted: nonNegativeCount(counts.candidateDetailsOnlyOmitted),
     fixEligibilityBlocked: nonNegativeCount(counts.fixEligibilityBlocked),
+    securityRelevantBlocked: nonNegativeCount(counts.securityRelevantBlocked),
     nonPublishableReferences: nonNegativeCount(counts.nonPublishableReferences),
     convertedProcessedFindings: nonNegativeCount(counts.convertedProcessedFindings),
     directAttempted: nonNegativeCount(counts.directAttempted),

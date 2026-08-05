@@ -56,6 +56,8 @@ export type ReviewCandidatePublicationRuntimeCounts = {
   candidateDetailsOnlyFindings: number;
   candidateDetailsOnlyOmitted: number;
   fixEligibilityBlocked: number;
+  /** Candidates blocked because a secret was detected in their content -- never treat this as a benign policy filter. */
+  securityRelevantBlocked: number;
   nonPublishableReferences: number;
   convertedProcessedFindings: number;
   directAttempted: number;
@@ -176,6 +178,7 @@ export function classifyReviewCandidatePublicationRuntime(
   const approvedReferences = approvalCounts.approved + approvalCounts.rewritten;
   const candidatePublishable = adapterCounts.publishable;
   const fixEligibilityBlocked = adapterCounts.fixEligibilityBlocked;
+  const securityRelevantBlocked = adapterCounts.securityRelevantBlocked;
   const candidatePublished = publisher.published;
   const candidateSkipped = publisher.skipped + adapterCounts.skipped;
   const movedToDetails = adapterCounts.movedToDetails + publisher.movedToDetails;
@@ -239,6 +242,7 @@ export function classifyReviewCandidatePublicationRuntime(
     candidateDetailsOnlyFindings: detailsOnlyFindings,
     candidateDetailsOnlyOmitted: detailsOnlyOmitted,
     fixEligibilityBlocked,
+    securityRelevantBlocked,
     nonPublishableReferences: Math.max(0, approvedReferences - candidatePublishable),
     convertedProcessedFindings,
     directAttempted: direct.attempted ? 1 : 0,
@@ -427,6 +431,12 @@ export function isExpectedCandidatePublicationPolicyBlock(runtime: Pick<ReviewCa
   if (runtime.counts.candidateMalformed !== 0) return false;
   if (runtime.counts.directPublished !== 0) return false;
   if (runtime.counts.malformed !== 0) return false;
+  // A candidate blocked because it contained a secret is never "expected,
+  // benign policy filtering" -- the reason must never be swallowed into a
+  // silent clean approval. The published notice still carries no raw
+  // finding content (see resolveBlockedReviewFindingsNotice), so this only
+  // ever costs a "something was blocked" line, never a leak.
+  if (runtime.counts.securityRelevantBlocked !== 0) return false;
 
   const publisherBlocked = runtime.counts.candidateBlocked > 0
     && runtime.reasons.every((reason) => reason === "candidate-publisher-blocked")
@@ -492,12 +502,13 @@ function normalizeAdapterCounts(
   detailsOnlyFindings: number;
   detailsOnlyOmitted: number;
   fixEligibilityBlocked: number;
+  securityRelevantBlocked: number;
   malformed: number;
 } {
   const counts = adapter?.counts;
   if (!isRecord(counts)) {
     pushReason(reasons, "malformed-adapter-summary");
-    return { input: 0, publishable: 0, skipped: 0, movedToDetails: 0, detailsOnlyFindings: 0, detailsOnlyOmitted: 0, fixEligibilityBlocked: 0, malformed: 1 };
+    return { input: 0, publishable: 0, skipped: 0, movedToDetails: 0, detailsOnlyFindings: 0, detailsOnlyOmitted: 0, fixEligibilityBlocked: 0, securityRelevantBlocked: 0, malformed: 1 };
   }
   const skippedItems = Array.isArray(adapter?.skipped) ? adapter.skipped : [];
   for (const item of skippedItems) {
@@ -506,11 +517,17 @@ function normalizeAdapterCounts(
   const malformedSkipReasons = skippedItems.some((item) => !isRecord(item) || sanitizeSummaryToken(String(item.reason ?? "unknown")) === "unknown");
   if (malformedSkipReasons) pushReason(reasons, "malformed-adapter-summary");
   const fixEligibilityBlocked = countBlockingFixEligibilityReasons(adapter?.fixEligibility?.reasonCounts);
+  let securityRelevantBlocked = 0;
   if (fixEligibilityBlocked > 0 && isRecord(adapter?.fixEligibility?.reasonCounts)) {
     for (const [reason, count] of Object.entries(adapter.fixEligibility.reasonCounts)) {
       const normalizedReason = sanitizeSummaryToken(reason);
       if (normalizedReason === "eligible" || normalizedReason === "line-not-commentable" || normalizedReason === "missing-replacement") continue;
-      if (normalizeCount(count) > 0) addBucketReason(bucketReasons.blocked, reason, "fix-eligibility-blocked");
+      const normalizedCount = normalizeCount(count);
+      if (normalizedCount > 0) addBucketReason(bucketReasons.blocked, reason, "fix-eligibility-blocked");
+      // A candidate blocked because it contained a secret is never an "expected,
+      // benign policy filter" -- it must always surface to a human, even though
+      // its raw content stays private.
+      if (normalizedReason === "secret-detected") securityRelevantBlocked += normalizedCount;
     }
   }
   return {
@@ -521,6 +538,7 @@ function normalizeAdapterCounts(
     detailsOnlyFindings: normalizeCount(counts.detailsOnlyFindings),
     detailsOnlyOmitted: normalizeCount(counts.detailsOnlyOmitted),
     fixEligibilityBlocked,
+    securityRelevantBlocked,
     malformed: hasMalformedCount([counts.input, counts.publishable, counts.skipped]) || hasOptionalMalformedCount([counts.movedToDetails, counts.detailsOnlyFindings, counts.detailsOnlyOmitted]) || malformedSkipReasons ? 1 : 0,
   };
 }
