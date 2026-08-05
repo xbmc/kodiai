@@ -524,6 +524,19 @@ test("rejects invalid YAML", async () => {
   }
 });
 
+test("rejects .kodiai.yml larger than 256 KiB before YAML parsing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-config-limit-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), `#${"x".repeat(256 * 1024)}`);
+    await expect(loadRepoConfig(dir)).rejects.toMatchObject({
+      actualBytes: 256 * 1024 + 1,
+      maxBytes: 256 * 1024,
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("falls back to defaults for invalid values with warning", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {

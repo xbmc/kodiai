@@ -6,6 +6,9 @@ import {
   REPO_DOCTRINE_LIMITS,
   REPO_DOCTRINE_SEVERITIES,
 } from "../repo-doctrine/contracts.ts";
+import { readTextFileBounded } from "../lib/bounded-file.ts";
+
+export const MAX_REPO_CONFIG_BYTES = 256 * 1024;
 
 const writeSecretScanSchema = z
   .object({
@@ -765,7 +768,7 @@ export async function loadRepoConfig(
     return { config: repoConfigSchema.parse({}), warnings: [] };
   }
 
-  const raw = await file.text();
+  const raw = await readTextFileBounded(configPath, MAX_REPO_CONFIG_BYTES);
 
   let parsed: unknown;
   try {

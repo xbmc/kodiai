@@ -1,14 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
+import type { CappedProcessResult } from "../lib/capped-process.ts";
 import { buildWritePolicyRefusalMessage } from "../lib/write-policy-formatting.ts";
 import {
-  enforceWritePolicy,
+  enforceWritePolicy as enforceWritePolicyProduction,
+  getBoundedStagedPaths as getBoundedStagedPathsProduction,
+  captureStagedSnapshot,
+  commitStagedSnapshot,
   WritePolicyError,
   buildAuthFetchUrl,
+  buildImmutablePushRefspec,
   createWorkspaceManager,
+  commitAndPushToRemoteRef,
   cleanupStaleAzureFilesWorkspaceDirs,
   fetchRemoteTrackingBranch,
   fetchAndCheckoutPullRequestHeadRef,
@@ -18,6 +24,343 @@ import type { GitHubApp } from "../auth/github-app.ts";
 async function createTempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "kodiai-workspace-test-"));
 }
+
+async function createRepoWithStagedFile(
+  relativePath: string,
+  content: string | Uint8Array,
+): Promise<string> {
+  const dir = await createTempDir();
+  await $`git -C ${dir} init`.quiet();
+  await $`git -C ${dir} config user.email test@example.com`.quiet();
+  await $`git -C ${dir} config user.name Test`.quiet();
+  await writeFile(join(dir, "README.md"), "baseline\n");
+  await runGitForTest(dir, ["add", "--", "README.md"]);
+  await $`git -C ${dir} commit -m baseline`.quiet();
+  const parent = dirname(join(dir, relativePath));
+  await mkdir(parent, { recursive: true });
+  await writeFile(join(dir, relativePath), content);
+  const add = Bun.spawn(["git", "-C", dir, "add", "--", relativePath], {
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  const exitCode = await add.exited;
+  if (exitCode !== 0) {
+    throw new Error(`git add failed with exit code ${exitCode}`);
+  }
+  return dir;
+}
+
+async function runGitForTest(dir: string, args: string[]): Promise<void> {
+  const proc = Bun.spawn(["git", "-C", dir, ...args], {
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`git ${args[0] ?? "command"} failed with exit code ${exitCode}`);
+  }
+}
+
+function stagedDiffResult(
+  overrides: Partial<CappedProcessResult> = {},
+): CappedProcessResult {
+  return {
+    exitCode: 0,
+    stdout: "",
+    stderr: "",
+    timedOut: false,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    ...overrides,
+  };
+}
+
+const TEST_PARENT_OID = "1".repeat(40);
+const TEST_TREE_OID = "2".repeat(40);
+const TEST_COMMIT_OID = "3".repeat(40);
+
+describe("buildImmutablePushRefspec", () => {
+  test("uses the immutable commit OID and fully qualifies a branch destination", () => {
+    expect(buildImmutablePushRefspec(TEST_COMMIT_OID, "kodiai/write/new-branch")).toBe(
+      `${TEST_COMMIT_OID}:refs/heads/kodiai/write/new-branch`,
+    );
+  });
+
+  test("preserves an already fully qualified destination", () => {
+    expect(buildImmutablePushRefspec(TEST_COMMIT_OID, "refs/heads/existing-branch")).toBe(
+      `${TEST_COMMIT_OID}:refs/heads/existing-branch`,
+    );
+  });
+});
+
+async function testImmutableRange(dir: string): Promise<{
+  parentOid: string;
+  treeOid: string;
+}> {
+  const parentOid = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
+  const treeOid = (await $`git -C ${dir} write-tree`.quiet()).text().trim();
+  return { parentOid, treeOid };
+}
+
+async function getBoundedStagedPaths(
+  options: Omit<Parameters<typeof getBoundedStagedPathsProduction>[0], "parentOid" | "treeOid">
+    & Partial<Pick<Parameters<typeof getBoundedStagedPathsProduction>[0], "parentOid" | "treeOid">>,
+): ReturnType<typeof getBoundedStagedPathsProduction> {
+  const range = options.runStagedPathCommand
+    ? { parentOid: TEST_PARENT_OID, treeOid: TEST_TREE_OID }
+    : await testImmutableRange(options.dir);
+  return getBoundedStagedPathsProduction({ ...range, ...options });
+}
+
+async function enforceWritePolicy(
+  options: Omit<Parameters<typeof enforceWritePolicyProduction>[0], "parentOid" | "treeOid">
+    & Partial<Pick<Parameters<typeof enforceWritePolicyProduction>[0], "parentOid" | "treeOid">>,
+): ReturnType<typeof enforceWritePolicyProduction> {
+  const range = options.runStagedDiffLines || !options.secretScanEnabled
+    ? { parentOid: TEST_PARENT_OID, treeOid: TEST_TREE_OID }
+    : await testImmutableRange(options.dir);
+  const runStagedPathCommand = options.runStagedPathCommand ?? (async () => stagedDiffResult({
+    stdout: options.stagedPaths.length > 0
+      ? `${options.stagedPaths.join("\0")}\0`
+      : "",
+  }));
+  return enforceWritePolicyProduction({
+    ...range,
+    ...options,
+    runStagedPathCommand,
+  });
+}
+
+describe("immutable Git snapshot commands", () => {
+  test("captures validated parent and index tree OIDs with bounded commands", async () => {
+    const calls: Array<{
+      args: string[];
+      env?: Record<string, string | undefined>;
+      timeoutMs?: number;
+      maxStdoutBytes: number;
+    }> = [];
+    const snapshot = await captureStagedSnapshot({
+      dir: "/workspace",
+      runGitControlCommand: async (params) => {
+        calls.push(params);
+        if (params.args[0] === "rev-parse") {
+          return stagedDiffResult({ stdout: `${TEST_PARENT_OID}\n` });
+        }
+        return stagedDiffResult({ stdout: `${TEST_TREE_OID}\n` });
+      },
+    });
+
+    expect(snapshot).toEqual({ parentOid: TEST_PARENT_OID, treeOid: TEST_TREE_OID });
+    expect(calls.map((call) => call.args)).toEqual([
+      ["rev-parse", "--verify", "HEAD^{commit}"],
+      ["write-tree"],
+    ]);
+    expect(calls.every((call) => call.timeoutMs === 30_000)).toBe(true);
+    expect(calls.every((call) => call.maxStdoutBytes === 64 * 1024)).toBe(true);
+    expect(calls.every((call) => call.env?.GIT_NO_REPLACE_OBJECTS === "1")).toBe(true);
+  });
+
+  test("disables hooks and verifies HEAD after committing the exact tree", async () => {
+    const calls: Array<{
+      args: string[];
+      env?: Record<string, string | undefined>;
+    }> = [];
+    const commitOid = await commitStagedSnapshot({
+      dir: "/workspace",
+      parentOid: TEST_PARENT_OID,
+      treeOid: TEST_TREE_OID,
+      commitMessage: "safe message",
+      runGitControlCommand: async (params) => {
+        calls.push(params);
+        if (params.args.includes("commit-tree")) {
+          return stagedDiffResult({ stdout: `${TEST_COMMIT_OID}\n` });
+        }
+        if (params.args.includes("rev-parse")) {
+          return stagedDiffResult({ stdout: `${TEST_COMMIT_OID}\n` });
+        }
+        return stagedDiffResult();
+      },
+    });
+
+    expect(commitOid).toBe(TEST_COMMIT_OID);
+    expect(calls.map((call) => call.args)).toEqual([
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit-tree",
+        TEST_TREE_OID,
+        "-p",
+        TEST_PARENT_OID,
+        "-m",
+        "safe message",
+      ],
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "update-ref",
+        "HEAD",
+        TEST_COMMIT_OID,
+        TEST_PARENT_OID,
+      ],
+      ["rev-parse", "--verify", "HEAD"],
+    ]);
+    expect(calls.every((call) => call.env?.GIT_NO_REPLACE_OBJECTS === "1")).toBe(true);
+  });
+
+  test("fails closed without leaking details when atomic HEAD update fails", async () => {
+    const calls: string[][] = [];
+    const promise = commitStagedSnapshot({
+      dir: "/workspace",
+      parentOid: TEST_PARENT_OID,
+      treeOid: TEST_TREE_OID,
+      commitMessage: "safe message",
+      runGitControlCommand: async (params) => {
+        calls.push(params.args);
+        if (params.args.includes("commit-tree")) {
+          return stagedDiffResult({ stdout: `${TEST_COMMIT_OID}\n` });
+        }
+        return stagedDiffResult({
+          exitCode: 1,
+          stderr: "sensitive ref race details",
+        });
+      },
+    });
+
+    await expect(promise).rejects.toMatchObject({
+      code: "write-policy-secret-scan-incomplete",
+      message: "Write blocked: staged secret scan was incomplete",
+    });
+    expect(calls).toEqual([
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit-tree",
+        TEST_TREE_OID,
+        "-p",
+        TEST_PARENT_OID,
+        "-m",
+        "safe message",
+      ],
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "update-ref",
+        "HEAD",
+        TEST_COMMIT_OID,
+        TEST_PARENT_OID,
+      ],
+    ]);
+  });
+});
+
+describe("getBoundedStagedPaths", () => {
+  test("parses exact NUL-delimited paths with bounded safe Git options", async () => {
+    let received: Parameters<NonNullable<Parameters<typeof getBoundedStagedPaths>[0]["runStagedPathCommand"]>>[0] | undefined;
+    const paths = await getBoundedStagedPaths({
+      dir: "/workspace",
+      runStagedPathCommand: async (params) => {
+        received = params;
+        return stagedDiffResult({
+          stdout: " leading.ts\0trailing.ts \0tab\tname.ts\0line\nbreak.ts\0",
+        });
+      },
+    });
+
+    expect(paths).toEqual([
+      " leading.ts",
+      "trailing.ts ",
+      "tab\tname.ts",
+      "line\nbreak.ts",
+    ]);
+    expect(received?.timeoutMs).toBe(30_000);
+    expect(received?.maxStdoutBytes).toBe(1024 * 1024);
+    expect(received?.stdoutDecoderOptions).toEqual({ fatal: true, ignoreBOM: true });
+    expect(received?.env).toEqual({ GIT_NO_REPLACE_OBJECTS: "1" });
+    expect(received?.args).toContain("--name-only");
+    expect(received?.args).toContain("-z");
+    expect(received?.args).toContain("--no-renames");
+    expect(received?.args).toContain("--no-ext-diff");
+    expect(received?.args).toContain("--no-textconv");
+    expect(received?.args).toContain(TEST_PARENT_OID);
+    expect(received?.args).toContain(TEST_TREE_OID);
+    expect(received?.args).not.toContain("--cached");
+  });
+
+  test("returns an empty path list for an empty staged diff", async () => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => stagedDiffResult(),
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  test("preserves BOM and literal replacement characters in decoded paths", async () => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => stagedDiffResult({
+          stdout: "\uFEFFallowed.ts\0\uFFFDallowed.ts\0",
+        }),
+      }),
+    ).resolves.toEqual(["\uFEFFallowed.ts", "\uFFFDallowed.ts"]);
+  });
+
+  test.each([
+    ["timeout", stagedDiffResult({ timedOut: true })],
+    ["nonzero exit", stagedDiffResult({ exitCode: 1, stderr: "sensitive stderr" })],
+    ["stdout truncation", stagedDiffResult({ stdoutTruncated: true })],
+    ["stderr truncation", stagedDiffResult({ stderrTruncated: true })],
+  ])("fails closed when path discovery has a %s", async (_name, result) => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => result,
+      }),
+    ).rejects.toMatchObject({
+      code: "write-policy-secret-scan-incomplete",
+      rule: "secretScan",
+      maxBytes: 1024 * 1024,
+      message: "Write blocked: staged secret scan was incomplete",
+    });
+  });
+
+  test("fails closed when path discovery throws", async () => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => {
+          throw new Error("runner failed with sensitive details");
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "write-policy-secret-scan-incomplete",
+      maxBytes: 1024 * 1024,
+      message: "Write blocked: staged secret scan was incomplete",
+    });
+  });
+
+  test.each([
+    ["missing NUL terminator", "src/value.ts"],
+    ["duplicate record", "src/value.ts\0src/value.ts\0"],
+    ["empty record", "src/value.ts\0\0"],
+    ["byte-count overflow", `${"a".repeat(1024 * 1024)}\0`],
+    [
+      "file-count overflow",
+      `${Array.from({ length: 10_001 }, (_, index) => `f${index}`).join("\0")}\0`,
+    ],
+  ])("fails closed for %s in path discovery output", async (_name, stdout) => {
+    await expect(
+      getBoundedStagedPaths({
+        dir: "/workspace",
+        runStagedPathCommand: async () => stagedDiffResult({ stdout }),
+      }),
+    ).rejects.toMatchObject({
+      code: "write-policy-secret-scan-incomplete",
+      maxBytes: 1024 * 1024,
+    });
+  });
+});
 
 describe("enforceWritePolicy", () => {
   test("passes when no denyPaths or allowPaths are configured", async () => {
@@ -119,6 +462,588 @@ describe("enforceWritePolicy", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test.each([
+    ["timeout", stagedDiffResult({ timedOut: true })],
+    ["nonzero exit", stagedDiffResult({ exitCode: 1, stderr: "sensitive stderr" })],
+    ["stdout truncation", stagedDiffResult({ stdoutTruncated: true })],
+    ["stderr truncation", stagedDiffResult({ stderrTruncated: true })],
+  ])("fails closed when the staged secret scan has a %s", async (_name, result) => {
+    const dir = await createTempDir();
+    try {
+      const promise = enforceWritePolicy({
+        dir,
+        stagedPaths: ["src/value.ts"],
+        allowPaths: [],
+        denyPaths: [],
+        secretScanEnabled: true,
+        runStagedDiffLines: async (params) => {
+          params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
+          params.onStdoutLine("+++ b/src/value.ts");
+          params.onStdoutLine("+export const value = 1;");
+          return result;
+        },
+      });
+
+      await expect(promise).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        rule: "secretScan",
+        maxBytes: 8 * 1024 * 1024,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("fails closed when the staged secret scan runner throws", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async () => {
+            throw new Error("runner failed with sensitive details");
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        rule: "secretScan",
+        maxBytes: 8 * 1024 * 1024,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("scans added lines even when a diff header cannot be attributed to stagedPaths", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
+            params.onStdoutLine("diff --git a/src/other.ts b/src/other.ts");
+            params.onStdoutLine("--- /dev/null");
+            params.onStdoutLine("+++ b/src/other.ts");
+            params.onStdoutLine("@@ -0,0 +1 @@");
+            params.onStdoutLine("+const token = 'ghp_123456789012345678901234567890123456';");
+            return stagedDiffResult();
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-detected",
+        rule: "secretScan",
+        detector: "regex:github-pat",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ignores removed and context lines while scanning regular hunks", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
+            params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
+            params.onStdoutLine("--- a/src/value.ts");
+            params.onStdoutLine("+++ b/src/value.ts");
+            params.onStdoutLine("@@ -1,2 +1,2 @@");
+            params.onStdoutLine("-const token = 'ghp_123456789012345678901234567890123456';");
+            params.onStdoutLine(" const token = 'ghp_123456789012345678901234567890123456';");
+            params.onStdoutLine("+export const value = 1;");
+            return stagedDiffResult();
+          },
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves secret detection for staged added lines", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
+            params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
+            params.onStdoutLine("+++ b/src/value.ts");
+            params.onStdoutLine("@@ -0,0 +1 @@");
+            params.onStdoutLine("+const token = 'ghp_123456789012345678901234567890123456';");
+            return stagedDiffResult();
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-detected",
+        rule: "secretScan",
+        path: "src/value.ts",
+        detector: "regex:github-pat",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves per-file regex detection across added lines", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
+            params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
+            params.onStdoutLine("--- /dev/null");
+            params.onStdoutLine("+++ b/src/value.ts");
+            params.onStdoutLine("@@ -0,0 +1,2 @@");
+            params.onStdoutLine('+const url = "https://x-access-token:');
+            params.onStdoutLine('+secret@github.com/repo";');
+            return stagedDiffResult();
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-detected",
+        detector: "regex:github-x-access-token-url",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not join regex state across file boundaries", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/one.ts", "src/two.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
+            params.onStdoutLine("diff --git a/src/one.ts b/src/one.ts");
+            params.onStdoutLine("--- /dev/null");
+            params.onStdoutLine("+++ b/src/one.ts");
+            params.onStdoutLine("@@ -0,0 +1 @@");
+            params.onStdoutLine('+const prefix = "https://x-access-token:');
+            params.onStdoutLine("diff --git a/src/two.ts b/src/two.ts");
+            params.onStdoutLine("--- /dev/null");
+            params.onStdoutLine("+++ b/src/two.ts");
+            params.onStdoutLine("@@ -0,0 +1 @@");
+            params.onStdoutLine('+const suffix = "secret@github.com/repo";');
+            return stagedDiffResult();
+          },
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("uses a finite timeout and disables external and textconv diff drivers", async () => {
+    const dir = await createTempDir();
+    try {
+      let received: Parameters<NonNullable<Parameters<typeof enforceWritePolicy>[0]["runStagedDiffLines"]>>[0] | undefined;
+      await enforceWritePolicy({
+        dir,
+        stagedPaths: ["src/value.ts"],
+        allowPaths: [],
+        denyPaths: [],
+        secretScanEnabled: true,
+        runStagedDiffLines: async (params) => {
+          received = params;
+          params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
+          params.onStdoutLine("--- /dev/null");
+          params.onStdoutLine("+++ b/src/value.ts");
+          params.onStdoutLine("@@ -0,0 +1 @@");
+          params.onStdoutLine("+export const value = 1;");
+          return stagedDiffResult();
+        },
+      });
+
+      expect(received?.timeoutMs).toBe(30_000);
+      expect(received?.args).toContain("--no-renames");
+      expect(received?.args).toContain("--no-ext-diff");
+      expect(received?.args).toContain("--no-textconv");
+      expect(received?.args).toContain(TEST_PARENT_OID);
+      expect(received?.args).toContain(TEST_TREE_OID);
+      expect(received?.args).not.toContain("--cached");
+      expect(received?.maxStdoutBytes).toBe(8 * 1024 * 1024);
+      expect(received?.env).toEqual({ GIT_NO_REPLACE_OBJECTS: "1" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    ["combined diff", ["diff --cc src/value.ts", "@@@ -1,1 -1,1 +1,1 @@@", "++secret"]],
+    ["explicit combined diff", ["diff --combined src/value.ts"]],
+    ["binary marker", ["diff --git a/secret.bin b/secret.bin", "Binary files /dev/null and b/secret.bin differ"]],
+    ["Git binary patch", ["diff --git a/secret.bin b/secret.bin", "GIT binary patch", "literal 1", "AcmZQz"]],
+    ["malformed hunk", [
+      "diff --git a/src/value.ts b/src/value.ts",
+      "--- /dev/null",
+      "+++ b/src/value.ts",
+      "@@ -0,0 +1 @@",
+      "+export const value = 1;",
+      "+export const extra = 2;",
+    ]],
+  ])("fails closed for %s output", async (_name, lines) => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
+            for (const line of lines) params.onStdoutLine(line);
+            return stagedDiffResult();
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        rule: "secretScan",
+        maxBytes: 8 * 1024 * 1024,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("fails closed when the immutable diff identity is invalid", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicyProduction({
+          dir,
+          parentOid: TEST_PARENT_OID,
+          treeOid: "not-an-oid",
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async () => stagedDiffResult(),
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        rule: "secretScan",
+        maxBytes: 8 * 1024 * 1024,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("fails closed when staged paths are replayed against another immutable diff", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicyProduction({
+          dir,
+          parentOid: TEST_PARENT_OID,
+          treeOid: TEST_TREE_OID,
+          stagedPaths: ["allowed.ts"],
+          allowPaths: ["allowed.ts"],
+          denyPaths: [],
+          secretScanEnabled: false,
+          runStagedPathCommand: async () => stagedDiffResult({
+            stdout: "denied.ts\0",
+          }),
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        message: "Write blocked: staged secret scan was incomplete",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("scans staged added content that begins with two plus signs", async () => {
+    const dir = await createTempDir();
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["src/value.ts"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+          runStagedDiffLines: async (params) => {
+            params.onStdoutLine("diff --git a/src/value.ts b/src/value.ts");
+            params.onStdoutLine("--- a/src/value.ts");
+            params.onStdoutLine("+++ b/src/value.ts");
+            params.onStdoutLine("@@ -0,0 +1 @@");
+            params.onStdoutLine("+++const token = 'ghp_123456789012345678901234567890123456';");
+            return stagedDiffResult();
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-detected",
+        path: "src/value.ts",
+        detector: "regex:github-pat",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    ["leading space", " leading.ts"],
+    ["trailing space", "trailing.ts "],
+    ["tab", "tab\tname.ts"],
+    ["non-ASCII", "café.ts"],
+    ["quote and backslash", "quote\"back\\slash.ts"],
+    ["embedded b/", "src/a b/value.ts"],
+    ["newline", "line\nbreak.ts"],
+  ])("real Git scan detects a secret in a %s path", async (_name, relativePath) => {
+    const dir = await createRepoWithStagedFile(
+      relativePath,
+      "const token = 'ghp_123456789012345678901234567890123456';\n",
+    );
+    try {
+      const stagedPaths = await getBoundedStagedPaths({ dir });
+      expect(stagedPaths).toEqual([relativePath]);
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths,
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-detected",
+        rule: "secretScan",
+        detector: "regex:github-pat",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("real Git scan fails closed for staged binary content", async () => {
+    const secret = new TextEncoder().encode(
+      "ghp_123456789012345678901234567890123456",
+    );
+    const content = new Uint8Array(secret.length + 2);
+    content[0] = 0;
+    content.set(secret, 1);
+    content[content.length - 1] = 10;
+    const dir = await createRepoWithStagedFile("secret.bin", content);
+    try {
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths: ["secret.bin"],
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-scan-incomplete",
+        rule: "secretScan",
+        maxBytes: 8 * 1024 * 1024,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("real Git scan detects a split x-access-token URL", async () => {
+    const relativePath = "split-url.ts";
+    const dir = await createRepoWithStagedFile(
+      relativePath,
+      [
+        'const url = "https://x-access-token:',
+        'secret@github.com/repo";',
+        "",
+      ].join("\n"),
+    );
+    try {
+      const stagedPaths = await getBoundedStagedPaths({ dir });
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths,
+          allowPaths: [],
+          denyPaths: [],
+          secretScanEnabled: true,
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-secret-detected",
+        detector: "regex:github-x-access-token-url",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    ["initial BOM", "\uFEFFallowed.ts"],
+    ["literal replacement character", "\uFFFDallowed.ts"],
+  ])("real Git path discovery preserves a %s", async (_name, relativePath) => {
+    const dir = await createRepoWithStagedFile(relativePath, "export const value = 1;\n");
+    try {
+      const stagedPaths = await getBoundedStagedPaths({ dir });
+      expect(stagedPaths).toEqual([relativePath]);
+
+      await expect(
+        enforceWritePolicy({
+          dir,
+          stagedPaths,
+          allowPaths: ["allowed.ts"],
+          denyPaths: [],
+          secretScanEnabled: false,
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-not-allowed",
+        path: relativePath,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.each(["rename", "copy"])(
+    "real Git scan cannot bypass a secret in a %s destination",
+    async (operation) => {
+      const dir = await createTempDir();
+      const sourcePath = "source.ts";
+      const destinationPath = `dest b/${operation}\tvalue.ts`;
+      try {
+        await $`git -C ${dir} init`.quiet();
+        await $`git -C ${dir} config user.email test@example.com`.quiet();
+        await $`git -C ${dir} config user.name Test`.quiet();
+        await writeFile(join(dir, sourcePath), "export const value = 1;\n");
+        await runGitForTest(dir, ["add", "--", sourcePath]);
+        await $`git -C ${dir} commit -m baseline`.quiet();
+
+        await mkdir(dirname(join(dir, destinationPath)), { recursive: true });
+        if (operation === "rename") {
+          await runGitForTest(dir, ["mv", "--", sourcePath, destinationPath]);
+        } else {
+          await writeFile(join(dir, destinationPath), "export const value = 1;\n");
+        }
+        await writeFile(
+          join(dir, destinationPath),
+          "export const value = 1;\nconst token = 'ghp_123456789012345678901234567890123456';\n",
+        );
+        await runGitForTest(dir, ["add", "--", destinationPath]);
+
+        const stagedPaths = await getBoundedStagedPaths({ dir });
+        expect(stagedPaths).toContain(destinationPath);
+
+        await expect(
+          enforceWritePolicy({
+            dir,
+            stagedPaths,
+            allowPaths: [],
+            denyPaths: [],
+            secretScanEnabled: true,
+          }),
+        ).rejects.toMatchObject({
+          code: "write-policy-secret-detected",
+          rule: "secretScan",
+          detector: "regex:github-pat",
+        });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("real Git rename cannot hide a denied source behind an allowed destination", async () => {
+    const dir = await createTempDir();
+    try {
+      await $`git -C ${dir} init`.quiet();
+      await $`git -C ${dir} config user.email test@example.com`.quiet();
+      await $`git -C ${dir} config user.name Test`.quiet();
+      await writeFile(join(dir, ".kodiai.yml"), "write:\n  enabled: true\n");
+      await runGitForTest(dir, ["add", "--", ".kodiai.yml"]);
+      await $`git -C ${dir} commit -m baseline`.quiet();
+
+      await runGitForTest(dir, ["mv", "--", ".kodiai.yml", "allowed.txt"]);
+      const snapshot = await testImmutableRange(dir);
+      const stagedPaths = await getBoundedStagedPathsProduction({ dir, ...snapshot });
+
+      await expect(
+        enforceWritePolicyProduction({
+          dir,
+          ...snapshot,
+          stagedPaths,
+          allowPaths: ["allowed.txt"],
+          denyPaths: [".kodiai.yml"],
+          secretScanEnabled: false,
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-denied-path",
+        path: ".kodiai.yml",
+        rule: "denyPaths",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("real Git allowed rename applies policy to both paths in deterministic order", async () => {
+    const dir = await createTempDir();
+    const sourcePath = "allowed/a-source.txt";
+    const destinationPath = "allowed/z-destination.txt";
+    try {
+      await $`git -C ${dir} init`.quiet();
+      await $`git -C ${dir} config user.email test@example.com`.quiet();
+      await $`git -C ${dir} config user.name Test`.quiet();
+      await mkdir(dirname(join(dir, sourcePath)), { recursive: true });
+      await writeFile(join(dir, sourcePath), "allowed rename\n");
+      await runGitForTest(dir, ["add", "--", sourcePath]);
+      await $`git -C ${dir} commit -m baseline`.quiet();
+
+      await runGitForTest(dir, ["mv", "--", sourcePath, destinationPath]);
+      const snapshot = await testImmutableRange(dir);
+      const stagedPaths = await getBoundedStagedPathsProduction({ dir, ...snapshot });
+
+      expect(stagedPaths).toEqual([sourcePath, destinationPath]);
+      await expect(
+        enforceWritePolicyProduction({
+          dir,
+          ...snapshot,
+          stagedPaths,
+          allowPaths: ["allowed/**"],
+          denyPaths: [],
+          secretScanEnabled: false,
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("buildWritePolicyRefusalMessage", () => {
@@ -167,6 +1092,27 @@ describe("buildWritePolicyRefusalMessage", () => {
     expect(message).toContain("Detector: regex:github-pat");
     expect(message).toContain("Remove/redact the secret-like content and retry");
     expect(message).not.toContain("ghp_");
+  });
+
+  test("formats an incomplete secret scan without implying a secret was found", () => {
+    const stagedContent = "export const sensitiveValue = 'do-not-leak';";
+    const message = buildWritePolicyRefusalMessage(
+      new WritePolicyError(
+        "write-policy-secret-scan-incomplete",
+        "Write blocked: staged secret scan was incomplete",
+        {
+          rule: "secretScan",
+          maxBytes: 8 * 1024 * 1024,
+        },
+      ),
+      [],
+    );
+
+    expect(message).toContain("scan was incomplete");
+    expect(message).toContain("reduce or split the change");
+    expect(message).toContain("8388608 bytes");
+    expect(message).not.toContain("Remove/redact");
+    expect(message).not.toContain(stagedContent);
   });
 
   test("formats no-changes refusal", () => {
@@ -251,6 +1197,169 @@ async function setupBareAndClone(bareDir: string, cloneDir: string): Promise<str
     await rm(srcDir, { recursive: true, force: true });
   }
 }
+
+describe("immutable staged write snapshot", () => {
+  test("pushes an immutable commit OID to a new slash-delimited branch", async () => {
+    const tmpBase = await createTempDir();
+    const bareDir = join(tmpBase, "bare.git");
+    const cloneDir = join(tmpBase, "clone");
+    try {
+      await setupBareAndClone(bareDir, cloneDir);
+      await $`git -C ${cloneDir} checkout -B main refs/remotes/origin/main`.quiet();
+      await writeFile(join(cloneDir, "allowed.ts"), "export const allowed = true;\n");
+
+      const result = await commitAndPushToRemoteRef({
+        dir: cloneDir,
+        remoteRef: "kodiai/write/new-branch",
+        commitMessage: "create bot branch",
+        policy: {
+          allowPaths: ["allowed.ts"],
+          secretScanEnabled: false,
+        },
+      });
+
+      const remoteHead = (
+        await $`git --git-dir ${bareDir} rev-parse refs/heads/kodiai/write/new-branch`.quiet()
+      ).text().trim();
+      expect(remoteHead).toBe(result.headSha);
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+
+  test("commits the scanned tree even when a hook replaces the index with same-count paths", async () => {
+    const tmpBase = await createTempDir();
+    const bareDir = join(tmpBase, "bare.git");
+    const cloneDir = join(tmpBase, "clone");
+    try {
+      await setupBareAndClone(bareDir, cloneDir);
+      await $`git -C ${cloneDir} checkout -B main refs/remotes/origin/main`.quiet();
+      await writeFile(join(cloneDir, "allowed.ts"), "export const allowed = true;\n");
+
+      const hookPath = join(cloneDir, ".git", "hooks", "pre-commit");
+      await writeFile(
+        hookPath,
+        [
+          "#!/bin/sh",
+          "git rm --cached -q --ignore-unmatch allowed.ts",
+          "rm -f allowed.ts",
+          "printf 'export const denied = true;\\n' > denied.ts",
+          "git add denied.ts",
+          "",
+        ].join("\n"),
+      );
+      await chmod(hookPath, 0o755);
+
+      const result = await commitAndPushToRemoteRef({
+        dir: cloneDir,
+        remoteRef: "main",
+        commitMessage: "snapshot write",
+        policy: {
+          allowPaths: ["allowed.ts"],
+          secretScanEnabled: false,
+        },
+      });
+
+      await expect($`git -C ${cloneDir} show HEAD:allowed.ts`.quiet().text()).resolves.toContain(
+        "allowed",
+      );
+      const denied = await $`git -C ${cloneDir} cat-file -e HEAD:denied.ts`.quiet().nothrow();
+      expect(denied.exitCode).not.toBe(0);
+      const localHead = (await $`git -C ${cloneDir} rev-parse HEAD`.quiet()).text().trim();
+      const remoteHead = (await $`git --git-dir ${bareDir} rev-parse refs/heads/main`.quiet())
+        .text()
+        .trim();
+      expect(result.headSha).toBe(localHead);
+      expect(remoteHead).toBe(localHead);
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+
+  test("replacement objects cannot hide denied content from the immutable diff", async () => {
+    const tmpBase = await createTempDir();
+    const bareDir = join(tmpBase, "bare.git");
+    const cloneDir = join(tmpBase, "clone");
+    try {
+      await setupBareAndClone(bareDir, cloneDir);
+      await $`git -C ${cloneDir} checkout -B main refs/remotes/origin/main`.quiet();
+      const parentOid = (await $`git -C ${cloneDir} rev-parse HEAD`.quiet()).text().trim();
+
+      await writeFile(join(cloneDir, "denied.ts"), "export const denied = true;\n");
+      await runGitForTest(cloneDir, ["add", "--", "denied.ts"]);
+      const replacementTree = (await $`git -C ${cloneDir} write-tree`.quiet()).text().trim();
+      const replacementCommit = (
+        await $`git -C ${cloneDir} commit-tree ${replacementTree} -p ${parentOid} -m replacement`.quiet()
+      ).text().trim();
+      await $`git -C ${cloneDir} reset --hard ${parentOid}`.quiet();
+      await $`git -C ${cloneDir} replace ${parentOid} ${replacementCommit}`.quiet();
+
+      await writeFile(join(cloneDir, "allowed.ts"), "export const allowed = true;\n");
+      await writeFile(join(cloneDir, "denied.ts"), "export const denied = true;\n");
+
+      await expect(
+        commitAndPushToRemoteRef({
+          dir: cloneDir,
+          remoteRef: "main",
+          commitMessage: "replacement-safe write",
+          policy: {
+            allowPaths: ["allowed.ts"],
+            secretScanEnabled: false,
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "write-policy-not-allowed",
+        path: "denied.ts",
+      });
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+
+  test("reference transaction hooks cannot change the commit pushed to the remote", async () => {
+    const tmpBase = await createTempDir();
+    const bareDir = join(tmpBase, "bare.git");
+    const cloneDir = join(tmpBase, "clone");
+    try {
+      await setupBareAndClone(bareDir, cloneDir);
+      await $`git -C ${cloneDir} checkout -B main refs/remotes/origin/main`.quiet();
+      const parentOid = (await $`git -C ${cloneDir} rev-parse HEAD`.quiet()).text().trim();
+      await writeFile(join(cloneDir, "allowed.ts"), "export const allowed = true;\n");
+
+      const hookPath = join(cloneDir, ".git", "hooks", "reference-transaction");
+      await writeFile(
+        hookPath,
+        [
+          "#!/bin/sh",
+          'if [ "$1" = "committed" ]; then',
+          `  printf '%s\\n' '${parentOid}' > "$(git rev-parse --git-path refs/heads/main)"`,
+          "fi",
+          "",
+        ].join("\n"),
+      );
+      await chmod(hookPath, 0o755);
+
+      const result = await commitAndPushToRemoteRef({
+        dir: cloneDir,
+        remoteRef: "main",
+        commitMessage: "hook-safe write",
+        policy: {
+          allowPaths: ["allowed.ts"],
+          secretScanEnabled: false,
+        },
+      });
+
+      const remoteHead = (await $`git --git-dir ${bareDir} rev-parse refs/heads/main`.quiet())
+        .text()
+        .trim();
+      expect(remoteHead).toBe(result.headSha);
+      await expect($`git --git-dir ${bareDir} show ${result.headSha}:allowed.ts`.quiet().text())
+        .resolves.toContain("allowed");
+    } finally {
+      await rm(tmpBase, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("fetchAndCheckoutPullRequestHeadRef", () => {
   test("falls back to the PR head repository ref when the base pull ref is missing", async () => {

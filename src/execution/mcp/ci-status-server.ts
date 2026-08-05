@@ -3,19 +3,24 @@ import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 
 const DEFAULT_PER_PAGE = 100;
+const MAX_PAGES = 100;
+const MAX_RECORDS = DEFAULT_PER_PAGE * MAX_PAGES;
 
 async function collectPaged<T>(
   fetchPage: (params: { page: number; per_page: number }) => Promise<T[]>,
 ): Promise<T[]> {
   const records: T[] = [];
-  for (let page = 1; ; page += 1) {
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
     const data = await fetchPage({ page, per_page: DEFAULT_PER_PAGE });
+    if (records.length + data.length > MAX_RECORDS) {
+      throw new Error(`GitHub pagination exceeded the ${MAX_RECORDS}-record safety limit`);
+    }
     records.push(...data);
     if (data.length < DEFAULT_PER_PAGE) {
-      break;
+      return records;
     }
   }
-  return records;
+  throw new Error(`GitHub pagination exceeded the ${MAX_PAGES}-page safety limit`);
 }
 
 export function createCIStatusServer(

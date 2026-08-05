@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   publishBlockedReviewFindingsNotice,
+  resolveBlockedReviewFindingsNotice,
   willBlockedReviewFindingsNoticePublish,
 } from "./review-blocked-findings-notice.ts";
 import type {
@@ -79,6 +80,28 @@ describe("willBlockedReviewFindingsNoticePublish", () => {
       findingLifecycle: { counts: { severity: { critical: 0, major: 1, medium: 0, minor: 0 } } } as never,
       handlerPublishedReviewOutput: true,
     })).toBe(false);
+  });
+});
+
+describe("resolveBlockedReviewFindingsNotice", () => {
+  test("shows bounded visible finding details when candidate publication is blocked", () => {
+    const notice = resolveBlockedReviewFindingsNotice({
+      reviewOutputKey: "review-key",
+      reviewDetailsBlock: null,
+      candidatePublicationRuntime: baseRuntime({ mode: "blocked" }),
+      findingLifecycle: { counts: { severity: { critical: 0, major: 0, medium: 0, minor: 1 } } } as never,
+      visibleFindings: [{
+        filePath: "src/example.ts",
+        startLine: 42,
+        title: "Use the bounded publication path",
+        severity: "minor",
+        suppressed: false,
+      } as never],
+      handlerPublishedReviewOutput: false,
+    });
+
+    expect(notice?.body).toContain("**MINOR** `src/example.ts:42` — Use the bounded publication path");
+    expect(notice?.body).not.toContain("Raw finding text was kept private");
   });
 });
 

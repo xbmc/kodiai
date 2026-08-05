@@ -11,7 +11,7 @@ function getToolHandler(
       {
         handler: (
           input: Record<string, unknown>,
-        ) => Promise<{ content: Array<{ type: string; text: string }> }>;
+        ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
       }
     >;
   };
@@ -137,5 +137,27 @@ describe("createCIStatusServer", () => {
       html_url: "https://example.test/jobs/101",
       failed_steps: [{ name: "test", number: 3 }],
     });
+  });
+
+  test("fails closed when workflow pagination never terminates", async () => {
+    let calls = 0;
+    const octokit = {
+      rest: {
+        pulls: { get: async () => ({ data: { head: { sha: "head-sha" } } }) },
+        actions: {
+          listWorkflowRunsForRepo: async () => {
+            calls++;
+            return { data: { workflow_runs: Array.from({ length: 100 }, (_, id) => ({ id, status: "queued" })) } };
+          },
+        },
+      },
+    };
+    const server = createCIStatusServer(async () => octokit as never, "acme", "repo", 42);
+    const handler = getToolHandler(server, "get_ci_status");
+
+    const result = await handler({});
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain("safety limit");
+    expect(calls).toBe(100);
   });
 });

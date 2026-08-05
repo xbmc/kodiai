@@ -783,6 +783,15 @@ describe("readJobResult", () => {
     await expect(readJobResult(tmpDir)).rejects.toThrow();
   });
 
+  test("rejects result.json larger than 16 MiB before JSON parsing", async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "aca-result-limit-"));
+    await Bun.write(join(tmpDir, "result.json"), "x".repeat(16 * 1024 * 1024 + 1));
+    await expect(readJobResult(tmpDir)).rejects.toMatchObject({
+      actualBytes: 16 * 1024 * 1024 + 1,
+      maxBytes: 16 * 1024 * 1024,
+    });
+  });
+
   test("readJobDiagnostics returns a bounded tail of large diagnostics logs", async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "aca-launcher-test-"));
     await Bun.write(join(tmpDir, "agent-diagnostics.log"), `${"a".repeat(300 * 1024)}tail-marker`);
