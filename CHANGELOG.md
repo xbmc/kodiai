@@ -17,6 +17,10 @@ All notable changes to this project are documented in this file.
 - A review whose only findings were intentionally filtered by policy (reducer suppression, dedup against prior findings, low confidence, deprioritized) now resolves as a clean approval instead of posting a "NOT APPROVED — N unpublished findings require human review" stub for findings the system itself chose not to publish.
 - `scripts/verify-m074-s06.ts` now describes the validation-truth evidence as sourced from the log projection (the line no longer renders in the visible Review Details block).
 
+- A finding blocked because it contained a secret is no longer classified as an "expected policy block" and silently absorbed into a clean approval. `isExpectedCandidatePublicationPolicyBlock` now excludes any security-relevant block, so the blocked-findings notice still posts ("something was blocked, check logs") without ever including the raw secret content. Found by adversarial review of #206/#207.
+- The `record_candidate_finding` MCP tool's `title`/`body` field descriptions no longer claim the content stays private — an approved candidate publishes that text verbatim as a public GitHub comment, and the model needs to know that before writing it.
+- `scanOutgoingForSecrets` (used on every outbound PR comment/notice) now also flags high-entropy bare tokens via Shannon entropy, mirroring the same defense already added to the git-write path in #205 — the fixed vendor-prefix regex list alone missed bare API keys, JWTs, and connection-string passwords that don't match a known format.
+
 ### Fixed
 
 - Review reducer no longer silently drops findings whose confidence field is missing (`Number(undefined) >= min` was always false), and the default confidence floor (50) no longer discards every minor style/documentation finding that the strict profile promises (now 40, the minimum reachable score).

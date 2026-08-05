@@ -238,7 +238,7 @@ describe("review candidate publication runtime classifier", () => {
     expect(isExpectedCandidatePublicationPolicyBlock(result)).toBe(true);
   });
 
-  test("surfaces approved but non-publishable fix candidates as expected fix eligibility blocks", () => {
+  test("surfaces approved but non-publishable fix candidates as fix eligibility blocks, but never treats a secret-detected block as expected/benign policy", () => {
     const result = classifyReviewCandidatePublicationRuntime(input({
       approval: approval({ approved: 3 }),
       adapter: {
@@ -261,6 +261,7 @@ describe("review candidate publication runtime classifier", () => {
       candidatePublishable: 0,
       candidatePublished: 0,
       candidateBlocked: 0,
+      securityRelevantBlocked: 3,
     });
     expect(result.reasons).toContain("fix-eligibility-blocked");
     expect(result.outcomeBuckets.blocked).toMatchObject({
@@ -272,6 +273,30 @@ describe("review candidate publication runtime classifier", () => {
     expect(result.detailsSummary.text).toContain("nonPublishable=3");
     expect(result.detailsSummary.text).toContain("fixBlocked=3");
     expect(result.detailsSummary.text).toContain("reasons=fix-eligibility-blocked");
+    // A secret-detected block must never be classified as an "expected policy
+    // block" -- that classification is what suppresses the human-visible
+    // blocked-findings notice and silently resolves the review as a clean
+    // approval. See isExpectedCandidatePublicationPolicyBlock's
+    // securityRelevantBlocked guard.
+    expect(isExpectedCandidatePublicationPolicyBlock(result)).toBe(false);
+  });
+
+  test("still treats non-security fix eligibility blocks (e.g. duplicate-fix) as expected policy blocks", () => {
+    const result = classifyReviewCandidatePublicationRuntime(input({
+      approval: approval({ approved: 2 }),
+      adapter: {
+        ...adapter({ input: 2, publishable: 0, approved: 0 }),
+        fixEligibility: {
+          ...emptyFixEligibilitySummary(),
+          status: "blocked",
+          counts: { input: 2, eligible: 0, blocked: 2, omitted: 0, capped: 0 },
+          reasonCounts: { "duplicate-fix": 2 },
+        },
+      },
+      publisher: publisher([]),
+    }));
+
+    expect(result.counts.securityRelevantBlocked).toBe(0);
     expect(isExpectedCandidatePublicationPolicyBlock(result)).toBe(true);
   });
 

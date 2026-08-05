@@ -278,7 +278,57 @@ export function scanOutgoingForSecrets(text: string): SecretScanResult {
     }
   }
 
+  if (containsHighEntropyToken(text)) {
+    return { blocked: true, matchedPattern: "high-entropy-token" };
+  }
+
   return { blocked: false, matchedPattern: undefined };
+}
+
+/**
+ * Shannon entropy of a string, in bits per character.
+ */
+function shannonEntropy(s: string): number {
+  const freq = new Map<string, number>();
+  for (const ch of s) freq.set(ch, (freq.get(ch) ?? 0) + 1);
+  let ent = 0;
+  for (const [, count] of freq) {
+    const p = count / s.length;
+    ent -= p * Math.log2(p);
+  }
+  return ent;
+}
+
+/**
+ * Catches credential-shaped strings the fixed vendor-pattern list above
+ * misses -- bare API keys, JWTs, connection-string passwords, and other
+ * secret formats that don't match a known vendor prefix. Mirrors the
+ * entropy check used for outbound git commits in
+ * src/jobs/workspace-write-policy.ts, applied here to outbound text
+ * (PR comments, notices) so the two surfaces don't diverge in strength.
+ */
+function containsHighEntropyToken(text: string): boolean {
+  // Include base64-ish characters (+,/ and =) since real secrets often use them.
+  const tokenRe = /[A-Za-z0-9_\-=+/\/]{32,}/g;
+  const matches = text.match(tokenRe) ?? [];
+  for (const m of matches) {
+    // Reduce false positives for common non-secret identifiers.
+    // NOTE: this is intentionally conservative; explicit token regexes above run first.
+    if (/^[0-9a-f]{32}$/i.test(m) || /^[0-9a-f]{40}$/i.test(m) || /^[0-9a-f]{64}$/i.test(m)) {
+      continue; // hex hash-like (commit SHAs, checksums)
+    }
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(m)) {
+      continue; // UUID
+    }
+
+    const hasLetter = /[A-Za-z]/.test(m);
+    const hasDigit = /\d/.test(m);
+    if (!hasLetter || !hasDigit) continue;
+    if (m.length < 32) continue;
+
+    if (shannonEntropy(m) >= 4.5) return true;
+  }
+  return false;
 }
 
 export interface OutgoingPublicationResult {

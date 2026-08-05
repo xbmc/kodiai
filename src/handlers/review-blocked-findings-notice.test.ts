@@ -25,6 +25,7 @@ function baseCounts(
     candidateDetailsOnlyFindings: 0,
     candidateDetailsOnlyOmitted: 0,
     fixEligibilityBlocked: 0,
+    securityRelevantBlocked: 0,
     nonPublishableReferences: 0,
     convertedProcessedFindings: 0,
     directAttempted: 0,
@@ -102,6 +103,44 @@ describe("resolveBlockedReviewFindingsNotice", () => {
 
     expect(notice?.body).toContain("**MINOR** `src/example.ts:42` — Use the bounded publication path");
     expect(notice?.body).not.toContain("Raw finding text was kept private");
+  });
+
+  test("still publishes when the block is security-relevant, even though every reason funnels through fix-eligibility-blocked (which is normally treated as expected policy)", () => {
+    // Regression test: a candidate blocked for containing a secret must never
+    // be silently absorbed into a clean approval just because the runtime's
+    // aggregate reason ("fix-eligibility-blocked") matches the shape of a
+    // routine, benign policy filter.
+    const notice = resolveBlockedReviewFindingsNotice({
+      reviewOutputKey: "review-key",
+      reviewDetailsBlock: null,
+      candidatePublicationRuntime: baseRuntime({
+        mode: "blocked",
+        reasons: ["fix-eligibility-blocked"],
+        counts: baseCounts({ fixEligibilityBlocked: 1, securityRelevantBlocked: 1, nonPublishableReferences: 1 }),
+      }),
+      findingLifecycle: { counts: { severity: { critical: 0, major: 1, medium: 0, minor: 0 } } } as never,
+      handlerPublishedReviewOutput: false,
+    });
+
+    expect(notice).not.toBeNull();
+    expect(notice?.body).toContain("NOT APPROVED");
+  });
+
+  test("returns null (resolves as clean approval) when every block is a routine, non-security policy filter", () => {
+    const notice = resolveBlockedReviewFindingsNotice({
+      reviewOutputKey: "review-key",
+      reviewDetailsBlock: null,
+      candidatePublicationRuntime: baseRuntime({
+        mode: "blocked",
+        reasons: ["fix-eligibility-blocked"],
+        counts: baseCounts({ fixEligibilityBlocked: 1, securityRelevantBlocked: 0, nonPublishableReferences: 1 }),
+        outcomeBuckets: { blocked: { mode: "blocked", count: 1, reasons: ["fix-eligibility-blocked"] } },
+      } as never),
+      findingLifecycle: { counts: { severity: { critical: 0, major: 1, medium: 0, minor: 0 } } } as never,
+      handlerPublishedReviewOutput: false,
+    });
+
+    expect(notice).toBeNull();
   });
 });
 
