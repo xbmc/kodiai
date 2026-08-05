@@ -160,7 +160,7 @@ function buildSeverityClassificationGuidelines(): string {
     "",
     "**Path context adjustments:**",
     "- Test files: downgrade findings by one severity level (e.g. MAJOR becomes MEDIUM).",
-    "- Config files: only report CRITICAL findings.",
+    "- Config files: report anything that changes runtime/deploy behavior incorrectly at its true severity; skip pure formatting.",
     "- Documentation files: only report factual errors, including mismatched commands, verifier names, config keys, or contradictory section labels in the changed text.",
   ].join("\n");
 }
@@ -412,12 +412,11 @@ export function buildPrIntentScopingSection(
 // ---------------------------------------------------------------------------
 export function buildEpistemicBoundarySection(): string {
   return [
-    "## Epistemic Boundaries",
-    "- Ground every assertion in your response in Diff-visible code/config/tests or System-provided enrichment.",
-    "- Cite Diff-visible claims with `file:line`; cite enrichment with a footnote URL.",
-    "- No URL means no assertion for enrichment; no evidence means silently omit the claim.",
-    "- External knowledge: do not assert version/API release/library behavior facts unless visible in the diff or enrichment.",
-    "- General programming knowledge is allowed when it does not depend on package versions, APIs, or dates.",
+    "## Evidence and Verification",
+    "- You have full read access to the repository (Read/Grep/Glob). Use it: verify claims by reading the actual code — the changed files, their callers, and any dependency source vendored in the repo.",
+    "- Ground assertions in code you have read (cite `file:line`), in System-provided enrichment (cite the footnote URL), or in well-established programming/library knowledge.",
+    "- Library and API behavior claims are allowed. When the claim depends on a specific version, verify it against vendored sources in the repository when present; otherwise state the version assumption explicitly.",
+    "- When you cannot fully verify a claim but the risk is real, report it anyway with your uncertainty stated plainly (e.g. \"if X holds, this breaks Y — worth verifying\"). A clearly-labeled uncertain finding is more useful than a silently dropped one.",
   ].join("\n");
 }
 
@@ -441,7 +440,7 @@ export function buildSecurityPolicySection(): string {
 export function buildToneGuidelinesSection(): string {
   return [
     "## Finding Language Guidelines",
-    "- Evidence principle: Assert what is verifiable from visible context or enrichment. Silently omit what you cannot verify.",
+    "- Evidence principle: Assert what is verifiable from code you read or enrichment. For unverified-but-plausible risks, state the claim with explicit uncertainty instead of omitting it.",
     "- What happens, when, why it matters: each finding must state the concrete failure condition and impact.",
     "- Cite code claims with file:line and enrichment claims with footnote URLs.",
     "- Prefix Preference findings with \"Optional:\" to signal they are non-blocking.",
@@ -1719,15 +1718,14 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
 
 export function buildSmallDiffScopeSection(): string {
   return [
-    "## Tiny-diff scope contract",
+    "## Small-diff review guidance",
     "",
-    "This is a small diff (≤2 files, ≤20 lines). Follow these constraints:",
-    "- Inspect the provided diff context first.",
-    "- Read only the changed file and directly adjacent context.",
-    "- Broaden scope only if the diff itself proves an ambiguity that cannot be resolved without wider context.",
-    "- Do not do generalized architecture exploration.",
-    "- If no actionable issue exists, end without additional exploratory turns.",
-    "- Produce a merge decision after one focused inspection pass.",
+    "This is a small diff (≤2 files, ≤20 lines). A small diff is not the same as a small blast radius:",
+    "a few changed lines in a shared code path can alter behavior for every caller.",
+    "- Start from the provided diff context, then read the full changed function and its surrounding file.",
+    "- Trace the impact of each behavioral change: find the callers of changed functions and any code paths whose behavior the change alters. Use Grep/Glob/Read freely across the repository.",
+    "- If the change replaces or removes an existing branch, condition, or fallback, verify what previously depended on it before concluding the removal is safe.",
+    "- Before approving, confirm you can explain what the code did before, what it does now, and who is affected by the difference.",
   ].join("\n");
 }
 
@@ -2117,15 +2115,18 @@ export function buildReviewPromptDetails(context: {
   const sectionBlocks: Array<{ sectionName: string; text: string; budgetChars: number; budgetOutcome?: PromptBudgetOutcome }> = [];
   const scaleNotes: string[] = [];
   const mode = context.mode ?? "standard";
+  // Budgets sized for claude-sonnet-5 (input tokens are cheap and heavily
+  // prompt-cached; trimming review context costs far more in missed findings
+  // than the extra input tokens cost in dollars).
   const REVIEW_SECTION_BUDGETS = {
     prContext: 2_800,
-    smallDiffScope: 1_200,
-    changeContext: 4_000,
+    smallDiffScope: 1_600,
+    changeContext: 6_000,
     sizeContext: 3_200,
-    graphContext: 4_000,
-    knowledgeContext: 3_600,
-    diffContext: 12_000,
-    instructions: 16_000,
+    graphContext: 6_000,
+    knowledgeContext: 8_000,
+    diffContext: 32_000,
+    instructions: 24_000,
   } as const;
 
   const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {
@@ -2397,13 +2398,14 @@ export function buildReviewPromptDetails(context: {
   pushInstructionSection("core-rules", [
     "## Rules",
     "",
-    "- ONLY report actionable issues that need to be fixed",
+    "- Report every issue you find, including ones you are uncertain about or consider low-severity. Do not filter for importance or confidence at this stage — a downstream filter ranks and gates findings. Your goal is coverage: it is better to surface a finding that later gets filtered out than to silently drop a real bug.",
+    "- For each finding, include severity and category metadata, and state your uncertainty in the body when a claim is not fully verified.",
     '- NO positive feedback, NO "looks good"',
     "- In standard mode, use the five-section template (What Changed, Strengths, Observations, Suggestions, Verdict) for the summary comment",
     "- ONLY post a summary comment when you have actionable inline issues to report",
     "- Use inline comments for ALL code-specific issues",
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",
-    "- Focus on correctness and safety, not style preferences",
+    "- Prioritize correctness and safety; guideline violations on changed lines are still findings",
     "",
     buildSeverityClassificationGuidelines(),
     "",

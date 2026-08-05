@@ -268,8 +268,8 @@ export function buildContributorExperiencePromptSection(params: {
         "- Use terse finding descriptions (issue + consequence only)",
         "- Omit links to basic documentation",
         "- For MINOR findings, a one-liner is sufficient",
-        "- Focus on architecture and design, not syntax or style",
         "- Use peer-to-peer tone: direct, brief, no hedging",
+        "- Experience context adapts tone and verbosity ONLY. It never lowers the bar for what to report: flag every issue you would flag for any other author, including uncertain ones.",
       ];
 
       if (areaExpertise && areaExpertise.length > 0) {
@@ -277,7 +277,7 @@ export function buildContributorExperiencePromptSection(params: {
         if (strongAreas.length > 0) {
           const topics = strongAreas.map((entry) => entry.topic).join(", ");
           lines.push(
-            `- The author has deep expertise in ${topics}. Only flag issues you're highly confident about.`,
+            `- The author has deep expertise in ${topics}. Keep explanations in those areas minimal, but report findings there at the same threshold as everywhere else.`,
           );
         }
       }

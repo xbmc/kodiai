@@ -148,6 +148,18 @@ function isSafeReviewCandidatePublicationBucketReason(value: string): boolean {
   return !/(redacted|prompt|diff|token|secret|unsafe|raw|canary|hidden)/.test(value);
 }
 
+export function formatReviewCandidateMovedToDetailsOnlyLines(
+  reviewCandidatePublication?: ReviewCandidatePublicationRuntimeDetailsSummary | null,
+): string[] {
+  try {
+    if (!reviewCandidatePublication) return [];
+    if (reviewCandidatePublication.label !== "Review candidate publication runtime") return [];
+    return formatReviewCandidateMovedToDetailsLines(reviewCandidatePublication);
+  } catch {
+    return [];
+  }
+}
+
 function formatReviewCandidateMovedToDetailsLines(
   reviewCandidatePublication: ReviewCandidatePublicationRuntimeDetailsSummary,
 ): string[] {

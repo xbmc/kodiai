@@ -121,8 +121,20 @@ export async function publishExplicitMentionReviewResult(params: {
       "Attempting explicit mention review approval publish",
     );
 
-    const explicitReviewLifecycleEvidenceLine = buildExplicitReviewLifecycleEvidenceLine(
-      params.explicitReviewFindingLifecycleResult,
+    // Lifecycle telemetry stays in structured logs — the user-facing evidence
+    // list keeps only lines a human reviewer can interpret.
+    params.logger.info(
+      {
+        surface: params.surface,
+        owner: params.owner,
+        repo: params.repo,
+        prNumber: params.prNumber,
+        gate: "explicit-review-publish",
+        lifecycleEvidence: buildExplicitReviewLifecycleEvidenceLine(
+          params.explicitReviewFindingLifecycleResult,
+        ),
+      },
+      "Explicit review lifecycle evidence",
     );
     const approvalEvidence = [
       typeof params.explicitReviewPromptFileCount === "number"
@@ -131,7 +143,6 @@ export async function publishExplicitMentionReviewResult(params: {
       params.usedRepoInspectionTools
         ? "Repo inspection tools were used to verify the changed code."
         : null,
-      explicitReviewLifecycleEvidenceLine,
     ].filter((line): line is string => Boolean(line));
 
     if (!params.canPublishExplicitReviewOutput("explicit mention review publish", params.canonicalReviewSurfaceKey)) {

@@ -247,7 +247,9 @@ describe("review candidate publication runtime classifier", () => {
           ...emptyFixEligibilitySummary(),
           status: "blocked",
           counts: { input: 3, eligible: 0, blocked: 3, omitted: 0, capped: 0 },
-          reasonCounts: { "missing-replacement": 3 },
+          // missing-replacement is now exempt from blocking counts (it publishes as
+          // prose), so use a reason that still blocks fix eligibility.
+          reasonCounts: { "secret-detected": 3 },
         },
       },
       publisher: publisher([]),
@@ -264,7 +266,7 @@ describe("review candidate publication runtime classifier", () => {
     expect(result.outcomeBuckets.blocked).toMatchObject({
       mode: "blocked",
       count: 3,
-      reasons: expect.arrayContaining(["fix-eligibility-blocked", "missing-replacement"]),
+      reasons: expect.arrayContaining(["fix-eligibility-blocked", "secret-detected"]),
     });
     expect(result.detailsSummary.text).toContain("publishable=0");
     expect(result.detailsSummary.text).toContain("nonPublishable=3");

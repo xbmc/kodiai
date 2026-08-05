@@ -345,11 +345,15 @@ function expectCorrelationEverywhere(scenario: IntegrationScenarioResult) {
     hasCorrelationKey: true,
   });
 
+  // Verification-evidence telemetry moved from the user-visible Review
+  // Details comment into structured logs; visible bodies must not carry it.
   const detailsBody = visibleBodies(scenario).find((body) => body.includes("M070 candidate verification publication"));
-  expect(detailsBody).toContain("metadata=deliveryId:y,reviewOutputKey:y,correlationKey:y");
-  expect(detailsBody).not.toContain("deliveryIdValue:delivery-shadow-metrics");
-  expect(detailsBody).not.toContain(`reviewOutputKeyValue:${scenario.executorInput.reviewOutputKey}`);
-  expect(detailsBody).not.toContain(`correlationKeyValue:${context?.correlationKey}`);
+  expect(detailsBody).toBeUndefined();
+  for (const body of visibleBodies(scenario)) {
+    expect(body).not.toContain("deliveryIdValue:delivery-shadow-metrics");
+    expect(body).not.toContain(`reviewOutputKeyValue:${scenario.executorInput.reviewOutputKey}`);
+    expect(body).not.toContain(`correlationKeyValue:${context?.correlationKey}`);
+  }
 }
 
 function expectAggregateOnlySurfaces(scenario: IntegrationScenarioResult, forbiddenValues: string[]) {
@@ -404,7 +408,7 @@ describe("production-like normal review M070 candidate verification integration"
     expect(scenario.evidence.counts).toMatchObject({ attempted: 1, allowed: 1, denied: 0, published: 1 });
     expect(scenario.evidence.redactionFlags.publicationEvidenceIncluded).toBe(false);
     expectCorrelationEverywhere(scenario);
-    expect(visibleBodies(scenario).filter((body) => body.includes("M070 candidate verification publication"))).toHaveLength(1);
+    expect(visibleBodies(scenario).filter((body) => body.includes("M070 candidate verification publication"))).toHaveLength(0);
   });
 
   test.each([

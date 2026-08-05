@@ -39,7 +39,6 @@ import {
 } from "../jobs/workspace.ts";
 import type { PromptSectionRecord } from "../telemetry/types.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
-import { SMALL_DIFF_REVIEW_BASE_TOOLS } from "../lib/review-routing.ts";
 import {
   type ReviewCandidateFinding,
   type ReviewCandidateFindingExecutionResult,
@@ -672,22 +671,15 @@ export function createExecutor(deps: {
         // handler for trigger semantics, but they still need the broader review tool
         // budget. Only conversational PR mentions keep the reduced tool surface.
         const hasGitTools = await hasGitWorkspace(context.workspace.dir);
-        const isSmallDiffReview = taskType === TASK_TYPES.REVIEW_SMALL_DIFF;
         const isReadOnlyPrMention =
           isMentionEvent &&
           !isWriteMode &&
           context.prNumber !== undefined &&
           taskType === TASK_TYPES.MENTION_RESPONSE;
-        const baseTools = isSmallDiffReview
-          ? [
-              "Read",
-              "Grep",
-              "Glob",
-              ...(hasGitTools
-                ? SMALL_DIFF_REVIEW_BASE_TOOLS.filter((tool) => tool.startsWith("Bash("))
-                : []),
-            ]
-          : isReadOnlyPrMention
+        // Small-diff reviews get the same tool surface as full reviews: a tiny
+        // diff can still have a repo-wide blast radius, so the reviewer needs
+        // the freedom to trace callers and read any source file.
+        const baseTools = isReadOnlyPrMention
             ? [
                 "Read",
                 "Grep",

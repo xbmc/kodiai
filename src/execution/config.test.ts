@@ -128,8 +128,8 @@ test("returns defaults when no .kodiai.yml exists", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {
     const { config, warnings } = await loadRepoConfig(dir);
-    expect(config.model).toBe("claude-sonnet-4-5-20250929");
-    expect(config.maxTurns).toBe(25);
+    expect(config.model).toBe("claude-sonnet-5");
+    expect(config.maxTurns).toBe(40);
     expect(config.write.enabled).toBe(false);
     expect(config.write.allowPaths).toEqual([]);
     expect(config.write.denyPaths).toEqual([
@@ -529,7 +529,7 @@ test("falls back to defaults for invalid values with warning", async () => {
   try {
     await writeFile(join(dir, ".kodiai.yml"), "maxTurns: 999\n");
     const { config, warnings } = await loadRepoConfig(dir);
-    expect(config.maxTurns).toBe(25);
+    expect(config.maxTurns).toBe(40);
     expect(warnings.length).toBe(1);
     expect(warnings[0]!.section).toBe("maxTurns");
   } finally {
@@ -762,7 +762,7 @@ test("falls back to defaults for individual top-level scalars", async () => {
       "maxTurns: 999\nmodel: claude-opus-4-20250514\n",
     );
     const { config, warnings } = await loadRepoConfig(dir);
-    expect(config.maxTurns).toBe(25); // default (999 exceeds max 100)
+    expect(config.maxTurns).toBe(40); // default (999 exceeds max 100)
     expect(config.model).toBe("claude-opus-4-20250514"); // preserved
     expect(warnings.length).toBe(1);
     expect(warnings[0]!.section).toBe("maxTurns");
@@ -792,8 +792,8 @@ test("completely invalid config (not an object) falls back to all defaults", asy
   try {
     await writeFile(join(dir, ".kodiai.yml"), "justAString");
     const { config, warnings } = await loadRepoConfig(dir);
-    expect(config.model).toBe("claude-sonnet-4-5-20250929");
-    expect(config.maxTurns).toBe(25);
+    expect(config.model).toBe("claude-sonnet-5");
+    expect(config.maxTurns).toBe(40);
     expect(config.write.enabled).toBe(false);
     expect(config.review.enabled).toBe(true);
     expect(config.mention.enabled).toBe(true);

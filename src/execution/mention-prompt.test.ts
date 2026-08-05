@@ -606,25 +606,25 @@ describe("buildMentionPrompt", () => {
 // Phase 116: Cross-surface epistemic guardrails (PROMPT-04)
 // ---------------------------------------------------------------------------
 describe("epistemic guardrails on mention surfaces (PROMPT-04)", () => {
-  test("PR mention prompt includes Epistemic Boundaries section", () => {
+  test("PR mention prompt includes Evidence and Verification section", () => {
     const prompt = buildMentionPrompt({
       mention: baseMention(),
       mentionContext: "",
       userQuestion: "Review this please.",
     });
-    expect(prompt).toContain("## Epistemic Boundaries");
-    expect(prompt).toContain("Diff-visible");
-    expect(prompt).toContain("External knowledge");
+    expect(prompt).toContain("## Evidence and Verification");
+    expect(prompt).toContain("full read access to the repository");
+    expect(prompt).toContain("Library and API behavior claims are allowed");
   });
 
-  test("issue mention prompt includes Epistemic Boundaries section", () => {
+  test("issue mention prompt includes Evidence and Verification section", () => {
     const prompt = buildMentionPrompt({
       mention: issueMention(),
       mentionContext: "",
       userQuestion: "What version was this fixed in?",
     });
-    expect(prompt).toContain("## Epistemic Boundaries");
-    expect(prompt).toContain("Diff-visible");
+    expect(prompt).toContain("## Evidence and Verification");
+    expect(prompt).toContain("full read access to the repository");
   });
 
   test("issue mention prompt includes context-visible tier for issue surface", () => {
