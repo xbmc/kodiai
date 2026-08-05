@@ -24,7 +24,12 @@ export async function readTextFileBounded(path: string, maxBytes: number): Promi
       if (done) break;
       const remaining = maxBytes - bytesRead;
       if (value.byteLength > remaining) {
-        throw new BoundedFileTooLargeError(path, maxBytes + 1, maxBytes);
+        // Report the true size where the filesystem can tell us (the stream can
+        // outgrow the initial stat if the file is being appended to), falling
+        // back to the bytes actually observed so far.
+        const statSize = Bun.file(path).size;
+        const observed = bytesRead + value.byteLength;
+        throw new BoundedFileTooLargeError(path, Math.max(statSize, observed), maxBytes);
       }
       chunks.push(value);
       bytesRead += value.byteLength;

@@ -6,21 +6,28 @@ const DEFAULT_PER_PAGE = 100;
 const MAX_PAGES = 100;
 const MAX_RECORDS = DEFAULT_PER_PAGE * MAX_PAGES;
 
+type PagedCollection<T> = { records: T[]; truncated: boolean };
+
+// Returns bounded partial results with a truncation marker instead of failing
+// the whole MCP tool call when a repository has an absurd number of records —
+// partial CI evidence with an explicit "truncated" flag is more useful to the
+// reviewing model than an error.
 async function collectPaged<T>(
   fetchPage: (params: { page: number; per_page: number }) => Promise<T[]>,
-): Promise<T[]> {
+): Promise<PagedCollection<T>> {
   const records: T[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const data = await fetchPage({ page, per_page: DEFAULT_PER_PAGE });
     if (records.length + data.length > MAX_RECORDS) {
-      throw new Error(`GitHub pagination exceeded the ${MAX_RECORDS}-record safety limit`);
+      records.push(...data.slice(0, MAX_RECORDS - records.length));
+      return { records, truncated: true };
     }
     records.push(...data);
     if (data.length < DEFAULT_PER_PAGE) {
-      return records;
+      return { records, truncated: false };
     }
   }
-  throw new Error(`GitHub pagination exceeded the ${MAX_PAGES}-page safety limit`);
+  return { records, truncated: true };
 }
 
 export function createCIStatusServer(
@@ -68,7 +75,7 @@ export function createCIStatusServer(
             });
             const headSha = pr.data.head.sha;
 
-            const runs = await collectPaged(async ({ page, per_page }) => {
+            const { records: runs, truncated: runsTruncated } = await collectPaged(async ({ page, per_page }) => {
               const { data } = await octokit.rest.actions.listWorkflowRunsForRepo({
                 owner,
                 repo,
@@ -79,7 +86,7 @@ export function createCIStatusServer(
               });
               return data.workflow_runs || [];
             });
-            const summary = { total_runs: runs.length, failed: 0, passed: 0, pending: 0 };
+            const summary = { total_runs: runs.length, failed: 0, passed: 0, pending: 0, ...(runsTruncated ? { truncated: true } : {}) };
 
             const processedRuns = runs.map((run) => {
               if (run.status === "completed") {
@@ -127,7 +134,7 @@ export function createCIStatusServer(
           try {
             const octokit = await getOctokit();
 
-            const jobs = await collectPaged(async ({ page, per_page }) => {
+            const { records: jobs, truncated: jobsTruncated } = await collectPaged(async ({ page, per_page }) => {
               const { data } = await octokit.rest.actions.listJobsForWorkflowRun({
                 owner,
                 repo,
@@ -156,7 +163,7 @@ export function createCIStatusServer(
               content: [
                 {
                   type: "text" as const,
-                  text: JSON.stringify({ jobs: processedJobs }),
+                  text: JSON.stringify({ jobs: processedJobs, ...(jobsTruncated ? { truncated: true } : {}) }),
                 },
               ],
             };

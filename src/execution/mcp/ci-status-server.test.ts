@@ -139,7 +139,7 @@ describe("createCIStatusServer", () => {
     });
   });
 
-  test("fails closed when workflow pagination never terminates", async () => {
+  test("returns bounded partial results with a truncation flag when pagination never terminates", async () => {
     let calls = 0;
     const octokit = {
       rest: {
@@ -156,8 +156,11 @@ describe("createCIStatusServer", () => {
     const handler = getToolHandler(server, "get_ci_status");
 
     const result = await handler({});
-    expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain("safety limit");
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0]!.text);
+    expect(parsed.summary.truncated).toBe(true);
+    expect(parsed.summary.total_runs).toBe(10_000);
+    expect(parsed.runs).toHaveLength(10_000);
     expect(calls).toBe(100);
   });
 });
