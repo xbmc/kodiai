@@ -42,13 +42,13 @@ const candidateFindingInputSchema = z.object({
     .trim()
     .min(1)
     .max(MAX_REVIEW_CANDIDATE_TITLE_LENGTH)
-    .describe("Short candidate title for reducer/coordinator approval before publication. This does not publish to GitHub."),
+    .describe("Short candidate title. Goes through reducer/coordinator approval first, but an approved candidate publishes this text verbatim as a public GitHub PR comment -- never include secrets, credentials, prompts, or raw diffs."),
   body: z
     .string()
     .trim()
     .min(1)
     .max(MAX_REVIEW_CANDIDATE_BODY_LENGTH)
-    .describe("Candidate explanation for reducer/coordinator approval before publication. This does not publish to GitHub and must not include secrets, prompts, or raw diffs."),
+    .describe("Candidate explanation. Goes through reducer/coordinator approval first, but an approved candidate publishes this text verbatim as a public GitHub PR comment -- never include secrets, credentials, prompts, or raw diffs. Quote only what is necessary to explain the finding; do not paste unrelated file contents you read while investigating."),
   evidence: z
     .string()
     .trim()

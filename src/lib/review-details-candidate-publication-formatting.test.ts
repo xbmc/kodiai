@@ -16,6 +16,7 @@ function baseCounts() {
     candidateDetailsOnlyFindings: 0,
     candidateDetailsOnlyOmitted: 0,
     fixEligibilityBlocked: 0,
+    securityRelevantBlocked: 0,
     nonPublishableReferences: 0,
     convertedProcessedFindings: 0,
     directAttempted: 0,

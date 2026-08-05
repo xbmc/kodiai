@@ -594,4 +594,29 @@ describe("scanOutgoingForSecrets", () => {
     expect(result.blocked).toBe(true);
     expect(result.matchedPattern).toBe("anthropic-api-key");
   });
+
+  test("detects a high-entropy bare token that matches no known vendor prefix", () => {
+    // Random-looking 40-char base64-ish string, not shaped like any vendor's format.
+    const text = "The hardcoded key is Zx8pQmR4vL2nT9wKcJ6bY3sD7fH1aG5eN0uV_iOx=P6qWm";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("high-entropy-token");
+  });
+
+  test("does not flag a git commit SHA (hex hash) as high entropy", () => {
+    const result = scanOutgoingForSecrets("See commit a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 for context.");
+    expect(result.blocked).toBe(false);
+  });
+
+  test("does not flag a UUID as high entropy", () => {
+    const result = scanOutgoingForSecrets("Request ID: 550e8400-e29b-41d4-a716-446655440000");
+    expect(result.blocked).toBe(false);
+  });
+
+  test("does not flag ordinary low-entropy prose or identifiers", () => {
+    const result = scanOutgoingForSecrets(
+      "This function reads the configuration file and validates each field before returning the parsed result object to the caller.",
+    );
+    expect(result.blocked).toBe(false);
+  });
 });
