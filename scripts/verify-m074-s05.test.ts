@@ -57,9 +57,8 @@ describe("verify-m074-s05", () => {
     });
     expect(report.reasonCoverage).toMatchObject({
       eligible: 1,
-      "missing-replacement": 1,
       "duplicate-fix": 1,
-      "max-fixes-exceeded": 1,
+      "max-fixes-exceeded": 2,
       "secret-detected": 1,
       "candidate-denied": 1,
       "line-not-commentable": 1,
@@ -77,10 +76,12 @@ describe("verify-m074-s05", () => {
     });
     expect(report.samePrFixEvidence).toMatchObject({
       eligible: 1,
-      blocked: 5,
-      capped: 1,
+      blocked: 4,
+      capped: 2,
     });
+    expect(report.reasonCoverage["missing-replacement"]).toBeUndefined();
     expect(report.boundedReviewDetails).toMatchObject({
+      visibleValidationTruthLineCount: 0,
       validationTruthLineCount: 1,
       referencesCapped: true,
       reasonCodesCapped: true,
@@ -96,8 +97,8 @@ describe("verify-m074-s05", () => {
     expect(report.boundedReviewDetails.validationTruthLine).toContain("+3 omitted");
     expect(report.boundedReviewDetails.validationTruthLine).toContain("+22 omitted");
     expect(report.visibleVolumeBounds).toMatchObject({
-      maxAddedLines: 1,
-      maxVisibleCharDelta: 1400,
+      maxAddedLines: 0,
+      maxVisibleCharDelta: 0,
       withinLineBound: true,
       withinCharBound: true,
     });
@@ -169,7 +170,7 @@ describe("verify-m074-s05", () => {
     const report = await evaluateM074S05Contract({
       generatedAt: "2026-05-18T18:00:00.000Z",
       readPackageJsonText: async () => `{"scripts":{"${COMMAND_NAME}":"${EXPECTED_PACKAGE_SCRIPT}"}}`,
-      mutateReviewDetailsBody: (body) => body.replace("Review validation truth:", "Validation truth:"),
+      mutateValidationTruthLine: (line) => line.replace("Review validation truth:", "Validation truth:"),
     });
 
     expect(report.success).toBe(false);

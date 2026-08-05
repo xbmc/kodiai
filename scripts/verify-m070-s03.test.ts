@@ -77,6 +77,7 @@ describe("verify-m070-s03", () => {
         correlationKeyAvailable: true,
       },
       surfaces: {
+        reviewDetailsLineOmittedFromComment: true,
         reviewDetailsLineAvailable: true,
         reviewDetailsAggregateCountsAvailable: true,
         reviewDetailsReasonsAvailable: true,
@@ -164,7 +165,7 @@ describe("verify-m070-s03", () => {
     expect(report.success).toBe(false);
     expect(report.failing_check_id).toBe("M070-S03-REVIEW-DETAILS-SURFACE");
     expect(report.redaction.reviewDetailsLeakPresent).toBe(true);
-    expect(report.issues.join("\n")).toContain("Expected reviewDetailsAggregateCountsAvailable to be true.");
+    expect(report.issues.join("\n")).toContain("Expected reviewDetailsLineOmittedFromComment to be true.");
   });
 
   test("fails if runtime log fields contain a forbidden canary", async () => {

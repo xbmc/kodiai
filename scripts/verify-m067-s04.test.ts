@@ -65,6 +65,8 @@ describe("evaluateM067S04CandidateSeamContract", () => {
     });
     expect(report.mcp.allowed_tools).toContain("mcp__review_candidate_finding__record_candidate_finding");
     expect(report.mcp.allowed_tools).toContain("mcp__github_inline_comment__create_inline_comment");
+    expect(report.review_details.visible_candidate_line_count).toBe(0);
+    expect(report.review_details.candidate_line_count).toBe(1);
     expect(report.review_details.candidate_line).toStartWith("- Review candidates: shadow");
     expect(report.review_plan.candidate_mode).toBe("shadow");
     expect(report.prompt.has_shadow_section).toBe(true);
@@ -184,6 +186,7 @@ describe("main", () => {
         },
         review_details: {
           marker_count: 0,
+          visible_candidate_line_count: 0,
           candidate_line_count: 0,
           candidate_line: "",
         },
