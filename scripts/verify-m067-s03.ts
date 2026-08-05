@@ -1,4 +1,5 @@
 import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
+import { formatReviewReducerDetailsLine } from "../src/lib/review-details-plan-formatting.ts";
 import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
 import {
   createDegradedReviewReducerResult,
@@ -55,6 +56,9 @@ export type M067S03ReducerEvidence = {
   low_confidence_comment_ids: number[];
   audit_sources: string[];
   details_line: string;
+  /** Review reducer lines visible in the user-facing Review Details block (must be 0). */
+  visible_review_reducer_line_count: number;
+  /** Review reducer lines produced by the structured-log line formatter (must be 1). */
   review_details_line_count: number;
 };
 
@@ -336,7 +340,10 @@ function toReducerEvidence(result: ReviewReducerResult, reviewDetails: string): 
     low_confidence_comment_ids: result.lowConfidenceFindings.map((finding) => finding.commentId).sort((a, b) => a - b),
     audit_sources: result.audit.map((event) => event.source).sort(),
     details_line: sanitizeEvidenceText(result.detailsSummary.text),
-    review_details_line_count: countReviewReducerLines(reviewDetails),
+    visible_review_reducer_line_count: countReviewReducerLines(reviewDetails),
+    review_details_line_count: countReviewReducerLines(
+      formatReviewReducerDetailsLine(result.detailsSummary).join("\n"),
+    ),
   };
 }
 
@@ -397,7 +404,8 @@ function buildBehaviorParityCheck(evidence: M067S03ReducerEvidence): M067S03Chec
 function buildDetailsCompactCheck(evidence: M067S03ReducerEvidence): M067S03Check {
   const line = evidence.details_line;
   const failures = [
-    ...(evidence.review_details_line_count !== 1 ? [`Review Details emitted ${evidence.review_details_line_count} reducer lines`] : []),
+    ...(evidence.visible_review_reducer_line_count !== 0 ? [`visible Review Details emitted ${evidence.visible_review_reducer_line_count} reducer lines (must stay out of the user-visible comment)`] : []),
+    ...(evidence.review_details_line_count !== 1 ? [`log-line formatter emitted ${evidence.review_details_line_count} reducer lines`] : []),
     ...(!line.startsWith("Review reducer: ready") ? ["reducer details line did not use ready prefix"] : []),
     ...(line.length > 240 ? [`reducer details line too long (${line.length} chars)`] : []),
     ...(!line.includes("kept=2") ? ["details line omitted kept=2"] : []),
@@ -412,7 +420,7 @@ function buildDetailsCompactCheck(evidence: M067S03ReducerEvidence): M067S03Chec
     passed: failures.length === 0,
     status_code: failures.length === 0 ? "reducer_details_compact" : "reducer_details_not_compact",
     detail: failures.length === 0
-      ? "Review Details contains exactly one bounded Review reducer line with no raw fixture leakage"
+      ? "visible Review Details omits the reducer line; log-line formatter emits exactly one bounded Review reducer line with no raw fixture leakage"
       : failures.join("; "),
   };
 }
@@ -502,6 +510,7 @@ function emptyReducerEvidence(): M067S03ReducerEvidence {
     low_confidence_comment_ids: [],
     audit_sources: [],
     details_line: "",
+    visible_review_reducer_line_count: 0,
     review_details_line_count: 0,
   };
 }

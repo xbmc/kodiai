@@ -7,6 +7,7 @@ import {
   type ReviewPlanInput,
 } from "../src/review-orchestration/review-plan.ts";
 import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
+import { formatReviewPlanDetailsLine } from "../src/lib/review-details-plan-formatting.ts";
 import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
 
 export const M067_S01_CHECK_IDS = [
@@ -39,6 +40,9 @@ export type M067S01Check = {
 
 export type M067S01ReviewDetailsEvidence = {
   marker_count: number;
+  /** Review plan lines visible in the user-facing Review Details block (must be 0). */
+  visible_review_plan_line_count: number;
+  /** Review plan lines produced by the structured-log line formatter (must be 1). */
   review_plan_line_count: number;
   review_plan_line: string;
 };
@@ -170,16 +174,24 @@ function countOccurrences(value: string, needle: string): number {
   return value.split(needle).length - 1;
 }
 
-function inspectReviewDetails(body: string, reviewOutputKey: string): M067S01ReviewDetailsEvidence {
-  const reviewPlanLines = body
+function inspectReviewDetails(params: {
+  body: string;
+  reviewOutputKey: string;
+  formatterLines: string[];
+}): M067S01ReviewDetailsEvidence {
+  const visibleReviewPlanLines = params.body
     .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.includes("Review plan:"));
+  const formatterReviewPlanLines = params.formatterLines
     .map((line) => line.trim())
     .filter((line) => line.includes("Review plan:"));
 
   return {
-    marker_count: countOccurrences(body, `<!-- kodiai:review-details:${reviewOutputKey} -->`),
-    review_plan_line_count: reviewPlanLines.length,
-    review_plan_line: reviewPlanLines[0] ?? "",
+    marker_count: countOccurrences(params.body, `<!-- kodiai:review-details:${params.reviewOutputKey} -->`),
+    visible_review_plan_line_count: visibleReviewPlanLines.length,
+    review_plan_line_count: formatterReviewPlanLines.length,
+    review_plan_line: formatterReviewPlanLines[0] ?? "",
   };
 }
 
@@ -200,15 +212,17 @@ function buildReadyPlanHashCheck(plan: ReviewPlan): M067S01Check {
 }
 
 function buildReadyReviewDetailsCheck(evidence: M067S01ReviewDetailsEvidence): M067S01Check {
+  const visibleBlockClean = evidence.visible_review_plan_line_count === 0;
   const hasExactlyOneLine = evidence.review_plan_line_count === 1;
   const hasMarker = evidence.marker_count === 1;
   const startsCompact = evidence.review_plan_line.startsWith("- Review plan: ready hash=");
   const withinBound = evidence.review_plan_line.length <= 242;
   const rawLeak = hasRawLeak(evidence.review_plan_line);
-  const passed = hasExactlyOneLine && hasMarker && startsCompact && withinBound && !rawLeak;
+  const passed = visibleBlockClean && hasExactlyOneLine && hasMarker && startsCompact && withinBound && !rawLeak;
 
   const failures = [
-    ...(!hasExactlyOneLine ? [`expected exactly one compact Review plan line, found ${evidence.review_plan_line_count}`] : []),
+    ...(!visibleBlockClean ? [`expected exactly one compact Review plan line, found ${evidence.visible_review_plan_line_count} in the visible Review Details block (must be absent from the user-visible comment)`] : []),
+    ...(!hasExactlyOneLine ? [`expected exactly one compact Review plan line from the log-line formatter, found ${evidence.review_plan_line_count}`] : []),
     ...(!hasMarker ? [`expected exactly one Review Details marker, found ${evidence.marker_count}`] : []),
     ...(!startsCompact ? ["Review plan line does not use the compact ready prefix"] : []),
     ...(!withinBound ? [`Review plan line is too long (${evidence.review_plan_line.length} chars)`] : []),
@@ -220,7 +234,7 @@ function buildReadyReviewDetailsCheck(evidence: M067S01ReviewDetailsEvidence): M
     passed,
     status_code: passed ? "ready_review_details_compact" : "ready_review_details_not_compact",
     detail: passed
-      ? "ready Review Details contains exactly one compact Review plan line and marker with no raw data leaks"
+      ? "ready Review Details omits the Review plan line; log-line formatter emits exactly one compact line with no raw data leaks"
       : failures.join("; "),
   };
 }
@@ -230,6 +244,7 @@ function buildDegradedPlanRenderingCheck(params: {
   evidence: M067S01ReviewDetailsEvidence;
 }): M067S01Check {
   const hasDegradedHash = /^degraded-[a-f0-9]{16}$/.test(params.plan.hash);
+  const visibleBlockClean = params.evidence.visible_review_plan_line_count === 0;
   const hasExactlyOneLine = params.evidence.review_plan_line_count === 1;
   const hasMarker = params.evidence.marker_count === 1;
   const line = params.evidence.review_plan_line;
@@ -237,11 +252,12 @@ function buildDegradedPlanRenderingCheck(params: {
     && line.includes("graph=skipped")
     && line.includes("candidates=unavailable");
   const rawLeak = hasRawLeak(line);
-  const passed = hasDegradedHash && hasExactlyOneLine && hasMarker && hasDegradedSignals && !rawLeak;
+  const passed = hasDegradedHash && visibleBlockClean && hasExactlyOneLine && hasMarker && hasDegradedSignals && !rawLeak;
 
   const failures = [
     ...(!hasDegradedHash ? ["degraded plan hash missing or malformed"] : []),
-    ...(!hasExactlyOneLine ? [`expected one degraded Review plan line, found ${params.evidence.review_plan_line_count}`] : []),
+    ...(!visibleBlockClean ? [`expected zero degraded Review plan lines in the visible Review Details block, found ${params.evidence.visible_review_plan_line_count}`] : []),
+    ...(!hasExactlyOneLine ? [`expected one degraded Review plan line from the log-line formatter, found ${params.evidence.review_plan_line_count}`] : []),
     ...(!hasMarker ? [`expected one degraded Review Details marker, found ${params.evidence.marker_count}`] : []),
     ...(!hasDegradedSignals ? ["degraded Review plan line missing degraded/graph/candidate signals"] : []),
     ...(rawLeak ? ["degraded Review plan line leaked raw data"] : []),
@@ -252,7 +268,7 @@ function buildDegradedPlanRenderingCheck(params: {
     passed,
     status_code: passed ? "degraded_plan_rendered" : "degraded_plan_not_rendered",
     detail: passed
-      ? "degraded plan renders as fail-open Review Details metadata"
+      ? "degraded plan renders as fail-open structured-log metadata and stays out of the visible Review Details block"
       : failures.join("; "),
   };
 }
@@ -289,8 +305,8 @@ function buildInvalidArgReport(params: { generatedAt?: string; issue: string }):
     ready_plan: { status: "ready", hash: "" },
     degraded_plan: { status: "degraded", hash: "degraded-0000000000000000" },
     review_details: {
-      ready: { marker_count: 0, review_plan_line_count: 0, review_plan_line: "" },
-      degraded: { marker_count: 0, review_plan_line_count: 0, review_plan_line: "" },
+      ready: { marker_count: 0, visible_review_plan_line_count: 0, review_plan_line_count: 0, review_plan_line: "" },
+      degraded: { marker_count: 0, visible_review_plan_line_count: 0, review_plan_line_count: 0, review_plan_line: "" },
     },
   };
 }
@@ -317,8 +333,16 @@ export function evaluateM067S01ReviewPlanContract(params?: EvaluateM067S01Params
     formatter,
   });
 
-  const readyEvidence = inspectReviewDetails(readyReviewDetails, READY_REVIEW_OUTPUT_KEY);
-  const degradedEvidence = inspectReviewDetails(degradedReviewDetails, DEGRADED_REVIEW_OUTPUT_KEY);
+  const readyEvidence = inspectReviewDetails({
+    body: readyReviewDetails,
+    reviewOutputKey: READY_REVIEW_OUTPUT_KEY,
+    formatterLines: formatReviewPlanDetailsLine(toReviewPlanDetailsSummary(readyPlan)),
+  });
+  const degradedEvidence = inspectReviewDetails({
+    body: degradedReviewDetails,
+    reviewOutputKey: DEGRADED_REVIEW_OUTPUT_KEY,
+    formatterLines: formatReviewPlanDetailsLine(toReviewPlanDetailsSummary(degradedPlan)),
+  });
   const checks = [
     buildReadyPlanHashCheck(readyPlan),
     buildReadyReviewDetailsCheck(readyEvidence),

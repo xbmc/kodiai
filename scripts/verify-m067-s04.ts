@@ -4,6 +4,7 @@ import { buildAllowedMcpTools, buildMcpServerFactories } from "../src/execution/
 import { createCandidateFindingServer } from "../src/execution/mcp/candidate-finding-server.ts";
 import { buildReviewPrompt } from "../src/execution/review-prompt.ts";
 import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
+import { formatReviewCandidateFindingDetailsLine } from "../src/lib/review-details-candidate-finding-formatting.ts";
 import {
   buildReviewPlan,
   toReviewPlanDetailsSummary,
@@ -81,6 +82,9 @@ export type M067S04Report = {
   };
   review_details: {
     marker_count: number;
+    /** Review candidates lines visible in the user-facing Review Details block (must be 0). */
+    visible_candidate_line_count: number;
+    /** Review candidates lines produced by the structured-log line formatter (must be 1). */
     candidate_line_count: number;
     candidate_line: string;
   };
@@ -248,16 +252,29 @@ function buildReviewDetails(params: {
   });
 }
 
-function inspectReviewDetails(body: string): { marker_count: number; candidate_line_count: number; candidate_line_raw: string; candidate_line: string } {
-  const candidateLines = body
+function inspectReviewDetails(params: {
+  body: string;
+  formatterLines: string[];
+}): {
+  marker_count: number;
+  visible_candidate_line_count: number;
+  candidate_line_count: number;
+  candidate_line_raw: string;
+  candidate_line: string;
+} {
+  const visibleCandidateLines = params.body
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.includes("Review candidates:"));
+  const formatterCandidateLines = params.formatterLines
+    .map((line) => line.trim())
+    .filter((line) => line.includes("Review candidates:"));
 
-  const candidateLineRaw = candidateLines[0] ?? "";
+  const candidateLineRaw = formatterCandidateLines[0] ?? "";
   return {
-    marker_count: countOccurrences(body, `<!-- kodiai:review-details:${REVIEW_OUTPUT_KEY} -->`),
-    candidate_line_count: candidateLines.length,
+    marker_count: countOccurrences(params.body, `<!-- kodiai:review-details:${REVIEW_OUTPUT_KEY} -->`),
+    visible_candidate_line_count: visibleCandidateLines.length,
+    candidate_line_count: formatterCandidateLines.length,
     candidate_line_raw: candidateLineRaw,
     candidate_line: sanitizeEvidenceText(candidateLineRaw),
   };
@@ -357,11 +374,17 @@ function buildFailOpenCheck(params: {
   };
 }
 
-function buildDetailsCompactCheck(params: { markerCount: number; candidateLineCount: number; candidateLineRaw: string }): M067S04Check {
+function buildDetailsCompactCheck(params: {
+  markerCount: number;
+  visibleCandidateLineCount: number;
+  candidateLineCount: number;
+  candidateLineRaw: string;
+}): M067S04Check {
   const line = params.candidateLineRaw;
   const failures = [
     ...(params.markerCount !== 1 ? [`Review Details marker count was ${params.markerCount}`] : []),
-    ...(params.candidateLineCount !== 1 ? [`Review candidates line count was ${params.candidateLineCount}`] : []),
+    ...(params.visibleCandidateLineCount !== 0 ? [`visible Review Details emitted ${params.visibleCandidateLineCount} Review candidates lines (must stay out of the user-visible comment)`] : []),
+    ...(params.candidateLineCount !== 1 ? [`log-line formatter Review candidates line count was ${params.candidateLineCount}`] : []),
     ...(!line.startsWith("- Review candidates: shadow") ? ["candidate details line did not use shadow prefix"] : []),
     ...(line.length > 262 ? [`candidate details line too long (${line.length} chars)`] : []),
     ...(!line.includes("recorded=1") ? ["candidate details line omitted recorded=1"] : []),
@@ -379,7 +402,7 @@ function buildDetailsCompactCheck(params: { markerCount: number; candidateLineCo
     passed: failures.length === 0,
     status_code: failures.length === 0 ? "candidate_details_compact" : "candidate_details_not_compact",
     detail: failures.length === 0
-      ? "Review Details contains exactly one compact Review candidates line with count-only/correlation-only evidence"
+      ? "visible Review Details omits the candidates line; log-line formatter emits exactly one compact Review candidates line with count-only/correlation-only evidence"
       : sanitizeEvidenceText(failures.join("; ")),
   };
 }
@@ -488,6 +511,7 @@ function emptyReport(params: { generatedAt?: string; issue: string }): M067S04Re
     },
     review_details: {
       marker_count: 0,
+      visible_candidate_line_count: 0,
       candidate_line_count: 0,
       candidate_line: "",
     },
@@ -538,7 +562,10 @@ export async function evaluateM067S04CandidateSeamContract(params?: EvaluateM067
   }).plan;
   const reviewPlanSummary = toReviewPlanDetailsSummary(reviewPlan);
   const reviewDetails = buildReviewDetails({ candidateSummary, reviewPlanSummary });
-  const reviewDetailsEvidence = inspectReviewDetails(reviewDetails);
+  const reviewDetailsEvidence = inspectReviewDetails({
+    body: reviewDetails,
+    formatterLines: formatReviewCandidateFindingDetailsLine(candidateSummary),
+  });
 
   const recordedCalls: unknown[] = [];
   const warnings: unknown[] = [];
@@ -629,6 +656,7 @@ export async function evaluateM067S04CandidateSeamContract(params?: EvaluateM067
     }),
     buildDetailsCompactCheck({
       markerCount: reviewDetailsEvidence.marker_count,
+      visibleCandidateLineCount: reviewDetailsEvidence.visible_candidate_line_count,
       candidateLineCount: reviewDetailsEvidence.candidate_line_count,
       candidateLineRaw: reviewDetailsEvidence.candidate_line_raw,
     }),
@@ -666,6 +694,7 @@ export async function evaluateM067S04CandidateSeamContract(params?: EvaluateM067
     },
     review_details: {
       marker_count: reviewDetailsEvidence.marker_count,
+      visible_candidate_line_count: reviewDetailsEvidence.visible_candidate_line_count,
       candidate_line_count: reviewDetailsEvidence.candidate_line_count,
       candidate_line: reviewDetailsEvidence.candidate_line,
     },

@@ -1,4 +1,5 @@
 import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
+import { formatCandidateVerificationPublicationEvidenceLine } from "../src/lib/review-details-candidate-verification-formatting.ts";
 import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
 import {
   initialCandidateVerificationPublicationEvidenceSummary,
@@ -106,6 +107,7 @@ export type M070S03Report = {
     readonly correlationKeyValue: string | null;
   };
   readonly surfaces: {
+    readonly reviewDetailsLineOmittedFromComment: boolean;
     readonly reviewDetailsLineAvailable: boolean;
     readonly reviewDetailsAggregateCountsAvailable: boolean;
     readonly reviewDetailsReasonsAvailable: boolean;
@@ -345,11 +347,15 @@ export async function evaluateM070S03Contract(options: EvaluateM070S03Options = 
   const fixtureSummaries = FIXTURES.map((fixture) => summarizeFixture(fixture));
   const aggregateEvidence = summarizeAggregate(fixtureSummaries);
   const reviewDetails = buildReviewDetails(formatDetails, aggregateEvidence);
-  const reviewDetailsLine = reviewDetails.split("\n").find((line) => line.includes("M070 candidate verification publication")) ?? "";
+  // The M070 aggregate line is a machine diagnostic: it must stay OUT of the
+  // user-visible Review Details comment and is asserted against the exported
+  // structured-log line formatter instead.
+  const reviewDetailsLine = formatCandidateVerificationPublicationEvidenceLine(aggregateEvidence) ?? "";
+  const reviewDetailsLineOmittedFromComment = !reviewDetails.includes("M070 candidate verification publication");
   const runtimeLogFields = buildLogFields(aggregateEvidence);
-  const surfaces = summarizeSurfaces(reviewDetailsLine, runtimeLogFields);
+  const surfaces = summarizeSurfaces(reviewDetailsLine, reviewDetailsLineOmittedFromComment, runtimeLogFields);
   const packageJsonText = await readPackageJsonText();
-  const redaction = summarizeRedaction(aggregateEvidence, reviewDetails, runtimeLogFields);
+  const redaction = summarizeRedaction(aggregateEvidence, `${reviewDetails}\n${reviewDetailsLine}`, runtimeLogFields);
   const malformedFailClosed = summarizeMalformed(fixtureSummaries);
 
   const reportWithoutChecks = {
@@ -517,9 +523,14 @@ function buildCandidateVerificationPublicationEvidenceLogFields(evidence: Candid
   };
 }
 
-function summarizeSurfaces(reviewDetailsLine: string, logFields: Record<string, unknown>): M070S03Report["surfaces"] {
+function summarizeSurfaces(
+  reviewDetailsLine: string,
+  reviewDetailsLineOmittedFromComment: boolean,
+  logFields: Record<string, unknown>,
+): M070S03Report["surfaces"] {
   const logText = JSON.stringify(logFields);
   return {
+    reviewDetailsLineOmittedFromComment,
     reviewDetailsLineAvailable: reviewDetailsLine.includes("M070 candidate verification publication"),
     reviewDetailsAggregateCountsAvailable: reviewDetailsLine.includes("counts=attempted:") && reviewDetailsLine.includes("verification=verified:"),
     reviewDetailsReasonsAvailable: reviewDetailsLine.includes("denialCounts=") && reviewDetailsLine.includes("reasons="),
@@ -622,6 +633,7 @@ function buildAggregateProjectionCheck(evidence: CandidateVerificationPublicatio
 
 function buildReviewDetailsSurfaceCheck(surfaces: M070S03Report["surfaces"]): M070S03Check {
   const failures = booleanFailures(surfaces, [
+    "reviewDetailsLineOmittedFromComment",
     "reviewDetailsLineAvailable",
     "reviewDetailsAggregateCountsAvailable",
     "reviewDetailsReasonsAvailable",
@@ -632,7 +644,7 @@ function buildReviewDetailsSurfaceCheck(surfaces: M070S03Report["surfaces"]): M0
     id: "M070-S03-REVIEW-DETAILS-SURFACE",
     okCode: "review_details_surface_ok",
     failCode: "review_details_surface_failed",
-    okDetail: "Review Details exposes the M070 aggregate line with counts, bounded reasons, correlation metadata, and redaction flags.",
+    okDetail: "The visible Review Details comment omits the M070 aggregate line while the structured-log line formatter exposes counts, bounded reasons, correlation metadata, and redaction flags.",
     failures,
   });
 }
@@ -843,6 +855,7 @@ function buildInvalidArgReport(issue: string): M070S03Report {
       correlationKeyValue: null,
     },
     surfaces: {
+      reviewDetailsLineOmittedFromComment: false,
       reviewDetailsLineAvailable: false,
       reviewDetailsAggregateCountsAvailable: false,
       reviewDetailsReasonsAvailable: false,

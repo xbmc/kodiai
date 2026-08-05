@@ -13,6 +13,7 @@ import {
   type ValidationTruthStatus,
 } from "../src/review-lifecycle/validation-truth.ts";
 import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
+import { formatReviewValidationTruthDetailsLine } from "../src/lib/review-details-validation-formatting.ts";
 import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
 
 export const COMMAND_NAME = "verify:m074:s05" as const;
@@ -66,6 +67,8 @@ export type M074S05Report = {
     readonly reasonCoverage: Partial<Record<SamePrFixEligibilityReasonCode, number>>;
   };
   readonly boundedReviewDetails: {
+    /** Review validation truth lines visible in the user-facing Review Details block (must be 0). */
+    readonly visibleValidationTruthLineCount: number;
     readonly validationTruthLineCount: number;
     readonly validationTruthLine: string;
     readonly totalLines: number;
@@ -105,6 +108,7 @@ export type M074S05EvaluationOptions = {
   readonly mutateValidationEvidence?: (evidence: ValidationTruthEvidence[], records: Record<string, ReviewFindingLifecycleRecord>) => ValidationTruthEvidence[];
   readonly mutateValidationProjection?: (projection: ValidationTruthProjection) => ValidationTruthProjection;
   readonly mutateReviewDetailsBody?: (body: string) => string;
+  readonly mutateValidationTruthLine?: (line: string) => string;
   readonly mutateReportForCanaryCheck?: (report: Omit<M074S05Report, "success" | "statusCode" | "checks" | "issues">) => Omit<M074S05Report, "success" | "statusCode" | "checks" | "issues">;
 };
 
@@ -146,9 +150,11 @@ const REQUIRED_REASONS: readonly ValidationTruthReasonCode[] = [
   "resolved",
 ];
 
+// "missing-replacement" is intentionally absent: candidates without
+// replacement text now publish as prose drafts instead of being blocked,
+// so classifyCandidate never emits that reason code anymore.
 const REQUIRED_FIX_REASONS: readonly SamePrFixEligibilityReasonCode[] = [
   "eligible",
-  "missing-replacement",
   "duplicate-fix",
   "max-fixes-exceeded",
   "secret-detected",
@@ -168,9 +174,11 @@ const CASES: readonly LifecycleExpectation[] = [
   { id: "degraded-evidence", expectedStatus: "degraded", expectedReasons: ["degraded"], shouldResolve: false },
 ] as const;
 
+// The validation-truth diagnostic line moved from the visible Review Details
+// comment to structured logs, so the projection must add NOTHING visible.
 const REVIEW_DETAILS_VOLUME_LIMITS = {
-  maxAddedLines: 1,
-  maxVisibleCharDelta: 1_400,
+  maxAddedLines: 0,
+  maxVisibleCharDelta: 0,
 } as const;
 
 const PR_DIFF = [
@@ -235,7 +243,11 @@ export async function evaluateM074S05Contract(options: M074S05EvaluationOptions 
   const validationProjection = options.mutateValidationProjection?.(validationTruth.projection) ?? validationTruth.projection;
   const baselineReviewDetails = buildReviewDetailsBody(null);
   const reviewDetailsBody = options.mutateReviewDetailsBody?.(buildReviewDetailsBody(validationProjection)) ?? buildReviewDetailsBody(validationProjection);
-  const validationTruthLines = reviewDetailsBody.split("\n").filter((line) => line.includes("Review validation truth:"));
+  const visibleValidationTruthLines = reviewDetailsBody.split("\n").filter((line) => line.includes("Review validation truth:"));
+  const formattedValidationTruthLine = formatReviewValidationTruthDetailsLine(validationProjection);
+  const validationTruthLines = (formattedValidationTruthLine === null ? [] : [formattedValidationTruthLine])
+    .map((line) => options.mutateValidationTruthLine?.(line) ?? line)
+    .filter((line) => line.includes("Review validation truth:"));
   const validationTruthLine = validationTruthLines[0] ?? "";
   const statusByCase = Object.fromEntries(
     CASES.map((item) => [item.id, validationTruth.records.find((record) => record.id === records[item.id]?.id)?.status ?? "degraded"]),
@@ -271,6 +283,7 @@ export async function evaluateM074S05Contract(options: M074S05EvaluationOptions 
       reasonCoverage: fixReasonCoverage,
     },
     boundedReviewDetails: {
+      visibleValidationTruthLineCount: visibleValidationTruthLines.length,
       validationTruthLineCount: validationTruthLines.length,
       validationTruthLine,
       totalLines: reviewDetailsBody.split("\n").length,
@@ -331,17 +344,19 @@ export async function evaluateM074S05Contract(options: M074S05EvaluationOptions 
     {
       id: "reason-code-coverage",
       passed: REQUIRED_REASONS.every((reason) => (reportForChecks.reasonCoverage[reason] ?? 0) > 0)
-        && REQUIRED_FIX_REASONS.every((reason) => (reportForChecks.samePrFixEvidence.reasonCoverage[reason] ?? 0) > 0),
+        && REQUIRED_FIX_REASONS.every((reason) => (reportForChecks.samePrFixEvidence.reasonCoverage[reason] ?? 0) > 0)
+        && (reportForChecks.samePrFixEvidence.reasonCoverage["missing-replacement"] ?? 0) === 0,
       detail: `validationReasons=${REQUIRED_REASONS.filter((reason) => (reportForChecks.reasonCoverage[reason] ?? 0) > 0).join(",")} fixReasons=${REQUIRED_FIX_REASONS.filter((reason) => (reportForChecks.samePrFixEvidence.reasonCoverage[reason] ?? 0) > 0).join(",")}`,
     },
     {
       id: "review-details-wording-and-caps",
-      passed: reportForChecks.boundedReviewDetails.validationTruthLineCount === 1
+      passed: reportForChecks.boundedReviewDetails.visibleValidationTruthLineCount === 0
+        && reportForChecks.boundedReviewDetails.validationTruthLineCount === 1
         && reportForChecks.boundedReviewDetails.wordingPresent
         && reportForChecks.boundedReviewDetails.correlationPresent
         && reportForChecks.boundedReviewDetails.referencesCapped
         && reportForChecks.boundedReviewDetails.reasonCodesCapped,
-      detail: `lineCount=${reportForChecks.boundedReviewDetails.validationTruthLineCount} refs=${reportForChecks.boundedReviewDetails.projectedReferences}+${reportForChecks.boundedReviewDetails.omittedReferences} reasons=${reportForChecks.boundedReviewDetails.projectedReasonCodes}+${reportForChecks.boundedReviewDetails.omittedReasonCodes}`,
+      detail: `visibleLineCount=${reportForChecks.boundedReviewDetails.visibleValidationTruthLineCount} lineCount=${reportForChecks.boundedReviewDetails.validationTruthLineCount} refs=${reportForChecks.boundedReviewDetails.projectedReferences}+${reportForChecks.boundedReviewDetails.omittedReferences} reasons=${reportForChecks.boundedReviewDetails.projectedReasonCodes}+${reportForChecks.boundedReviewDetails.omittedReasonCodes}`,
     },
     {
       id: "visible-volume-bounds",

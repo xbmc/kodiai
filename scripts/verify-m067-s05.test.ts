@@ -119,7 +119,7 @@ function makeS04Report(success = true): M067S04Report {
     issues: [],
     candidate: { status: "shadow" as const, counts: { input: 1, recorded: 1, rejected: 0, errors: 0 }, artifact_present: true, artifact_basename: "review-candidate-findings.json", details_line: "" },
     mcp: { server_names: [], allowed_tools: [], recorded_response: {}, failing_recorder_response: {}, warning_count: 0 },
-    review_details: { marker_count: 1, candidate_line_count: 1, candidate_line: "" },
+    review_details: { marker_count: 1, visible_candidate_line_count: 0, candidate_line_count: 1, candidate_line: "" },
     review_plan: { status: "ready" as const, candidate_mode: "shadow" as const, details_line: "" },
     prompt: { has_shadow_section: true, shadow_section: "", publish_tool_count: 2, includes_candidate_in_publish_contract: false },
     sidecar: { artifact_present: true, artifact_basename: "review-candidate-findings.json" },

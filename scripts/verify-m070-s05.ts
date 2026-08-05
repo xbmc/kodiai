@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { buildMcpServers } from "../src/execution/mcp/index.ts";
+import { formatCandidateVerificationPublicationEvidenceLine } from "../src/lib/review-details-candidate-verification-formatting.ts";
 import type { ExecutionContext, ExecutionPublishEvent, ExecutionResult } from "../src/execution/types.ts";
 import type { CandidatePublicationPolicyAttempt } from "../src/specialists/candidate-publication-policy.ts";
 import type { CandidateVerificationPublicationEvidenceSummary } from "../src/specialists/candidate-verification-publication-evidence.ts";
@@ -342,7 +343,12 @@ export async function runM070S05Scenario(spec: ScenarioSpec, generatedAt: string
   const directFallbackEvidence = spec.fallbackAfterDenied === true;
   const m070 = evaluateM070VerifierScenario({ scenario: spec.verifierScenario, aggregateEvidence: evidence, publicationMode: { candidateApprovedNonFallback, directFallbackEvidence: false } }, { generatedAt });
   const bodies = visibleBodies(result);
-  const serializedVisible = bodies.join("\n");
+  // PR #206: the M070 aggregate line is a machine diagnostic that no longer
+  // renders in the user-visible Review Details comment. The details-surface
+  // evidence is the exported structured-log line formatter over the
+  // MCP-projected aggregate summary, and the visible comment must stay clean.
+  const m070DetailsLine = formatCandidateVerificationPublicationEvidenceLine(evidence) ?? "";
+  const serializedVisible = [...bodies, m070DetailsLine].join("\n");
   const serializedVerifier = JSON.stringify(m070);
   const rawCanaries = [PROMPT_CANARY, DIFF_CANARY, FINGERPRINT_CANARY, TOOL_PAYLOAD_CANARY, EVIDENCE_PAYLOAD_CANARY, specialistCanary, specialistInlineCanary];
   const baseRow = {
@@ -363,7 +369,8 @@ export async function runM070S05Scenario(spec: ScenarioSpec, generatedAt: string
       evidenceHasCorrelationKey: evidence.metadata.hasCorrelationKey,
     },
     evidenceSurfaces: {
-      reviewDetailsPresent: bodies.some((body) => body.includes("M070 candidate verification publication")),
+      reviewDetailsPresent: m070DetailsLine.includes("M070 candidate verification publication")
+        && !bodies.some((body) => body.includes("M070 candidate verification publication")),
       runtimeLogPresent: result.entries.some((entry) => entry.data?.gate === "m070-candidate-verification-evidence"),
       mcpEvidencePresent: evidenceEvents.length > 0,
     },
@@ -437,7 +444,7 @@ export async function evaluateM070S05Integration(options: { generatedAt?: string
     makeCheck("M070-S05-M070-STATUS-SEMANTICS", allStatusesMatch && positiveRows.every((row) => row.success) && negativeRows.every((row) => !row.success), "Scenario rows match expected M070 verifier status semantics."),
     makeCheck("M070-S05-PUBLICATION-MODE", positivePublish && negativeRejected && directFallbackRejected, "Candidate-approved inline publication is distinguished from denied/direct fallback behavior."),
     makeCheck("M070-S05-CORRELATION-METADATA", successRowsHaveCorrelation, "Successful rows carry delivery, review output, and correlation metadata booleans through context and evidence."),
-    makeCheck("M070-S05-REVIEW-DETAILS-AND-LOGS", surfacesPresent, "Each scenario emits Review Details and runtime log aggregate evidence surfaces."),
+    makeCheck("M070-S05-REVIEW-DETAILS-AND-LOGS", surfacesPresent, "Each scenario emits the structured-log aggregate evidence line and runtime log surfaces while keeping the M070 line out of visible comments."),
     makeCheck("M070-S05-VISIBLE-VOLUME", volumeBounded, "Visible output counts remain locally bounded."),
     makeCheck("M070-S05-REDACTION-BOUNDARY", aggregateOnly, "Verifier JSON and visible surfaces exclude raw candidate/specialist/model/tool/diff/evidence payloads."),
     makeCheck("M070-S05-PACKAGE-WIRING", packageWiring.matches, "package.json exposes verify:m070:s05."),
