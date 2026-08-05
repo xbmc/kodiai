@@ -194,7 +194,11 @@ type DegradedReviewReducerInput = {
   reason: string;
 };
 
-const DEFAULT_MIN_CONFIDENCE = 50;
+// 40 keeps every severity/category combination from computeConfidence visible
+// (the lowest, minor+documentation, scores exactly 40). The old default of 50
+// silently dropped all minor style/documentation findings even under the
+// strict profile, which promises minor-level findings.
+const DEFAULT_MIN_CONFIDENCE = 40;
 const DEFAULT_FAIL_OPEN_CONFIDENCE = 100;
 const MAX_SUMMARY_LENGTH = 240;
 const MAX_REASON_LENGTH = 64;
@@ -678,8 +682,14 @@ if (finding.suppressed || (typeof finding.confidence === "number" && Number.isFi
     }
 
     const fileRiskByPath = new Map(input.riskScores.map((risk) => [risk.filePath, risk.score]));
+    // Findings without a numeric confidence pass the filter: Number(undefined)
+    // is NaN and NaN >= min is always false, which used to silently drop them.
+    const passesConfidence = (finding: ProcessedReviewFinding): boolean =>
+      typeof finding.confidence !== "number"
+      || !Number.isFinite(finding.confidence)
+      || finding.confidence >= input.minConfidence;
     let visibleFindings = processedFindings.filter((finding) =>
-      !finding.suppressed && Number(finding.confidence) >= input.minConfidence
+      !finding.suppressed && passesConfidence(finding)
     );
 
     let prioritizationStats: ReviewReducerPrioritizationStats | undefined;
@@ -717,7 +727,7 @@ if (finding.suppressed || (typeof finding.confidence === "number" && Number.isFi
       );
 
       processedFindings = processedFindings.map((finding) => {
-        if (finding.suppressed || Number(finding.confidence) < input.minConfidence) {
+        if (finding.suppressed || !passesConfidence(finding)) {
           return finding;
         }
         if (selectedCommentIds.has(finding.commentId)) {
@@ -728,15 +738,15 @@ if (finding.suppressed || (typeof finding.confidence === "number" && Number.isFi
 
       audit.push({ action: "deprioritized", source: "finding-prioritizer", count: prioritizationStats.omittedFindings ?? 0 });
       visibleFindings = processedFindings.filter((finding) =>
-        !finding.suppressed && !finding.deprioritized && Number(finding.confidence) >= input.minConfidence
+        !finding.suppressed && !finding.deprioritized && passesConfidence(finding)
       );
     }
 
     const lowConfidenceFindings = processedFindings.filter((finding) =>
-      !finding.suppressed && Number(finding.confidence) < input.minConfidence
+      !finding.suppressed && !passesConfidence(finding)
     );
     const filteredInlineFindings = processedFindings.filter((finding) =>
-      finding.suppressed || Number(finding.confidence) < input.minConfidence || Boolean(finding.deprioritized)
+      finding.suppressed || !passesConfidence(finding) || Boolean(finding.deprioritized)
     );
 
     const counts = buildReviewReducerCounts(processedFindings, audit, { minConfidence: input.minConfidence });

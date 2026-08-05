@@ -509,7 +509,7 @@ function normalizeAdapterCounts(
   if (fixEligibilityBlocked > 0 && isRecord(adapter?.fixEligibility?.reasonCounts)) {
     for (const [reason, count] of Object.entries(adapter.fixEligibility.reasonCounts)) {
       const normalizedReason = sanitizeSummaryToken(reason);
-      if (normalizedReason === "eligible" || normalizedReason === "line-not-commentable") continue;
+      if (normalizedReason === "eligible" || normalizedReason === "line-not-commentable" || normalizedReason === "missing-replacement") continue;
       if (normalizeCount(count) > 0) addBucketReason(bucketReasons.blocked, reason, "fix-eligibility-blocked");
     }
   }
@@ -530,7 +530,9 @@ function countBlockingFixEligibilityReasons(reasonCounts: unknown): number {
   let total = 0;
   for (const [reason, count] of Object.entries(reasonCounts)) {
     const normalizedReason = sanitizeSummaryToken(reason);
-    if (normalizedReason === "eligible" || normalizedReason === "line-not-commentable") continue;
+    // moved-to-details reasons (missing-replacement, line-not-commentable)
+    // are preserved findings, not blocked ones — do not count them as blocked.
+    if (normalizedReason === "eligible" || normalizedReason === "line-not-commentable" || normalizedReason === "missing-replacement") continue;
     total += normalizeCount(count);
   }
   return total;

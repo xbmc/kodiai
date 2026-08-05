@@ -53,6 +53,8 @@ export type SamePrFixDraft = {
   severity: FindingSeverity | string;
   category: FindingCategory | string;
   reason: "eligible";
+  /** "suggestion" when the body carries a ```suggestion``` patch; "prose" otherwise. */
+  kind: "suggestion" | "prose";
 };
 
 export type SamePrFixEligibilityOutcome = {
@@ -148,7 +150,8 @@ export function reduceSamePrFixEligibility(input: SamePrFixEligibilityInput): Sa
       ...(normalized.line ? { line: normalized.line } : {}),
     };
 
-    const secretScan = normalized.replacementText ? scanOutgoingForSecrets(normalized.replacementText) : { blocked: false };
+    const outgoingText = [normalized.replacementText, normalized.bodyText].filter(Boolean).join("\n");
+    const secretScan = outgoingText ? scanOutgoingForSecrets(outgoingText) : { blocked: false };
     if (secretScan.blocked) secretDetected = true;
 
     const reason = classifyCandidate({
@@ -221,7 +224,8 @@ function classifyCandidate(input: {
   maxReached: boolean;
   secretDetected: boolean;
 }): SamePrFixEligibilityReasonCode {
-  if (!input.normalized.replacementText) return "missing-replacement";
+  // A missing replacement no longer blocks publication: findings without a
+  // generated patch publish as prose inline comments instead of vanishing.
   if (!input.normalized.path || !input.normalized.startLine || !input.normalized.line) return "unmappable-location";
   if (input.secretDetected) return "secret-detected";
   if (input.candidate.reducerApproved === false) return "reducer-denied";
@@ -246,6 +250,7 @@ type NormalizedSamePrFixCandidate = {
   severity: FindingSeverity | string;
   category: FindingCategory | string;
   replacementText: string;
+  bodyText: string;
 };
 
 function normalizeCandidate(
@@ -259,6 +264,7 @@ function normalizeCandidate(
   const orderedStart = startLine && endLine ? Math.min(startLine, endLine) : (startLine ?? 0);
   const orderedEnd = startLine && endLine ? Math.max(startLine, endLine) : (endLine ?? 0);
   const replacementText = normalizeReplacement(candidate.replacementText);
+  const bodyText = normalizeBody(candidate.rawCandidateBody);
   const title = normalizeTitle(candidate.title);
   const severity = normalizeContextToken(candidate.severity, "medium");
   const category = normalizeContextToken(candidate.category, "correctness");
@@ -287,21 +293,24 @@ function normalizeCandidate(
     severity,
     category,
     replacementText,
+    bodyText,
   };
 }
 
 function toDraft(candidate: NormalizedSamePrFixCandidate): SamePrFixDraft {
+  const kind = candidate.replacementText ? "suggestion" : "prose";
   return {
     identity: candidate.identity,
     path: candidate.path,
     ...(candidate.startLine === candidate.line ? {} : { startLine: candidate.startLine }),
     line: candidate.line,
     side: "RIGHT",
-    body: formatSuggestionBody(candidate),
+    body: kind === "suggestion" ? formatSuggestionBody(candidate) : formatProseBody(candidate),
     title: candidate.title,
     severity: candidate.severity,
     category: candidate.category,
     reason: "eligible",
+    kind,
   };
 }
 
@@ -309,10 +318,18 @@ function formatSuggestionBody(candidate: NormalizedSamePrFixCandidate): string {
   return [
     `**Fix suggestion:** ${candidate.title}`,
     `Severity: ${candidate.severity} · Category: ${candidate.category}`,
+    ...(candidate.bodyText ? ["", candidate.bodyText] : []),
     "",
     "```suggestion",
     candidate.replacementText,
     "```",
+  ].join("\n");
+}
+
+function formatProseBody(candidate: NormalizedSamePrFixCandidate): string {
+  return [
+    `**${String(candidate.severity).toUpperCase()}** (${candidate.category}): ${candidate.title}`,
+    ...(candidate.bodyText ? ["", candidate.bodyText] : []),
   ].join("\n");
 }
 
@@ -335,6 +352,18 @@ function normalizeReplacement(value: unknown): string {
   const stripped = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "");
   const bounded = stripped.length > MAX_REPLACEMENT_CHARS ? stripped.slice(0, MAX_REPLACEMENT_CHARS) : stripped;
   return bounded.trim().length > 0 ? bounded.replace(/\n+$/g, "") : "";
+}
+
+const MAX_BODY_CHARS = 4_000;
+
+function normalizeBody(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const stripped = value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "");
+  const bounded = stripped.length > MAX_BODY_CHARS ? `${stripped.slice(0, MAX_BODY_CHARS - 1)}…` : stripped;
+  return bounded.trim();
 }
 
 function normalizeTitle(value: unknown): string {

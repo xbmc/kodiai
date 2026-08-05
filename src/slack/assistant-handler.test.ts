@@ -773,10 +773,10 @@ describe("createSlackAssistantHandler", () => {
 
     expect(executionInputs).toHaveLength(1);
     const prompt = executionInputs[0]!.prompt;
-    // PROMPT-04: Epistemic boundaries section is present
-    expect(prompt).toContain("## Epistemic Boundaries");
-    expect(prompt).toContain("Diff-visible");
-    expect(prompt).toContain("External knowledge");
+    // PROMPT-04: Evidence and Verification section is present
+    expect(prompt).toContain("## Evidence and Verification");
+    expect(prompt).toContain("full read access to the repository");
+    expect(prompt).toContain("Library and API behavior claims are allowed");
     expect(prompt).toContain("System-provided enrichment");
   });
 

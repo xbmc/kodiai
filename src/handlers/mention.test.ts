@@ -11080,7 +11080,7 @@ describe("createMentionHandler review command", () => {
     expect(capturedPrompt).toContain("You are reviewing pull request #102 in acme/repo.");
     expect(capturedPrompt).toContain("Candidate-Preferred Finding Capture");
     expect(capturedPrompt).toContain("record_candidate_finding");
-    expect(capturedPrompt).toContain("## Tiny-diff scope contract");
+    expect(capturedPrompt).toContain("## Small-diff review guidance");
     expect(capturedPrompt).not.toContain("You MUST post a reply when you are mentioned.");
     expect(capturedMaxTurnsOverride).toBeUndefined();
     expect(capturedEnableInlineTools).toBe(true);
@@ -13579,12 +13579,19 @@ describe("createMentionHandler formatter suggestion intent context", () => {
     });
     expect(JSON.stringify(validationTruthLog?.bindings)).not.toContain(rawCanary);
     expect(body).toContain("Decision: APPROVE");
-    expect(body).toContain("Review finding lifecycle: status=normalized");
-    expect(body).toContain("counts=input:1,recorded:1,rejected:0,unsafeInputFields:0");
-    expect(body).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n,unsafeFields:0");
+    // Lifecycle evidence moved from the user-visible approval evidence into
+    // structured logs.
+    expect(body).not.toContain("Review finding lifecycle:");
+    expect(body).not.toContain("counts=input:1,recorded:1,rejected:0,unsafeInputFields:0");
     expect(body).toContain("<!-- kodiai:review-output-key:");
     expect(body).not.toContain("Review validation truth:");
     expect(body).not.toContain(rawCanary);
+
+    const lifecycleEvidenceLog = result.infoCalls.find(
+      (entry) => entry.message === "Explicit review lifecycle evidence",
+    );
+    expect(String(lifecycleEvidenceLog?.bindings.lifecycleEvidence)).toContain("Review finding lifecycle: status=normalized");
+    expect(JSON.stringify(lifecycleEvidenceLog?.bindings)).not.toContain(rawCanary);
 
     const publishLog = result.infoCalls.find(
       (entry) => entry.message === "Submitted approval review for explicit mention request"

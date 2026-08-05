@@ -91,9 +91,39 @@ describe("reduceSamePrFixEligibility", () => {
     expect(result.drafts[0]?.body).toContain("```suggestion\nconst multiA = 'new';\nconst multiB = 'new';\n```");
   });
 
+  test("emits a prose draft when replacement text is missing", () => {
+    const result = reduceSamePrFixEligibility({
+      reviewOutputKey: "rok-1",
+      deliveryId: "delivery-1",
+      prDiffText: PR_DIFF,
+      maxSuggestions: 5,
+      candidates: [candidate({
+        findingIdentity: "missing",
+        replacementText: "  \n",
+        rawCandidateBody: "Prefer the computed value here.",
+      })],
+    });
+
+    expect(result.summary.counts).toMatchObject({ input: 1, eligible: 1, blocked: 0, omitted: 0, capped: 0 });
+    expect(result.summary.reasonCounts).toMatchObject({ eligible: 1 });
+    expect(result.drafts).toHaveLength(1);
+    expect(result.drafts[0]).toMatchObject({
+      path: "src/app.ts",
+      line: 12,
+      side: "RIGHT",
+      kind: "prose",
+      reason: "eligible",
+    });
+    expect(result.drafts[0]?.body).toBe([
+      "**MEDIUM** (correctness): Use computed value",
+      "",
+      "Prefer the computed value here.",
+    ].join("\n"));
+    expect(result.drafts[0]?.body).not.toContain("```suggestion");
+  });
+
   test("blocks every required reason with stable reason codes", () => {
     const inputs: Array<[SamePrFixEligibilityReasonCode, SamePrFixCandidateInput]> = [
-      ["missing-replacement", candidate({ findingIdentity: "missing", replacementText: "  \n" })],
       ["unmappable-location", candidate({ findingIdentity: "unmapped", filePath: "../secret.ts" })],
       ["secret-detected", candidate({ findingIdentity: "secret", replacementText: "const token = 'ghp_123456789012345678901234567890123456';" })],
       ["reducer-denied", candidate({ findingIdentity: "reducer", reducerApproved: false })],
@@ -188,7 +218,8 @@ describe("reduceSamePrFixEligibility", () => {
     expect(body).toContain("const safe = true;");
     expect(body).not.toContain("BEGIN PROMPT");
     expect(body).not.toContain("raw model output");
-    expect(body).not.toContain("candidate body");
+    // The normalized candidate body is now published between the header and the fence.
+    expect(body).toContain("candidate body should stay private\n\n```suggestion");
     expect(body).not.toContain("tool payload");
     expect(body).not.toContain("diff --git");
     expect(result.summary.redaction).toMatchObject({

@@ -489,23 +489,14 @@ function createTestableExecutor(deps: {
         const hasGitTools = await $`git -C ${context.workspace.dir} rev-parse --is-inside-work-tree`.quiet().nothrow()
           .then((result) => result.exitCode === 0 && result.stdout.toString().trim() === "true");
         const { TASK_TYPES } = await import("../llm/task-types.ts");
-        const { SMALL_DIFF_REVIEW_BASE_TOOLS } = await import("../lib/review-routing.ts");
-        const isSmallDiffReview = taskType === TASK_TYPES.REVIEW_SMALL_DIFF;
         const isReadOnlyPrMention =
           isMentionEvent &&
           !isWriteMode &&
           context.prNumber !== undefined &&
           taskType === TASK_TYPES.MENTION_RESPONSE;
-        const baseTools = isSmallDiffReview
-          ? [
-              "Read",
-              "Grep",
-              "Glob",
-              ...(hasGitTools ? SMALL_DIFF_REVIEW_BASE_TOOLS.filter((tool) => tool.startsWith("Bash(")) : []),
-            ]
-          : isReadOnlyPrMention
-            ? ["Read", "Grep", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : [])]
-            : ["Read", "Grep", "Glob", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"] : [])];
+        const baseTools = isReadOnlyPrMention
+          ? ["Read", "Grep", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : [])]
+          : ["Read", "Grep", "Glob", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"] : [])];
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         const mcpTools = buildAllowedMcpTools(Object.keys(mcpFactories));
         const allowedTools = context.allowedToolsOverride ?? [...baseTools, ...writeTools, ...mcpTools];
@@ -1286,7 +1277,7 @@ test("ACA dispatch: explicit review mention stages a review bundle transport wit
   };
 
   expect(agentConfig.taskType).toBe("review.full");
-  expect(agentConfig.maxTurns).toBe(25);
+  expect(agentConfig.maxTurns).toBe(40);
   expect(agentConfig.allowedTools).toContain("Glob");
   expect(agentConfig.allowedTools).toContain("Bash(git log:*)");
   expect(agentConfig.allowedTools).toContain("Bash(git show:*)");
@@ -1302,7 +1293,7 @@ test("ACA dispatch: explicit review mention stages a review bundle transport wit
   });
 });
 
-test("ACA dispatch: explicit small-diff review mention uses constrained review toolset", async () => {
+test("ACA dispatch: explicit small-diff review mention uses full review toolset", async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
   const sourceRepoDir = join(tmpDir, "source");
   await mkdir(join(sourceRepoDir, "src"), { recursive: true });
@@ -1358,8 +1349,8 @@ test("ACA dispatch: explicit small-diff review mention uses constrained review t
   expect(agentConfig.allowedTools).toContain("Glob");
   expect(agentConfig.allowedTools).toContain("Bash(git diff:*)");
   expect(agentConfig.allowedTools).toContain("Bash(git show:*)");
-  expect(agentConfig.allowedTools).not.toContain("Bash(git log:*)");
-  expect(agentConfig.allowedTools).not.toContain("Bash(git status:*)");
+  expect(agentConfig.allowedTools).toContain("Bash(git log:*)");
+  expect(agentConfig.allowedTools).toContain("Bash(git status:*)");
   expect(agentConfig.allowedTools).toContain("mcp__github_inline_comment__create_inline_comment");
 });
 

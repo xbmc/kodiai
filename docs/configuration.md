@@ -8,7 +8,7 @@ For environment variables and application-level config (API keys, database URLs,
 
 ```yaml
 # .kodiai.yml — common configuration
-model: claude-sonnet-4-5-20250929
+model: claude-sonnet-5
 maxTurns: 25
 timeoutSeconds: 600
 
@@ -80,7 +80,7 @@ These fields sit at the root of `.kodiai.yml`, outside any section.
 | | |
 |---|---|
 | **Type** | `string` |
-| **Default** | `"claude-sonnet-4-5-20250929"` |
+| **Default** | `"claude-sonnet-5"` |
 
 The primary LLM model used for tasks. This is the baseline model unless overridden by `models`, `defaultModel`, or task-specific routing.
 
@@ -124,7 +124,7 @@ Per-task-type model overrides. Keys are task type identifiers (e.g., `"review.fu
 
 ```yaml
 models:
-  review.full: claude-sonnet-4-5-20250929
+  review.full: claude-sonnet-5
   mention.reply: gpt-4o-mini
 ```
 

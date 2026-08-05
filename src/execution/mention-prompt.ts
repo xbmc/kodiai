@@ -331,7 +331,7 @@ export function buildMentionPromptDetails(params: {
     lines.push("### Context-Visible Tier (Issue Mentions)");
     lines.push("");
     lines.push(
-      "For issue mentions, your \"visible context\" includes: the issue body, comment thread, any linked code snippets, and repository information provided in this prompt. Apply the same epistemic rules — assert what you can see, cite accordingly, silently omit what you cannot verify.",
+      "For issue mentions, your \"visible context\" includes: the issue body, comment thread, any linked code snippets, and repository information provided in this prompt. Apply the same evidence rules — assert what you can see, cite accordingly, and state uncertainty explicitly for claims you cannot fully verify.",
     );
   }
 

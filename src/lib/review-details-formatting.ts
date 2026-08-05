@@ -16,26 +16,15 @@ import type { ReviewBoundednessContract } from "./review-boundedness.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import type { ReviewPlanDetailsSummary } from "../review-orchestration/review-plan.ts";
 import type { ReviewReducerDetailsSummary } from "../review-orchestration/review-reducer.ts";
-import {
-  formatReviewPlanDetailsLine,
-  formatReviewReducerDetailsLine,
-} from "./review-details-plan-formatting.ts";
 import type { ReviewCandidateFindingDetailsSummary } from "../review-orchestration/review-candidate-finding.ts";
 import type { ReviewCandidatePublicationRuntimeDetailsSummary } from "../review-orchestration/review-candidate-publication-runtime.ts";
 import {
-  formatReviewCandidateFindingDetailsLine,
-  formatReviewCandidatePublicationDetailsLine,
-  formatCandidatePublicationBridgeLine,
   type CandidatePublicationBridgeReviewDetails,
-  formatCandidateVerificationPublicationEvidenceLine,
   type CandidateVerificationPublicationEvidenceReviewDetails,
 } from "./review-details-candidate-formatting.ts";
+import { formatReviewCandidateMovedToDetailsOnlyLines } from "./review-details-candidate-publication-formatting.ts";
 import type { ReviewFindingLifecyclePublicProjection } from "../review-lifecycle/finding-lifecycle.ts";
 import type { ValidationTruthProjection } from "../review-lifecycle/validation-truth.ts";
-import {
-  formatReviewFindingLifecycleDetailsLine,
-  formatReviewValidationTruthDetailsLine,
-} from "./review-details-validation-formatting.ts";
 import {
   describeReviewFirstPass,
   type TimeoutBudgetDetails,
@@ -100,6 +89,8 @@ type UsageLimitDetails = {
 type TokenUsageDetails = {
   inputTokens: number | undefined;
   outputTokens: number | undefined;
+  cacheReadTokens?: number | undefined;
+  cacheCreationTokens?: number | undefined;
   costUsd: number | undefined;
 };
 
@@ -184,18 +175,6 @@ export function classifyRetryFailure(err: unknown): ReviewRetryFailureClassifica
 
 export function buildReviewDetailsMarker(reviewOutputKey: string): string {
   return `<!-- kodiai:review-details:${reviewOutputKey} -->`;
-}
-
-function optionalReviewDetailsLine<T>(
-  value: T,
-  formatter: (value: T) => string | null,
-): string[] {
-  try {
-    const line = formatter(value);
-    return line ? [line] : [];
-  } catch {
-    return [];
-  }
 }
 
 function formatProfileLine(label: string, profile: ResolvedReviewProfile): string {
@@ -302,16 +281,10 @@ function formatCoreReviewDetailsSection(params: ReviewDetailsSummaryParams & {
 }
 
 function formatPublicationDiagnosticsSection(params: ReviewDetailsSummaryParams): string[] {
-  return [
-    ...formatReviewPlanDetailsLine(params.reviewPlan),
-    ...formatReviewReducerDetailsLine(params.reviewReducer),
-    ...formatReviewCandidateFindingDetailsLine(params.reviewCandidateFinding),
-    ...formatReviewCandidatePublicationDetailsLine(params.reviewCandidatePublication),
-    ...optionalReviewDetailsLine(params.candidatePublicationBridge, formatCandidatePublicationBridgeLine),
-    ...optionalReviewDetailsLine(params.candidateVerificationPublicationEvidence, formatCandidateVerificationPublicationEvidenceLine),
-    ...optionalReviewDetailsLine(params.reviewFindingLifecycle, formatReviewFindingLifecycleDetailsLine),
-    ...optionalReviewDetailsLine(params.reviewValidationTruth, formatReviewValidationTruthDetailsLine),
-  ];
+  // Machine diagnostics (plan/reducer/bridge/lifecycle/validation summaries)
+  // are emitted to structured logs already; the PR comment keeps only content
+  // a human reviewer can act on — findings that were preserved in details.
+  return formatReviewCandidateMovedToDetailsOnlyLines(params.reviewCandidatePublication);
 }
 
 function formatPhaseTimingSection(
@@ -341,8 +314,13 @@ function formatTokenUsageSection(tokenUsage?: TokenUsageDetails): string[] {
   if (tokenUsage?.inputTokens === undefined && tokenUsage?.outputTokens === undefined) return [];
   const inp = tokenUsage.inputTokens ?? 0;
   const out = tokenUsage.outputTokens ?? 0;
-  const costStr = tokenUsage.costUsd !== undefined ? ` | ${tokenUsage.costUsd.toFixed(4)}` : "";
-  return [`- Tokens: ${inp.toLocaleString()} in / ${out.toLocaleString()} out${costStr}`];
+  const cacheRead = tokenUsage.cacheReadTokens ?? 0;
+  const cacheWrite = tokenUsage.cacheCreationTokens ?? 0;
+  const cacheStr = cacheRead > 0 || cacheWrite > 0
+    ? ` (+${cacheRead.toLocaleString()} cache read / +${cacheWrite.toLocaleString()} cache write)`
+    : "";
+  const costStr = tokenUsage.costUsd !== undefined ? ` | $${tokenUsage.costUsd.toFixed(4)}` : "";
+  return [`- Tokens: ${inp.toLocaleString()} in / ${out.toLocaleString()} out${cacheStr}${costStr}`];
 }
 
 function formatLargePrTriageSection(largePRTriage?: LargePrTriageDetails): string[] {
