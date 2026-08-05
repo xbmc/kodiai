@@ -13,6 +13,9 @@ All notable changes to this project are documented in this file.
 - Default model bumped to `claude-sonnet-5` (same list price as Sonnet 4.5, adaptive thinking on by default). Default `maxTurns` raised from 25 to 40, and review prompt section budgets raised (diff context 12k→32k chars, knowledge 3.6k→8k, instructions 16k→24k) so large PRs stop losing thousands of tokens of context to trimming.
 - User-visible PR comments no longer embed internal telemetry (review plan/reducer/candidate-publication/M072 bridge/lifecycle/validation-truth lines, redaction flag dumps); those stay in structured logs. The token-usage footer now includes prompt-cache read/write counts so cost is interpretable.
 
+- Profile severity filters and focus/ignored areas now gate inline publication only — the model still detects and records lower-severity/out-of-focus findings via the candidate finding tool instead of being told not to generate them. Large-PR abbreviated-tier files likewise record MEDIUM/MINOR findings instead of skipping them. The minimal profile's inline comment cap was raised from 3 to 5.
+- `scripts/verify-m074-s06.ts` now describes the validation-truth evidence as sourced from the log projection (the line no longer renders in the visible Review Details block).
+
 ### Fixed
 
 - Review reducer no longer silently drops findings whose confidence field is missing (`Number(undefined) >= min` was always false), and the default confidence floor (50) no longer discards every minor style/documentation finding that the strict profile promises (now 40, the minimum reachable score).

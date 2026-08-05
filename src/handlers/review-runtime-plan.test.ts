@@ -73,7 +73,7 @@ describe("buildReviewRuntimePlan", () => {
 
     expect(plan.profileSelection.selectedProfile).toBe("minimal");
     expect(plan.resolvedSeverityMinLevel).toBe("major");
-    expect(plan.resolvedMaxComments).toBe(3);
+    expect(plan.resolvedMaxComments).toBe(5);
     expect(plan.resolvedFocusAreas).toEqual(["security", "correctness"]);
     expect(plan.resolvedIgnoredAreas).toEqual(["style", "documentation"]);
     expect(plan.reviewRouting.routingReason).toBe("standard");
@@ -122,7 +122,7 @@ describe("buildReviewRuntimePlan", () => {
     expect(plan.timeoutReductionSkippedReason).toBeNull();
     expect(plan.promptFiles.length).toBeLessThanOrEqual(25);
     expect(plan.resolvedSeverityMinLevel).toBe("major");
-    expect(plan.resolvedMaxComments).toBe(3);
+    expect(plan.resolvedMaxComments).toBe(5);
     expect(plan.reviewBoundedness?.reasonCodes).toContain("timeout-auto-reduced");
     expect(plan.checkpointEnabled).toBe(true);
     expect(plan.reviewMaxTurnsOverride).toBeGreaterThan(25);
