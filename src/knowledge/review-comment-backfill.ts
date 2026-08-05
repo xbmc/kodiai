@@ -577,12 +577,18 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
 
     page++;
   }
-  if (page > MAX_REVIEW_COMMENT_PAGES) {
-    throw new Error(`Review comment pagination exceeded the ${MAX_REVIEW_COMMENT_PAGES}-page safety limit`);
+  const pageCapReached = page > MAX_REVIEW_COMMENT_PAGES;
+  if (pageCapReached) {
+    // Graceful stop: per-page sync-state checkpoints are already persisted, so
+    // the next scheduled run resumes from the watermark instead of restarting.
+    logger.warn(
+      { repo, pagesProcessed, totalComments, maxPages: MAX_REVIEW_COMMENT_PAGES },
+      "Review-comment backfill reached the page safety limit; stopping gracefully and leaving backfill incomplete for the next run to resume",
+    );
   }
 
   // Mark backfill complete
-  if (!dryRun && !hadWriteFailures) {
+  if (!dryRun && !hadWriteFailures && !pageCapReached) {
     await store.updateSyncState({
       repo,
       lastSyncedAt: lastCommentDate ?? sinceDate,
@@ -662,15 +668,22 @@ export async function syncSinglePR(opts: SyncSinglePROptions): Promise<{ chunksW
     if (comments.length === 0) break;
 
     allComments.push(...comments);
-    if (allComments.length > MAX_REVIEW_COMMENTS) {
-      throw new Error(`Review comment pagination exceeded the ${MAX_REVIEW_COMMENTS}-comment safety limit`);
+    if (allComments.length >= MAX_REVIEW_COMMENTS) {
+      logger.warn(
+        { repo, prNumber, collected: allComments.length, maxComments: MAX_REVIEW_COMMENTS },
+        "Review comment collection reached the comment safety limit; syncing the bounded prefix",
+      );
+      break;
     }
 
     if (comments.length < 100) break;
     page++;
   }
   if (page > MAX_REVIEW_COMMENT_PAGES) {
-    throw new Error(`Review comment pagination exceeded the ${MAX_REVIEW_COMMENT_PAGES}-page safety limit`);
+    logger.warn(
+      { repo, prNumber, maxPages: MAX_REVIEW_COMMENT_PAGES },
+      "Review comment collection reached the page safety limit; syncing the bounded prefix",
+    );
   }
 
   if (allComments.length === 0) {
