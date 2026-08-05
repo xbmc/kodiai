@@ -496,8 +496,8 @@ function buildSeverityFilterInstructions(
   return [
     "## Severity Filter",
     "",
-    `Only report findings at these severity levels: ${activeLevels.join(", ")}.`,
-    `Do NOT generate findings below ${minLevel} severity.`,
+    `Publish inline comments only for findings at these severity levels: ${activeLevels.join(", ")}.`,
+    `Still identify and record findings below ${minLevel} severity (via the candidate finding tool and summary counts) — do not post them as inline comments.`,
   ].join("\n");
 }
 
@@ -512,13 +512,13 @@ function buildFocusAreaInstructions(
 
   if (focusAreas.length > 0) {
     parts.push(
-      `Concentrate your review on these categories: ${focusAreas.join(", ")}. For categories NOT in this list, only report CRITICAL severity findings.`,
+      `Concentrate your review effort on these categories: ${focusAreas.join(", ")}. For categories NOT in this list, post inline comments only at CRITICAL severity; still record lower-severity findings there via the candidate finding tool.`,
     );
   }
 
   if (ignoredAreas.length > 0) {
     parts.push(
-      `Explicitly SKIP these categories unless the finding is CRITICAL: ${ignoredAreas.join(", ")}.`,
+      `Deprioritize these categories: ${ignoredAreas.join(", ")}. Post inline comments for them only at CRITICAL severity; record anything else you notice there via the candidate finding tool instead of an inline comment.`,
     );
   }
 
@@ -733,7 +733,7 @@ export function buildLargePRTriageSection(params: {
     lines.push(
       `### Abbreviated Review (${abbreviatedFiles.length} files)`,
       "",
-      "For these files, ONLY flag CRITICAL and MAJOR issues. Skip MEDIUM and MINOR findings.",
+      "For these files, post inline comments only for CRITICAL and MAJOR issues; record MEDIUM/MINOR findings you notice via the candidate finding tool instead.",
     );
     for (const file of abbreviatedFiles) {
       lines.push(`- ${file}`);

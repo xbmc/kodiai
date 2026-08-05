@@ -1593,7 +1593,7 @@ describe("createReviewHandler auto profile selection", () => {
     const result = await runProfileScenario({ additions: 90, deletions: 20 });
 
     expect(result.prompt).toContain("Post at most 7 inline comments");
-    expect(result.prompt).toContain("Only report findings at these severity levels: critical, major, medium.");
+    expect(result.prompt).toContain("Publish inline comments only for findings at these severity levels: critical, major, medium.");
     expect(result.detailsCommentBody).toContain("- Profile: balanced (auto, lines changed: 110)");
   });
 
@@ -1919,8 +1919,8 @@ describe("createReviewHandler auto profile selection", () => {
   test("large PRs default to minimal profile", async () => {
     const result = await runProfileScenario({ additions: 600, deletions: 20 });
 
-    expect(result.prompt).toContain("Post at most 3 inline comments");
-    expect(result.prompt).toContain("Only report findings at these severity levels: critical, major.");
+    expect(result.prompt).toContain("Post at most 5 inline comments");
+    expect(result.prompt).toContain("Publish inline comments only for findings at these severity levels: critical, major.");
     expect(result.detailsCommentBody).toContain("- Profile: minimal (auto, lines changed: 620)");
   });
 
@@ -1931,7 +1931,7 @@ describe("createReviewHandler auto profile selection", () => {
       deletions: 20,
     });
 
-    expect(result.prompt).toContain("Post at most 3 inline comments");
+    expect(result.prompt).toContain("Post at most 5 inline comments");
     expect(result.detailsCommentBody).toContain("- Profile: minimal (manual config)");
   });
 
