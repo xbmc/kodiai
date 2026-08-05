@@ -6,7 +6,10 @@ import {
   reconcileSupersededCanonicalSurface,
   upsertCanonicalReviewSurface,
 } from "../review-orchestration/review-canonical-surface.ts";
-import type { ReviewCandidatePublicationRuntimeResult } from "../review-orchestration/review-candidate-publication-runtime.ts";
+import {
+  isExpectedCandidatePublicationPolicyBlock,
+  type ReviewCandidatePublicationRuntimeResult,
+} from "../review-orchestration/review-candidate-publication-runtime.ts";
 import type { ReviewFindingLifecyclePublicProjection } from "../review-lifecycle/finding-lifecycle.ts";
 import { sanitizeContent, scanOutgoingForSecrets } from "../lib/sanitizer.ts";
 
@@ -133,6 +136,13 @@ export function resolveBlockedReviewFindingsNotice(params: {
   // NOT APPROVED) under the same canonical marker; a secondary blocked-candidate notice
   // must never overwrite that already-visible decision.
   if (params.handlerPublishedReviewOutput) return null;
+
+  // When every candidate was intentionally filtered by review policy (reducer
+  // suppression, dedup against prior findings, low confidence, deprioritized),
+  // nothing was "blocked" — the pipeline worked as designed and the run should
+  // resolve as a clean approval, not a NOT APPROVED notice telling humans to
+  // review findings the system itself chose not to publish.
+  if (isExpectedCandidatePublicationPolicyBlock(params.candidatePublicationRuntime)) return null;
 
   const severity = params.findingLifecycle?.counts.severity;
   const severityCounts: SeverityCounts = {

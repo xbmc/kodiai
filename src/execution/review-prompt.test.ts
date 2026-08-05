@@ -901,37 +901,41 @@ test("enhanced mode suppresses summary comment", () => {
   expect(prompt).not.toContain("Kodiai Review Summary");
 });
 
-test("severityMinLevel major filters out medium and minor", () => {
+test("severityMinLevel major gates inline publication, not detection", () => {
   const prompt = buildReviewPrompt(
     baseContext({ severityMinLevel: "major" }),
   );
   expect(prompt).toContain("critical, major");
-  expect(prompt).toContain("Do NOT generate findings below major");
+  expect(prompt).toContain("Publish inline comments only for findings at these severity levels");
+  expect(prompt).toContain("Still identify and record findings below major severity");
+  expect(prompt).not.toContain("Do NOT generate findings below");
 });
 
 test("severityMinLevel minor (default) does not add filter", () => {
   const prompt = buildReviewPrompt(
     baseContext({ severityMinLevel: "minor" }),
   );
-  expect(prompt).not.toContain("Do NOT generate findings below");
+  expect(prompt).not.toContain("Publish inline comments only for findings at these severity levels");
 });
 
-test("focusAreas filters by category", () => {
+test("focusAreas gates inline publication by category", () => {
   const prompt = buildReviewPrompt(
     baseContext({ focusAreas: ["security", "correctness"] }),
   );
   expect(prompt).toContain(
-    "Concentrate your review on these categories: security, correctness",
+    "Concentrate your review effort on these categories: security, correctness",
   );
-  expect(prompt).toContain("only report CRITICAL");
+  expect(prompt).toContain("post inline comments only at CRITICAL severity");
+  expect(prompt).toContain("still record lower-severity findings");
 });
 
-test("ignoredAreas excludes categories", () => {
+test("ignoredAreas deprioritizes categories without suppressing detection", () => {
   const prompt = buildReviewPrompt(
     baseContext({ ignoredAreas: ["style"] }),
   );
-  expect(prompt).toContain("SKIP these categories");
-  expect(prompt).toContain("style");
+  expect(prompt).toContain("Deprioritize these categories: style");
+  expect(prompt).toContain("record anything else you notice there via the candidate finding tool");
+  expect(prompt).not.toContain("Explicitly SKIP these categories");
 });
 
 test("maxComments overrides default", () => {

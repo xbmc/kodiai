@@ -20,7 +20,9 @@ export const PROFILE_PRESETS: Record<string, {
   },
   minimal: {
     severityMinLevel: "major",
-    maxComments: 3,
+    // 3 was too stingy for >500-line PRs — a large diff with 5 real majors
+    // silently dropped 2 of them.
+    maxComments: 5,
     ignoredAreas: ["style", "documentation"],
     focusAreas: ["security", "correctness"],
   },

@@ -540,9 +540,13 @@ function reviewDetailsCheck(proof: M074S06EvidenceSnapshot): M074S06Check {
   const details = proof.reviewDetails;
   if (details.gate !== REQUIRED_GATE_CHECKS.reviewDetails || !details.passed) issues.push("Review Details validation truth gate did not pass.");
   if (!details.sourceAvailable || !details.correlationPresent || !details.reviewOutputKeyPresent || !details.deliveryIdPresent) issues.push("Review Details lacks source availability or exact key correlation.");
-  if (details.validationTruthLineCount !== 1) issues.push("Review Details must contain exactly one validation-truth line.");
+  // Since the review-quality overhaul the validation-truth line renders only in
+  // the structured log projection (review-validation-truth), not the visible
+  // Review Details comment — evidence producers must derive this count from
+  // the log projection.
+  if (details.validationTruthLineCount !== 1) issues.push("Validation-truth log projection must contain exactly one validation-truth line.");
   if (details.addedLines > details.maxAddedLines || details.visibleCharDelta > details.maxVisibleCharDelta) issues.push("Review Details visible delta exceeds bounds.");
-  return issues.length === 0 ? pass("review-details.validation-truth.passed", "Review Details validation truth projection is bounded and correlated.") : fail("review-details.validation-truth.passed", "Review Details validation truth evidence failed.", issues);
+  return issues.length === 0 ? pass("review-details.validation-truth.passed", "Validation truth projection is bounded and correlated.") : fail("review-details.validation-truth.passed", "Validation truth evidence failed.", issues);
 }
 
 function validateTruthfulValidation(proof: M074S06EvidenceSnapshot): string[] {
