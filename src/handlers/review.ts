@@ -867,7 +867,7 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         const blockedFindingsNoticePublication = await publishBlockedReviewFindingsNoticeForRuntime({
           octokit: extractionOctokit, owner: apiOwner, repo: apiRepo, prNumber: pr.number, reviewOutputKey: canonicalReviewSurfaceKey,
           reviewDetailsBlock: canonicalReviewDetailsBody, candidatePublicationRuntime: reviewCandidatePublicationRuntime,
-          findingLifecycle: reviewFindingLifecycleResult.projection, processedFindingCount: processedFindings.length,
+          findingLifecycle: reviewFindingLifecycleResult.projection, visibleFindings, processedFindingCount: processedFindings.length,
           handlerPublishedReviewOutput, botHandles: reviewBotHandles, logger, canPublishVisibleOutput, setReviewWorkPhase,
         });
         let suppressCleanApprovalReason = blockedFindingsNoticePublication.suppressCleanApprovalReason;

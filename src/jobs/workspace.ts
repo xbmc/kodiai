@@ -3,14 +3,33 @@ import type { Dirent } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
-import picomatch from "picomatch";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
-import { runCommandWithCappedOutput, type CappedProcessResult } from "../lib/capped-process.ts";
+import {
+  runCommandWithCappedOutput,
+  type CappedProcessResult,
+} from "../lib/capped-process.ts";
 import { WritePolicyError } from "../lib/write-policy-error.ts";
 import type { WorkspaceManager, Workspace, CloneOptions } from "./types.ts";
+import {
+  captureStagedSnapshot,
+  commitStagedSnapshot,
+  enforceWritePolicy,
+  getBoundedStagedPaths,
+} from "./workspace-write-policy.ts";
 
 export { WritePolicyError } from "../lib/write-policy-error.ts";
+export {
+  captureStagedSnapshot,
+  commitStagedSnapshot,
+  enforceWritePolicy,
+  getBoundedStagedPaths,
+  STAGED_SECRET_SCAN_MAX_BYTES,
+  STAGED_PATHS_MAX_BYTES,
+  STAGED_PATHS_MAX_FILES,
+  STAGED_GIT_TIMEOUT_MS,
+  STAGED_GIT_CONTROL_MAX_BYTES,
+} from "./workspace-write-policy.ts";
 
 /**
  * Replace all occurrences of a token in a string with [REDACTED].
@@ -101,6 +120,13 @@ export function validateBranchName(branchName: string): void {
   }
 }
 
+export function buildImmutablePushRefspec(commitOid: string, destination: string): string {
+  const destinationRef = destination.startsWith("refs/")
+    ? destination
+    : `refs/heads/${destination}`;
+  return `${commitOid}:${destinationRef}`;
+}
+
 /**
  * Given a stripped (no-credential) remote URL and an optional token, return the
  * auth-injected URL for use in a single git command.  If token is absent, the
@@ -113,28 +139,31 @@ function makeAuthUrl(strippedUrl: string, token: string | undefined): string {
 }
 
 const GIT_NETWORK_TIMEOUT_MS = 120_000;
+const GIT_CONTROL_TIMEOUT_MS = 120_000;
+const GIT_CONTROL_MAX_BYTES = 64 * 1024;
 
-async function runGitNetworkCommand(options: {
+async function runGitCommand(options: {
   args: string[];
   cwd?: string;
   token?: string;
   allowFailure?: boolean;
   operation: string;
+  timeoutMs?: number;
+  env?: Record<string, string | undefined>;
 }): Promise<CappedProcessResult> {
   const result = await runCommandWithCappedOutput({
     command: "git",
     args: options.args,
     cwd: options.cwd,
-    timeoutMs: GIT_NETWORK_TIMEOUT_MS,
-    maxStdoutBytes: 64 * 1024,
-    maxStderrBytes: 64 * 1024,
-    env: { GIT_TERMINAL_PROMPT: "0" },
+    timeoutMs: options.timeoutMs ?? GIT_NETWORK_TIMEOUT_MS,
+    maxStdoutBytes: GIT_CONTROL_MAX_BYTES,
+    maxStderrBytes: GIT_CONTROL_MAX_BYTES,
+    env: options.env ?? { GIT_TERMINAL_PROMPT: "0" },
   });
-
   if (result.exitCode !== 0 && !options.allowFailure) {
     const stderr = result.stderr.trim();
     const suffix = result.timedOut
-      ? ` timed out after ${GIT_NETWORK_TIMEOUT_MS}ms`
+      ? ` timed out after ${options.timeoutMs ?? GIT_NETWORK_TIMEOUT_MS}ms`
       : stderr
         ? ` failed: ${stderr}`
         : ` failed with exit code ${result.exitCode}`;
@@ -142,7 +171,6 @@ async function runGitNetworkCommand(options: {
     redactTokenFromError(err, options.token);
     throw err;
   }
-
   return result;
 }
 
@@ -181,7 +209,7 @@ export async function fetchRemoteTrackingBranch(options: {
   try {
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remoteName}`.quiet()).text().trim();
     const fetchUrl = makeAuthUrl(strippedUrl, token);
-    await runGitNetworkCommand({
+    await runGitCommand({
       args: ["fetch", fetchUrl, `+${branch}:refs/remotes/${remoteName}/${branch}`, `--depth=${depth}`],
       cwd: dir,
       token,
@@ -219,226 +247,6 @@ function redactTokenFromError(err: unknown, token: string | undefined): void {
 export async function getGitStatusPorcelain(dir: string): Promise<string> {
   return (await $`git -C ${dir} status --porcelain`.quiet()).text();
 }
-
-function normalizeGlobPattern(pattern: string): string {
-  const p = pattern.trim();
-  if (p.endsWith("/")) {
-    // Git diffs only contain file paths (no directory entries).
-    // Keep backward-compatible semantics: "foo/" matches everything under "foo/".
-    return `${p}**`;
-  }
-  return p;
-}
-
-function firstMatchingPattern(path: string, patterns: string[]): string | undefined {
-  for (const raw of patterns) {
-    const p = normalizeGlobPattern(raw);
-    if (p.length === 0) continue;
-    const m = picomatch(p, { dot: true });
-    if (m(path)) return raw;
-  }
-  return undefined;
-}
-
-function compileGlobMatchers(patterns: string[]): Array<(path: string) => boolean> {
-  return patterns
-    .map((p) => normalizeGlobPattern(p))
-    .filter((p) => p.length > 0)
-    .map((p) => picomatch(p, { dot: true }));
-}
-
-function matchesAny(path: string, matchers: Array<(path: string) => boolean>): boolean {
-  return matchers.some((m) => m(path));
-}
-
-function buildSecretRegexes(): Array<{ name: string; regex: RegExp }> {
-  return [
-    { name: "private-key", regex: /-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP)? ?PRIVATE KEY-----/ },
-    { name: "aws-access-key", regex: /AKIA[0-9A-Z]{16}/ },
-    { name: "github-pat", regex: /ghp_[A-Za-z0-9]{36}/ },
-    { name: "slack-token", regex: /xox[baprs]-[A-Za-z0-9-]{10,}/ },
-    { name: "github-token", regex: /gh[opsu]_[A-Za-z0-9]{36,}/ },
-    { name: "github-x-access-token-url", regex: /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/ },
-  ];
-}
-
-function shannonEntropy(s: string): number {
-  const freq = new Map<string, number>();
-  for (const ch of s) freq.set(ch, (freq.get(ch) ?? 0) + 1);
-  let ent = 0;
-  for (const [, count] of freq) {
-    const p = count / s.length;
-    ent -= p * Math.log2(p);
-  }
-  return ent;
-}
-
-function findHighEntropyTokens(addedLines: string[]): string | undefined {
-  // Include base64-ish characters (+,/ and =) since real secrets often use them.
-  const tokenRe = /[A-Za-z0-9_\-=+/\/]{32,}/g;
-  for (const line of addedLines) {
-    const matches = line.match(tokenRe) ?? [];
-    for (const m of matches) {
-      // Reduce false positives for common non-secret identifiers.
-      // NOTE: this is intentionally conservative; we still rely on explicit token regexes first.
-      if (/^[0-9a-f]{32}$/i.test(m) || /^[0-9a-f]{40}$/i.test(m) || /^[0-9a-f]{64}$/i.test(m)) {
-        continue; // hex hash-like
-      }
-      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(m)) {
-        continue; // UUID
-      }
-
-      const hasLetter = /[A-Za-z]/.test(m);
-      const hasDigit = /\d/.test(m);
-      if (!hasLetter || !hasDigit) continue;
-
-      if (m.length < 32) continue;
-
-      const ent = shannonEntropy(m);
-      if (ent >= 4.5) {
-        return `High-entropy token-like string detected (entropy=${ent.toFixed(2)}, length=${m.length})`;
-      }
-    }
-  }
-  return undefined;
-}
-
-function extractAddedLines(patch: string): string[] {
-  return patch
-    .split("\n")
-    .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-    .map((l) => l.slice(1));
-}
-
-function splitGitDiffByPath(patch: string): Map<string, string> {
-  const patches = new Map<string, string>();
-  const starts: Array<{ index: number; path: string }> = [];
-  const headerRegex = /^diff --git a\/(.+) b\/(.+)$/gm;
-  for (const match of patch.matchAll(headerRegex)) {
-    starts.push({ index: match.index ?? 0, path: match[2] ?? match[1] ?? "" });
-  }
-
-  for (let i = 0; i < starts.length; i++) {
-    const current = starts[i]!;
-    const next = starts[i + 1]?.index ?? patch.length;
-    if (current.path) {
-      patches.set(current.path, patch.slice(current.index, next));
-    }
-  }
-
-  return patches;
-}
-
-export async function enforceWritePolicy(options: {
-  dir: string;
-  stagedPaths: string[];
-  allowPaths: string[];
-  denyPaths: string[];
-  secretScanEnabled: boolean;
-}): Promise<void> {
-  const { dir, stagedPaths, allowPaths, denyPaths, secretScanEnabled } = options;
-
-  let denyMatchers: Array<(path: string) => boolean>;
-  try {
-    denyMatchers = compileGlobMatchers(denyPaths);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new WritePolicyError(
-      "write-policy-not-allowed",
-      `Write blocked: invalid denyPaths pattern: ${message}`,
-      { rule: "denyPaths" },
-    );
-  }
-
-  let allowMatchers: Array<(path: string) => boolean> = [];
-  try {
-    allowMatchers = compileGlobMatchers(allowPaths);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new WritePolicyError(
-      "write-policy-not-allowed",
-      `Write blocked: invalid allowPaths pattern: ${message}`,
-      { rule: "allowPaths" },
-    );
-  }
-
-  for (const path of stagedPaths) {
-    if (matchesAny(path, denyMatchers)) {
-      const pattern = firstMatchingPattern(path, denyPaths);
-      throw new WritePolicyError(
-        "write-policy-denied-path",
-        `Write blocked: denied path staged: ${path}`,
-        { path, rule: "denyPaths", pattern },
-      );
-    }
-  }
-
-  if (allowPaths.length > 0) {
-    for (const path of stagedPaths) {
-      if (!matchesAny(path, allowMatchers)) {
-        throw new WritePolicyError(
-          "write-policy-not-allowed",
-          `Write blocked: path is not allowlisted: ${path}`,
-          { path, rule: "allowPaths" },
-        );
-      }
-    }
-  }
-
-  if (secretScanEnabled) {
-    const perFilePatches = new Map<string, string>();
-    const addedLinesByPath = new Map<string, string[]>();
-    const addedTextByPath = new Map<string, string>();
-    const stagedPatch = (await $`git -C ${dir} diff --cached --`.quiet()).text();
-    const patchesByPath = splitGitDiffByPath(stagedPatch);
-    for (const p of stagedPaths) {
-      const patch = patchesByPath.get(p) ?? "";
-      perFilePatches.set(p, patch);
-      const addedLines = extractAddedLines(patch);
-      addedLinesByPath.set(p, addedLines);
-      addedTextByPath.set(p, addedLines.join("\n"));
-    }
-
-    for (const { name, regex } of buildSecretRegexes()) {
-      let path: string | undefined;
-      for (const p of stagedPaths) {
-        const added = addedTextByPath.get(p) ?? "";
-        if (regex.test(added)) {
-          path = p;
-          break;
-        }
-      }
-
-      if (path) {
-        throw new WritePolicyError(
-          "write-policy-secret-detected",
-          `Write blocked: suspected secret detected (${name}) in staged additions`,
-          { path, rule: "secretScan", detector: `regex:${name}` },
-        );
-      }
-    }
-
-    // Best-effort entropy scan on added lines only.
-    const addedLines = stagedPaths.flatMap((p) => addedLinesByPath.get(p) ?? []);
-    const entropyHit = findHighEntropyTokens(addedLines);
-    if (entropyHit) {
-      let path: string | undefined;
-      for (const p of stagedPaths) {
-        const perFileAdded = addedLinesByPath.get(p) ?? [];
-        if (findHighEntropyTokens(perFileAdded)) {
-          path = p;
-          break;
-        }
-      }
-      throw new WritePolicyError(
-        "write-policy-secret-detected",
-        `Write blocked: suspected secret detected (entropy): ${entropyHit}`,
-        { path, rule: "secretScan", detector: "entropy" },
-      );
-    }
-  }
-}
-
 export async function createBranchCommitAndPush(options: {
   dir: string;
   branchName: string;
@@ -456,32 +264,32 @@ export async function createBranchCommitAndPush(options: {
   validateBranchName(branchName);
 
   try {
-    await $`git -C ${dir} checkout -b ${branchName}`.quiet();
-    await $`git -C ${dir} add -A`.quiet();
+    await runGitCommand({ args: ["-C", dir, "checkout", "-b", branchName], cwd: dir, operation: "checkout", timeoutMs: GIT_CONTROL_TIMEOUT_MS });
+    await runGitCommand({ args: ["-C", dir, "add", "-A"], cwd: dir, operation: "add", timeoutMs: GIT_CONTROL_TIMEOUT_MS });
 
     // Ensure there is something to commit.
-    const staged = (await $`git -C ${dir} -c core.quotePath=false diff --cached --name-only`.quiet()).text().trim();
-    if (staged.length === 0) {
+    const snapshot = await captureStagedSnapshot({ dir });
+    const stagedPaths = await getBoundedStagedPaths({ dir, ...snapshot });
+    if (stagedPaths.length === 0) {
       throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }
 
-    const stagedPaths = staged.split("\n").map((s) => s.trim()).filter(Boolean);
     await enforceWritePolicy({
       dir,
+      ...snapshot,
       stagedPaths,
       allowPaths: options.policy?.allowPaths ?? [],
       denyPaths: options.policy?.denyPaths ?? [],
       secretScanEnabled: options.policy?.secretScanEnabled ?? true,
     });
 
-    await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
-    const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
+    const headSha = await commitStagedSnapshot({ dir, ...snapshot, commitMessage });
 
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await runGitNetworkCommand({
-      args: ["push", pushUrl, `HEAD:${branchName}`],
+    await runGitCommand({
+      args: ["push", pushUrl, buildImmutablePushRefspec(headSha, branchName)],
       cwd: dir,
       token,
       operation: "push",
@@ -511,30 +319,30 @@ export async function commitAndPushToRemoteRef(options: {
   validateBranchName(remoteRef);
 
   try {
-    await $`git -C ${dir} add -A`.quiet();
+    await runGitCommand({ args: ["-C", dir, "add", "-A"], cwd: dir, operation: "add", timeoutMs: GIT_CONTROL_TIMEOUT_MS });
 
-    const staged = (await $`git -C ${dir} -c core.quotePath=false diff --cached --name-only`.quiet()).text().trim();
-    if (staged.length === 0) {
+    const snapshot = await captureStagedSnapshot({ dir });
+    const stagedPaths = await getBoundedStagedPaths({ dir, ...snapshot });
+    if (stagedPaths.length === 0) {
       throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }
 
-    const stagedPaths = staged.split("\n").map((s) => s.trim()).filter(Boolean);
     await enforceWritePolicy({
       dir,
+      ...snapshot,
       stagedPaths,
       allowPaths: options.policy?.allowPaths ?? [],
       denyPaths: options.policy?.denyPaths ?? [],
       secretScanEnabled: options.policy?.secretScanEnabled ?? true,
     });
 
-    await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
-    const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
+    const headSha = await commitStagedSnapshot({ dir, ...snapshot, commitMessage });
 
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await runGitNetworkCommand({
-      args: ["push", pushUrl, `HEAD:${remoteRef}`],
+    await runGitCommand({
+      args: ["push", pushUrl, buildImmutablePushRefspec(headSha, remoteRef)],
       cwd: dir,
       token,
       operation: "push",
@@ -562,8 +370,8 @@ export async function pushHeadToRemoteRef(options: {
     // Construct the auth URL inline; never stored — used for this push only.
     const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
     const pushUrl = makeAuthUrl(strippedUrl, token);
-    await runGitNetworkCommand({
-      args: ["push", pushUrl, `HEAD:${remoteRef}`],
+    await runGitCommand({
+      args: ["push", pushUrl, buildImmutablePushRefspec(headSha, remoteRef)],
       cwd: dir,
       token,
       operation: "push",
@@ -611,7 +419,7 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     const primaryFetchArgs = depth === undefined
       ? ["fetch", fetchUrl, `pull/${prNumber}/head:${localBranch}`]
       : ["fetch", fetchUrl, `pull/${prNumber}/head:${localBranch}`, `--depth=${depth}`];
-    const primaryFetch = await runGitNetworkCommand({
+    const primaryFetch = await runGitCommand({
       args: primaryFetchArgs,
       cwd: dir,
       token,
@@ -636,7 +444,7 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     const fallbackFetchArgs = depth === undefined
       ? ["fetch", fallbackFetchUrl, `${fallbackRef}:${localBranch}`]
       : ["fetch", fallbackFetchUrl, `${fallbackRef}:${localBranch}`, `--depth=${depth}`];
-    await runGitNetworkCommand({
+    await runGitCommand({
       args: fallbackFetchArgs,
       cwd: dir,
       token,
@@ -649,7 +457,6 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
     throw err;
   }
 }
-
 const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 export const AZURE_FILES_WORKSPACE_STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -733,7 +540,7 @@ export function createWorkspaceManager(
         if (forkContext) {
           // Fork-aware clone: clone from the bot-owned fork using bot PAT
           const forkCloneUrl = `https://x-access-token:${forkContext.botPat}@github.com/${forkContext.forkOwner}/${forkContext.forkRepo}.git`;
-          await runGitNetworkCommand({
+          await runGitCommand({
             args: ["clone", `--depth=${depth}`, "--single-branch", "--branch", ref, forkCloneUrl, dir],
             token: forkContext.botPat,
             operation: "clone",
@@ -749,7 +556,7 @@ export function createWorkspaceManager(
         } else {
           // Standard clone from target repo using installation token
           const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
-          await runGitNetworkCommand({
+          await runGitCommand({
             args: ["clone", `--depth=${depth}`, "--single-branch", "--branch", ref, cloneUrl, dir],
             token,
             operation: "clone",

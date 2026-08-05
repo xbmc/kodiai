@@ -75,6 +75,8 @@ const DEFAULT_BOT_LOGINS = new Set([
   "github-actions",
   "codecov",
 ]);
+const MAX_REVIEW_COMMENT_PAGES = 1_000;
+const MAX_REVIEW_COMMENTS = MAX_REVIEW_COMMENT_PAGES * 100;
 
 // ── Rate limiter ────────────────────────────────────────────────────────────
 
@@ -480,7 +482,7 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
   let lastCommentDate: Date | null = null;
   let hadWriteFailures = false;
 
-  while (true) {
+  while (page <= MAX_REVIEW_COMMENT_PAGES) {
     const response = await withRetry(
       () => octokit.rest.pulls.listReviewCommentsForRepo({
         owner,
@@ -575,6 +577,9 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
 
     page++;
   }
+  if (page > MAX_REVIEW_COMMENT_PAGES) {
+    throw new Error(`Review comment pagination exceeded the ${MAX_REVIEW_COMMENT_PAGES}-page safety limit`);
+  }
 
   // Mark backfill complete
   if (!dryRun && !hadWriteFailures) {
@@ -644,7 +649,7 @@ export async function syncSinglePR(opts: SyncSinglePROptions): Promise<{ chunksW
   const allComments: GitHubPullComment[] = [];
   let page = 1;
 
-  while (true) {
+  while (page <= MAX_REVIEW_COMMENT_PAGES) {
     const response = await octokit.rest.pulls.listReviewComments({
       owner,
       repo: repoName,
@@ -657,9 +662,15 @@ export async function syncSinglePR(opts: SyncSinglePROptions): Promise<{ chunksW
     if (comments.length === 0) break;
 
     allComments.push(...comments);
+    if (allComments.length > MAX_REVIEW_COMMENTS) {
+      throw new Error(`Review comment pagination exceeded the ${MAX_REVIEW_COMMENTS}-comment safety limit`);
+    }
 
     if (comments.length < 100) break;
     page++;
+  }
+  if (page > MAX_REVIEW_COMMENT_PAGES) {
+    throw new Error(`Review comment pagination exceeded the ${MAX_REVIEW_COMMENT_PAGES}-page safety limit`);
   }
 
   if (allComments.length === 0) {

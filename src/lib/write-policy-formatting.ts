@@ -49,6 +49,13 @@ export function buildWritePolicyRefusalMessage(
     lines.push("No safe config bypass suggested.");
     lines.push("Remove/redact the secret-like content and retry.");
     lines.push("(If this is a false positive, you can disable secretScan, but that reduces safety.)");
+  } else if (err.code === "write-policy-secret-scan-incomplete") {
+    lines.push("");
+    lines.push("The staged secret scan was incomplete, so the write was not accepted.");
+    if (err.maxBytes !== undefined) {
+      lines.push(`Scan byte limit: ${err.maxBytes} bytes.`);
+    }
+    lines.push("Please reduce or split the change and retry.");
   } else if (err.code === "write-policy-no-changes") {
     lines.push("");
     lines.push("No file changes were produced.");
