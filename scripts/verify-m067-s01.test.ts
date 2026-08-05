@@ -36,6 +36,7 @@ describe("evaluateM067S01ReviewPlanContract", () => {
     });
 
     expect(report.review_details.ready.marker_count).toBe(1);
+    expect(report.review_details.ready.visible_review_plan_line_count).toBe(0);
     expect(report.review_details.ready.review_plan_line_count).toBe(1);
     expect(report.review_details.ready.review_plan_line).toStartWith("- Review plan: ready hash=");
     expect(report.review_details.ready.review_plan_line.length).toBeLessThanOrEqual(242);
@@ -55,6 +56,7 @@ describe("evaluateM067S01ReviewPlanContract", () => {
 
     expect(report.degraded_plan.status).toBe("degraded");
     expect(report.degraded_plan.hash).toMatch(/^degraded-[a-f0-9]{16}$/);
+    expect(report.review_details.degraded.visible_review_plan_line_count).toBe(0);
     expect(report.review_details.degraded.review_plan_line_count).toBe(1);
     expect(report.review_details.degraded.review_plan_line).toContain("Review plan: degraded");
     expect(report.review_details.degraded.review_plan_line).toContain("graph=skipped");
@@ -107,8 +109,8 @@ describe("main", () => {
         ready_plan: { status: "ready", hash: "" },
         degraded_plan: { status: "degraded", hash: "degraded-0000000000000000" },
         review_details: {
-          ready: { marker_count: 0, review_plan_line_count: 0, review_plan_line: "" },
-          degraded: { marker_count: 0, review_plan_line_count: 0, review_plan_line: "" },
+          ready: { marker_count: 0, visible_review_plan_line_count: 0, review_plan_line_count: 0, review_plan_line: "" },
+          degraded: { marker_count: 0, visible_review_plan_line_count: 0, review_plan_line_count: 0, review_plan_line: "" },
         },
       }),
     });

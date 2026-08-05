@@ -68,6 +68,7 @@ describe("evaluateM067S03ReviewReducerContract", () => {
     expect(report.reducer.low_confidence_comment_ids).toEqual([4]);
     expect(report.reducer.details_line).toStartWith("Review reducer: ready");
     expect(report.reducer.details_line.length).toBeLessThanOrEqual(240);
+    expect(report.reducer.visible_review_reducer_line_count).toBe(0);
     expect(report.reducer.review_details_line_count).toBe(1);
     expect(report.degraded.status).toBe("degraded");
     expect(report.degraded.filtered_inline_count).toBe(0);
@@ -166,6 +167,7 @@ describe("evaluateM067S03ReviewReducerContract", () => {
           low_confidence_comment_ids: [],
           audit_sources: [],
           details_line: "",
+          visible_review_reducer_line_count: 0,
           review_details_line_count: 0,
         },
         degraded: {
