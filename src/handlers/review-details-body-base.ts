@@ -105,6 +105,8 @@ export function resolveReviewDetailsBodyBase(params: {
   tokenUsageSource: {
     inputTokens?: number;
     outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
     costUsd?: number;
   };
   structuralImpact: ReviewDetailsBodyBaseParams["structuralImpact"];
@@ -138,6 +140,8 @@ export function resolveReviewDetailsBodyBase(params: {
     tokenUsage: {
       inputTokens: params.tokenUsageSource.inputTokens,
       outputTokens: params.tokenUsageSource.outputTokens,
+      cacheReadTokens: params.tokenUsageSource.cacheReadTokens,
+      cacheCreationTokens: params.tokenUsageSource.cacheCreationTokens,
       costUsd: params.tokenUsageSource.costUsd,
     },
     structuralImpact: params.structuralImpact,

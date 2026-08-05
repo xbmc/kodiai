@@ -6,7 +6,7 @@ describe("createTaskRouter", () => {
   test("uses supported Haiku as the distinct fallback for agentic Sonnet tasks", () => {
     const resolved = createTaskRouter({ models: {} }).resolve(TASK_TYPES.REVIEW_FULL);
 
-    expect(resolved.modelId).toBe("claude-sonnet-4-5-20250929");
+    expect(resolved.modelId).toBe("claude-sonnet-5");
     expect(resolved.fallbackModelId).toBe("claude-haiku-4-5-20251001");
   });
 
@@ -16,6 +16,6 @@ describe("createTaskRouter", () => {
     );
 
     expect(resolved.modelId).toBe("claude-haiku-4-5-20251001");
-    expect(resolved.fallbackModelId).toBe("claude-sonnet-4-5-20250929");
+    expect(resolved.fallbackModelId).toBe("claude-sonnet-5");
   });
 });

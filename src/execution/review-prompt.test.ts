@@ -36,19 +36,21 @@ import { projectContributorExperienceContract } from "../contributor/experience-
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
 describe("small-diff review prompt scope", () => {
-  test("adds a tiny-diff scope contract when requested", () => {
+  test("adds small-diff review guidance when requested", () => {
     const result = buildReviewPromptDetails(baseContext({ smallDiffReview: true }));
 
-    expect(buildSmallDiffScopeSection()).toContain("Inspect the provided diff context first.");
-    expect(result.text).toContain("## Tiny-diff scope contract");
-    expect(result.text).toContain("Do not do generalized architecture exploration.");
+    expect(buildSmallDiffScopeSection()).toContain("Trace the impact of each behavioral change");
+    expect(result.text).toContain("## Small-diff review guidance");
+    expect(result.text).toContain("A small diff is not the same as a small blast radius");
+    expect(result.text).not.toContain("Tiny-diff scope contract");
+    expect(result.text).not.toContain("one focused inspection pass");
     expect(result.sections.some((section) => section.sectionName === "review-small-diff-scope")).toBe(true);
   });
 
-  test("omits the tiny-diff scope contract for normal reviews", () => {
+  test("omits the small-diff review guidance for normal reviews", () => {
     const result = buildReviewPromptDetails(baseContext());
 
-    expect(result.text).not.toContain("## Tiny-diff scope contract");
+    expect(result.text).not.toContain("## Small-diff review guidance");
     expect(result.sections.some((section) => section.sectionName === "review-small-diff-scope")).toBe(false);
   });
   test("omits git command instructions when the remote workspace has no git metadata", () => {
@@ -745,7 +747,7 @@ test("buildReviewPromptDetails reports deterministic budget outcomes without raw
 
   const result = buildReviewPromptDetails(baseContext({
     changedFiles: oversizedChangedFiles,
-    diffContent: `${"+diff line with enough context\n".repeat(700)}${diffOverflowSentinel}`,
+    diffContent: `${"+diff line with enough context\n".repeat(1400)}${diffOverflowSentinel}`,
     customInstructions: `${"Investigate this custom instruction carefully. ".repeat(500)}${instructionOverflowSentinel}`,
     linkedIssues: {
       referencedIssues: Array.from({ length: 18 }, (_, index) => ({
@@ -2020,7 +2022,8 @@ describe("Phase 35: Findings organization and tone", () => {
   test("tone guidelines include epistemic principle", () => {
     const prompt = buildReviewPrompt(baseContext());
     expect(prompt).toContain("Evidence principle");
-    expect(prompt).toContain("Silently omit what you cannot verify");
+    expect(prompt).toContain("state the claim with explicit uncertainty instead of omitting it");
+    expect(prompt).not.toContain("Silently omit what you cannot verify");
   });
 
   // 12. buildPrIntentScopingSection helper includes branch and scoping rules
@@ -2598,58 +2601,40 @@ describe("formatClusterPatterns", () => {
 // Phase 115: Epistemic Boundary Section (PROMPT-01, PROMPT-02, PROMPT-03)
 // ---------------------------------------------------------------------------
 describe("buildEpistemicBoundarySection", () => {
-  test("returns string containing Epistemic Boundaries heading", () => {
+  test("returns string containing Evidence and Verification heading", () => {
     const section = buildEpistemicBoundarySection();
-    expect(section).toContain("## Epistemic Boundaries");
+    expect(section).toContain("## Evidence and Verification");
+    expect(section).not.toContain("## Epistemic Boundaries");
   });
 
-  test("contains allowlist categories (diff-visible, system-provided enrichment)", () => {
+  test("grants full repo read access and instructs verification by reading code", () => {
     const section = buildEpistemicBoundarySection();
-    expect(section).toContain("Diff-visible");
-    expect(section).toContain("System-provided enrichment");
+    expect(section).toContain("full read access to the repository");
+    expect(section).toContain("verify claims by reading the actual code");
   });
 
-  test("contains compact denylist for version/API/library claims not in evidence", () => {
+  test("allows library and API behavior claims with version assumptions stated", () => {
     const section = buildEpistemicBoundarySection();
-    expect(section).toMatch(/version.*API.*release.*library/i);
+    expect(section).toContain("Library and API behavior claims are allowed");
+    expect(section).toContain("state the version assumption explicitly");
   });
 
-  test("states external knowledge claims must be silently omitted", () => {
+  test("instructs reporting unverified-but-plausible risks with stated uncertainty", () => {
     const section = buildEpistemicBoundarySection();
-    expect(section).toMatch(/silently omit/i);
+    expect(section).toContain("report it anyway with your uncertainty stated plainly");
+    expect(section).not.toMatch(/silently omit/i);
   });
 
-  test("allows general programming knowledge (null deref, SQL injection)", () => {
-    const section = buildEpistemicBoundarySection();
-    expect(section).toMatch(/general programming/i);
-  });
-
-  test("defines universal citation rule — diff-visible cites file:line, enrichment cites footnote URL", () => {
+  test("defines citation rule — code claims cite file:line, enrichment cites footnote URL", () => {
     const section = buildEpistemicBoundarySection();
     expect(section).toContain("file:line");
     expect(section).toMatch(/footnote URL/i);
-  });
-
-  test("states no URL = no assertion rule", () => {
-    const section = buildEpistemicBoundarySection();
-    expect(section).toMatch(/no URL.*no assertion|cannot.*assert.*without.*URL/i);
   });
 
   // Phase 116: Surface-neutral language (PROMPT-04)
   test("uses surface-neutral language — does NOT contain 'this review'", () => {
     const section = buildEpistemicBoundarySection();
     expect(section).not.toContain("this review");
-  });
-
-  test("uses 'your response' instead of review-specific language", () => {
-    const section = buildEpistemicBoundarySection();
-    expect(section).toContain("your response");
-  });
-
-  test("stays compact enough for every prompt surface", () => {
-    const section = buildEpistemicBoundarySection();
-    expect(section.split("\n").length).toBeLessThanOrEqual(9);
-    expect(section.length).toBeLessThan(900);
   });
 });
 
@@ -2692,7 +2677,7 @@ describe("truthfulness drift guidance in buildReviewPrompt", () => {
 describe("epistemic section placement in buildReviewPrompt", () => {
   test("epistemic section appears BEFORE conventional commit context", () => {
     const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false } }));
-    const epistemicIdx = prompt.indexOf("## Epistemic Boundaries");
+    const epistemicIdx = prompt.indexOf("## Evidence and Verification");
     const conventionalIdx = prompt.indexOf("## Conventional Commit Context");
     expect(epistemicIdx).toBeGreaterThan(-1);
     expect(conventionalIdx).toBeGreaterThan(-1);
@@ -2702,7 +2687,7 @@ describe("epistemic section placement in buildReviewPrompt", () => {
   test("epistemic section appears after focus hints", () => {
     const prompt = buildReviewPrompt(baseContext({ focusHints: ["auth"] }));
     const focusIdx = prompt.indexOf("## Focus Hints");
-    const epistemicIdx = prompt.indexOf("## Epistemic Boundaries");
+    const epistemicIdx = prompt.indexOf("## Evidence and Verification");
     expect(focusIdx).toBeGreaterThan(-1);
     expect(epistemicIdx).toBeGreaterThan(-1);
     expect(epistemicIdx).toBeGreaterThan(focusIdx);

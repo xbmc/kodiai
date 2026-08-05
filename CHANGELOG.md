@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Changed — review quality overhaul
+
+- Small-diff reviews ("tiny-diff" fast path) now get the full review tool set (`Read`/`Grep`/`Glob` plus git diff/log/show/status) and a prompt that requires tracing the blast radius of each change (callers, removed fallbacks, affected code paths) instead of forbidding exploration and demanding a merge decision "after one focused inspection pass". Small-diff reviews also participate in risk-based turn scaling.
+- The review prompt is now coverage-first: the model is told to report every issue it finds — including uncertain and low-severity ones, with confidence and severity stated — and let the downstream reducer rank and gate, instead of "ONLY report actionable issues" plus "silently omit what you cannot verify". The Epistemic Boundaries section became "Evidence and Verification": full repository read access, library/API behavior claims allowed (with version assumptions stated and verified against vendored sources when present), and unverified-but-plausible risks reported with explicit uncertainty.
+- Senior/expert contributor profiles no longer lower the reporting bar ("only flag issues you're highly confident about" removed); author experience now adapts tone and verbosity only.
+- Findings without a generated fix patch now publish as normal prose inline review comments. Previously an inline comment structurally required a ```suggestion``` patch, so confirmed findings without a safe autofix (e.g. a MAJOR undefined-behavior finding) were reduced to a truncated one-line stub inside the Review Details block.
+- Default model bumped to `claude-sonnet-5` (same list price as Sonnet 4.5, adaptive thinking on by default). Default `maxTurns` raised from 25 to 40, and review prompt section budgets raised (diff context 12k→32k chars, knowledge 3.6k→8k, instructions 16k→24k) so large PRs stop losing thousands of tokens of context to trimming.
+- User-visible PR comments no longer embed internal telemetry (review plan/reducer/candidate-publication/M072 bridge/lifecycle/validation-truth lines, redaction flag dumps); those stay in structured logs. The token-usage footer now includes prompt-cache read/write counts so cost is interpretable.
+
+### Fixed
+
+- Review reducer no longer silently drops findings whose confidence field is missing (`Number(undefined) >= min` was always false), and the default confidence floor (50) no longer discards every minor style/documentation finding that the strict profile promises (now 40, the minimum reachable score).
+- `missing-replacement` candidates are no longer double-counted as "fix-eligibility-blocked" while simultaneously being moved to details.
+
 ## v0.50 (2026-07-29)
 
 An exhaustive correctness sweep across review publication, dependency-bump review, knowledge/embedding clustering, wiki sync, review-graph indexing, expertise scoring, and the durable webhook queue, plus a deploy-safety fix so a deploy can no longer kill jobs that are still in flight.

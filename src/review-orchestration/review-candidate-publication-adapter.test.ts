@@ -142,7 +142,9 @@ describe("review candidate publication adapter", () => {
     expect(adapted.payloads[0]!.publication.body).toContain("```suggestion\nApproved candidate replacement\n```");
     expect(adapted.payloads[1]!.publication.body).toContain("```suggestion\nRewritten reducer replacement\n```");
     expect(adapted.payloads[1]!.publication.body).toContain("**Fix suggestion:** Rewritten reducer title");
-    expect(adapted.payloads[1]!.publication.body).not.toContain("Stale rewrite title body is safe and grounded.");
+    // The normalized candidate body is now published between the header and the fence.
+    expect(adapted.payloads[1]!.publication.body).toContain("Stale rewrite title body is safe and grounded.");
+    expect(adapted.payloads[1]!.publication.body).not.toContain("Rewritten reducer body should stay private");
   });
 
   test("skips malformed approval references and missing rewritten reducer joins with bounded reasons", () => {
@@ -257,17 +259,15 @@ describe("review candidate publication adapter", () => {
 
     expect(adapted.payloads).toHaveLength(1);
     expect(adapted.summary.fixEligibility.reasonCounts).toMatchObject({
-      "missing-replacement": 1,
       eligible: 1,
-      "duplicate-fix": 1,
       "formatter-owned": 1,
       "secret-detected": 1,
-      "max-fixes-exceeded": 2,
+      "max-fixes-exceeded": 4,
     });
-    expect(adapted.summary.fixEligibility.counts).toMatchObject({ input: 7, eligible: 1, blocked: 4, omitted: 2, capped: 2 });
+    expect(adapted.summary.fixEligibility.counts).toMatchObject({ input: 7, eligible: 1, blocked: 2, omitted: 4, capped: 4 });
     expect(summary.text).toContain("fixEligible=1");
-    expect(summary.text).toContain("fixBlocked=4");
-    expect(summary.text).toContain("fixCapped=2");
+    expect(summary.text).toContain("fixBlocked=2");
+    expect(summary.text).toContain("fixCapped=4");
     for (const privateText of ["same replacement", "formatter owned replacement", "over cap replacement", "AKIA1234567890ABCDEF", "body is safe and grounded"]) {
       expect(summary.text).not.toContain(privateText);
     }
@@ -327,11 +327,11 @@ describe("review candidate publication adapter", () => {
     expect(JSON.stringify(adapted.summary.detailsOnlyFindings)).not.toContain("safe replacement that must not appear");
   });
 
-  test("projects approved findings without replacement text into bounded details-only findings", () => {
+  test("publishes approved findings without replacement text as inline prose payloads", () => {
     const candidates = candidateResult([
-      candidateInput("src/without-fix.ts", "Finding without generated fix", {
-        startLine: 12,
-        endLine: 12,
+      candidateInput("src/approved.ts", "Finding without generated fix", {
+        startLine: 20,
+        endLine: 20,
         severity: "major",
         category: "correctness",
         body: "The implementation can return stale data after the cache key changes.",
@@ -351,28 +351,22 @@ describe("review candidate publication adapter", () => {
       prDiffText: PR_DIFF,
     });
 
-    expect(adapted.payloads).toEqual([]);
+    expect(adapted.payloads).toHaveLength(1);
     expect(adapted.summary.counts).toMatchObject({
-      publishable: 0,
-      detailsOnlyFindings: 1,
-      movedToDetails: 1,
+      publishable: 1,
+      detailsOnlyFindings: 0,
+      movedToDetails: 0,
       detailsOnlyOmitted: 0,
     });
-    expect(adapted.summary.movedToDetails).toMatchObject({
-      counts: { total: 1, fromFixEligibility: 1, fromPublisherResult: 0, omitted: 0 },
-      reasonCounts: { "missing-replacement": 1 },
-    });
-    expect(adapted.summary.detailsOnlyFindings).toEqual([
-      expect.objectContaining({
-        fingerprint: candidate.fingerprint,
-        severity: "major",
-        category: "correctness",
-        title: "Finding without generated fix",
-        location: { path: "src/without-fix.ts", line: 12 },
-        reason: "missing-replacement",
-        excerpt: "The implementation can return stale data after the cache key changes.",
-      }),
-    ]);
+    expect(adapted.summary.fixEligibility.reasonCounts).toMatchObject({ eligible: 1 });
+    expect(adapted.payloads[0]!.candidateFingerprint).toBe(candidate.fingerprint);
+    expect(adapted.payloads[0]!.publication.location).toEqual({ path: "src/approved.ts", line: 20, side: "RIGHT" });
+    expect(adapted.payloads[0]!.publication.body).toBe([
+      "**MAJOR** (correctness): Finding without generated fix",
+      "",
+      "The implementation can return stale data after the cache key changes.",
+    ].join("\n"));
+    expect(adapted.payloads[0]!.publication.body).not.toContain("```suggestion");
   });
 
   test("does not promote malformed, missing-line, or unsafe-path candidates to details-only findings", () => {
@@ -405,10 +399,12 @@ describe("review candidate publication adapter", () => {
 
   test("caps details-only projection and redacts secrets, prompt canaries, diffs, and replacements", () => {
     const rawSecret = "AKIA1234567890ABCDEF";
-    const inputs = Array.from({ length: 25 }, (_, index) => candidateInput(`src/non-commentable-${index}.ts`, `Non commentable ${index} TOKEN=super-secret`, {
+    // The raw AWS key lives in the title (not the body): bodies with scanner-matching
+    // secrets are now blocked outright as secret-detected instead of moving to details.
+    const inputs = Array.from({ length: 25 }, (_, index) => candidateInput(`src/non-commentable-${index}.ts`, `Non commentable ${index} TOKEN=super-secret ${rawSecret}`, {
       startLine: 50 + index,
       endLine: 50 + index,
-      body: `BEGIN PROMPT hidden ${index}\ndiff --git a/private b/private\n${rawSecret}\nVisible tail`,
+      body: `BEGIN PROMPT hidden ${index}\ndiff --git a/private b/private\nVisible tail`,
       fixReplacementText: `replacement-canary-${index}`,
     }));
     const candidates = createReviewCandidateFindingExecutionResult({

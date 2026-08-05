@@ -8,14 +8,6 @@ export const SEMANTIC_FANOUT_REVIEW_MAX_TURNS = MEDIUM_RISK_REVIEW_MAX_TURNS;
 
 export type ReviewTimeoutRiskLevel = "low" | "medium" | "high";
 
-export const SMALL_DIFF_REVIEW_BASE_TOOLS = [
-  "Read",
-  "Grep",
-  "Glob",
-  "Bash(git diff:*)",
-  "Bash(git show:*)",
-] as const;
-
 export type ReviewTaskRouting = {
   taskType: string;
   routingReason: "tiny-diff" | "standard";
@@ -109,7 +101,9 @@ export function resolveReviewMaxTurnsOverride(params: {
     return params.routingMaxTurnsOverride;
   }
 
-  if (params.taskType !== TASK_TYPES.REVIEW_FULL) {
+  // Both review task types scale with risk: small diffs can still touch
+  // headers or shared code paths whose blast radius needs extra turns.
+  if (params.taskType !== TASK_TYPES.REVIEW_FULL && params.taskType !== TASK_TYPES.REVIEW_SMALL_DIFF) {
     return undefined;
   }
 

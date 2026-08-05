@@ -1,5 +1,14 @@
 import { describe, it, expect } from "bun:test";
 import { formatReviewDetailsSummary } from "./review-details-formatting.ts";
+import { formatReviewPlanDetailsLine, formatReviewReducerDetailsLine } from "./review-details-plan-formatting.ts";
+import {
+  formatReviewCandidateFindingDetailsLine,
+  formatReviewCandidatePublicationDetailsLine,
+} from "./review-details-candidate-formatting.ts";
+import {
+  formatReviewFindingLifecycleDetailsLine,
+  formatReviewValidationTruthDetailsLine,
+} from "./review-details-validation-formatting.ts";
 import type { ReviewFirstPassPayload } from "./review-first-pass.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 import type { ReviewPlanDetailsSummary } from "../review-orchestration/review-plan.ts";
@@ -100,15 +109,12 @@ function candidatePublicationSummary(input: {
 
 describe("formatReviewDetailsSummary", () => {
   it("renders bounded doctrine counts in structured review plan details without raw canaries", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewPlan: {
-        label: "Review plan",
-        status: "ready",
-        hash: "abcdef1234567890",
-        text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=2 lines=20(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow doctrine=applied/3/2/1 reasons=redaction-applied +1 omitted",
-      },
-    });
+    const result = formatReviewPlanDetailsLine({
+      label: "Review plan",
+      status: "ready",
+      hash: "abcdef1234567890",
+      text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=2 lines=20(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow doctrine=applied/3/2/1 reasons=redaction-applied +1 omitted",
+    }).join("\n");
 
     expect(result).toContain("doctrine=applied/3/2/1 reasons=redaction-applied");
     expect(result).toContain("+1 omitted");
@@ -118,15 +124,13 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("renders exactly one compact ready review plan line without dumping structured plan data", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewPlan: {
-        label: "Review plan",
-        status: "ready",
-        hash: "abcdef1234567890",
-        text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow",
-      } satisfies ReviewPlanDetailsSummary,
-    });
+    const reviewPlan = {
+      label: "Review plan",
+      status: "ready",
+      hash: "abcdef1234567890",
+      text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow",
+    } satisfies ReviewPlanDetailsSummary;
+    const result = formatReviewPlanDetailsLine(reviewPlan).join("\n");
 
     expect(reviewPlanLineCount(result)).toBe(1);
     expect(result).toContain("- Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow");
@@ -134,18 +138,18 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("routing:");
     expect(result).not.toContain("diff --git");
     expect(result).not.toContain("prompt text");
+
+    const summary = formatReviewDetailsSummary({ ...BASE_PARAMS, reviewPlan });
+    expect(reviewPlanLineCount(summary)).toBe(0);
   });
 
   it("renders exactly one compact degraded review plan line without throwing on missing hash or unknown projection fields", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewPlan: {
-        label: "Review plan",
-        status: "degraded",
-        text: "Review plan: degraded route=unknown reason=builder-error graph=skipped candidates=unavailable",
-        routing: { prompt: "prompt text", diff: "diff --git a/secret b/secret" },
-      } as never,
-    });
+    const result = formatReviewPlanDetailsLine({
+      label: "Review plan",
+      status: "degraded",
+      text: "Review plan: degraded route=unknown reason=builder-error graph=skipped candidates=unavailable",
+      routing: { prompt: "prompt text", diff: "diff --git a/secret b/secret" },
+    } as never).join("\n");
 
     expect(reviewPlanLineCount(result)).toBe(1);
     expect(result).toContain("- Review plan: degraded route=unknown reason=builder-error graph=skipped candidates=unavailable");
@@ -166,20 +170,21 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("renders exactly one compact review reducer line next to the review plan line", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewPlan: {
-        label: "Review plan",
-        status: "ready",
-        hash: "abcdef1234567890",
-        text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow",
-      } satisfies ReviewPlanDetailsSummary,
-      reviewReducer: {
-        label: "Review reducer",
-        status: "ready",
-        text: "Review reducer: ready input=2 kept=1 suppressed=1 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=1 severityDemoted=0 graphValidated=1 graphUncertain=0",
-      } satisfies ReviewReducerDetailsSummary,
-    });
+    const reviewPlan = {
+      label: "Review plan",
+      status: "ready",
+      hash: "abcdef1234567890",
+      text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow",
+    } satisfies ReviewPlanDetailsSummary;
+    const reviewReducer = {
+      label: "Review reducer",
+      status: "ready",
+      text: "Review reducer: ready input=2 kept=1 suppressed=1 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=1 severityDemoted=0 graphValidated=1 graphUncertain=0",
+    } satisfies ReviewReducerDetailsSummary;
+    const result = [
+      ...formatReviewPlanDetailsLine(reviewPlan),
+      ...formatReviewReducerDetailsLine(reviewReducer),
+    ].join("\n");
 
     expect(reviewPlanLineCount(result)).toBe(1);
     expect(reviewReducerLineCount(result)).toBe(1);
@@ -187,33 +192,25 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("- Review reducer: ready input=2 kept=1 suppressed=1 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=1 severityDemoted=0 graphValidated=1 graphUncertain=0");
     expect(result).not.toContain("diff --git");
     expect(result).not.toContain("prompt text");
+
+    const summary = formatReviewDetailsSummary({ ...BASE_PARAMS, reviewPlan, reviewReducer });
+    expect(reviewPlanLineCount(summary)).toBe(0);
+    expect(reviewReducerLineCount(summary)).toBe(0);
   });
 
   it("renders exactly one compact review candidate line after plan and reducer lines", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewPlan: {
-        label: "Review plan",
-        status: "ready",
-        hash: "abcdef1234567890",
-        text: "Review plan: ready hash=abcdef123456 route=standard task=review.full files=4 lines=212(local-diff) budget=na/900s gates=1/2 publish=inline+summary graph=enabled candidates=shadow",
-      } satisfies ReviewPlanDetailsSummary,
-      reviewReducer: {
-        label: "Review reducer",
-        status: "ready",
-        text: "Review reducer: ready input=2 kept=1 suppressed=1 rewritten=0 deprioritized=0 lowConfidence=0 auditEvents=1 severityDemoted=0 graphValidated=1 graphUncertain=0",
-      } satisfies ReviewReducerDetailsSummary,
-      reviewCandidateFinding: {
-        label: "Review candidates",
-        status: "shadow",
-        text: "Review candidates: shadow recorded=1 rejected=0 errors=0 artifact=present repo=owner-repo pr=42 key=review-output-abc123 delivery=delivery-001",
-      } satisfies ReviewCandidateFindingDetailsSummary,
-    });
+    const reviewCandidateFinding = {
+      label: "Review candidates",
+      status: "shadow",
+      text: "Review candidates: shadow recorded=1 rejected=0 errors=0 artifact=present repo=owner-repo pr=42 key=review-output-abc123 delivery=delivery-001",
+    } satisfies ReviewCandidateFindingDetailsSummary;
+    const result = formatReviewCandidateFindingDetailsLine(reviewCandidateFinding).join("\n");
 
     expect(reviewCandidateLineCount(result)).toBe(1);
-    expect(result.indexOf("Review plan:")).toBeLessThan(result.indexOf("Review reducer:"));
-    expect(result.indexOf("Review reducer:")).toBeLessThan(result.indexOf("Review candidates:"));
     expect(result).toContain("- Review candidates: shadow recorded=1 rejected=0 errors=0 artifact=present repo=owner-repo pr=42 key=review-output-abc123 delivery=delivery-001");
+
+    const summary = formatReviewDetailsSummary({ ...BASE_PARAMS, reviewCandidateFinding });
+    expect(reviewCandidateLineCount(summary)).toBe(0);
   });
 
   it("omits candidate metadata when omitted or malformed without breaking Review Details", () => {
@@ -251,9 +248,7 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("renders a safe bounded lifecycle projection exactly once without raw canaries", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewFindingLifecycle: {
+    const result = formatReviewFindingLifecycleDetailsLine({
         schema: "review-finding-lifecycle.v1",
         status: "normalized",
         counts: {
@@ -290,8 +285,7 @@ describe("formatReviewDetailsSummary", () => {
           unboundedArraysIncluded: false,
           unsafeInputFieldCount: 3,
         },
-      },
-    });
+    }) ?? "";
 
     expect(reviewFindingLifecycleLineCount(result)).toBe(1);
     expect(result).toContain("- Review finding lifecycle: status=normalized");
@@ -346,9 +340,7 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("renders a safe bounded validation truth projection exactly once without raw canaries", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewValidationTruth: {
+    const result = formatReviewValidationTruthDetailsLine({
         schema: "review-validation-truth.v1",
         gate: "review-validation-truth",
         reviewOutputKey: "review-output-abc123",
@@ -405,8 +397,7 @@ describe("formatReviewDetailsSummary", () => {
         toolPayload: "TOOL_PAYLOAD_CANARY",
         secret: "sk-secret-value",
         diffText: "diff --git a/secret b/secret",
-      } as never,
-    });
+    } as never) ?? "";
 
     expect(reviewValidationTruthLineCount(result)).toBe(1);
     expect(result).toContain("- Review validation truth: status=normalized");
@@ -426,9 +417,7 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("caps validation truth reason and reference details with omitted counts", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewValidationTruth: {
+    const result = formatReviewValidationTruthDetailsLine({
         schema: "review-validation-truth.v1",
         gate: "review-validation-truth",
         status: "degraded",
@@ -468,8 +457,7 @@ describe("formatReviewDetailsSummary", () => {
           unboundedArraysIncluded: false,
           unsafeInputFieldCount: 0,
         },
-      },
-    });
+    }) ?? "";
 
     expect(reviewValidationTruthLineCount(result)).toBe(1);
     expect(result).toContain("reasons=suggested-but-open:1,validation-missing:1,validation-passed:2,validation-failed:1,validation-stale:1,revalidation-missing:1,revalidation-passed:1,revalidation-failed:1 +6 omitted");
@@ -479,18 +467,15 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("does not leak raw candidate title body diff prompt token or secret-like strings in public details", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidateFinding: {
-        label: "Review candidates",
-        status: "degraded",
-        text: "Review candidates: degraded recorded=0 rejected=1 errors=1 artifact=absent reason=scanner-redacted repo=owner-repo pr=42 key=review-output-abc123",
-        rawTitle: "Raw candidate title",
-        rawBody: "Raw body with diff --git and prompt text",
-        token: "ghp_secret_token_value",
-        secret: "sk-secret-value",
-      } as never,
-    });
+    const result = formatReviewCandidateFindingDetailsLine({
+      label: "Review candidates",
+      status: "degraded",
+      text: "Review candidates: degraded recorded=0 rejected=1 errors=1 artifact=absent reason=scanner-redacted repo=owner-repo pr=42 key=review-output-abc123",
+      rawTitle: "Raw candidate title",
+      rawBody: "Raw body with diff --git and prompt text",
+      token: "ghp_secret_token_value",
+      secret: "sk-secret-value",
+    } as never).join("\n");
 
     expect(reviewCandidateLineCount(result)).toBe(1);
     expect(result).toContain("- Review candidates: degraded recorded=0 rejected=1 errors=1 artifact=absent reason=scanner-redacted repo=owner-repo pr=42 key=review-output-abc123");
@@ -503,37 +488,30 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("renders exactly one bounded candidate-approved publication line after candidate details", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidateFinding: {
-        label: "Review candidates",
-        status: "shadow",
-        text: "Review candidates: shadow recorded=2 rejected=0 errors=0 artifact=present repo=owner-repo pr=42 key=review-output-abc123 delivery=delivery-001",
-      } satisfies ReviewCandidateFindingDetailsSummary,
-      reviewCandidatePublication: candidatePublicationSummary({
-        text: "Review candidate publication runtime: candidate-approved approvedRefs=2 rewrittenRefs=1 publishable=3 candidatePublished=3 skipped=0 blocked=0 failed=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-publisher-published",
-        mode: "candidate-approved",
-        counts: {
-          approvedReferences: 2,
-          rewrittenReferences: 1,
-          candidatePublishable: 3,
-          candidatePublished: 3,
-          convertedProcessedFindings: 3,
-        },
-        reasons: ["candidate-publisher-published"],
-      }),
+    const reviewCandidatePublication = candidatePublicationSummary({
+      text: "Review candidate publication runtime: candidate-approved approvedRefs=2 rewrittenRefs=1 publishable=3 candidatePublished=3 skipped=0 blocked=0 failed=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-publisher-published",
+      mode: "candidate-approved",
+      counts: {
+        approvedReferences: 2,
+        rewrittenReferences: 1,
+        candidatePublishable: 3,
+        candidatePublished: 3,
+        convertedProcessedFindings: 3,
+      },
+      reasons: ["candidate-publisher-published"],
     });
+    const result = formatReviewCandidatePublicationDetailsLine(reviewCandidatePublication).join("\n");
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
-    expect(result.indexOf("Review candidates:")).toBeLessThan(result.indexOf("Review candidate publication:"));
     expect(result).toContain("- Review candidate publication: mode=candidate-approved approved=2 rewritten=1 publishable=3 nonPublishable=0 fixBlocked=0 published=3 directFallback=0 reasons=candidate-publisher-published");
     expect(result).not.toContain("Review candidate publication runtime:");
+
+    const summary = formatReviewDetailsSummary({ ...BASE_PARAMS, reviewCandidatePublication });
+    expect(reviewCandidatePublicationLineCount(summary)).toBe(0);
   });
 
   it("renders candidate publication details from typed metadata instead of reparsing stale visible text", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidatePublication: {
+    const result = formatReviewCandidatePublicationDetailsLine({
         label: "Review candidate publication runtime",
         text: "Review candidate publication runtime: degraded approvedRefs=999 rewrittenRefs=999 publishable=999 candidatePublished=999 directPublished=999 fallbackEvidence=999 reasons=stale-visible-text",
         mode: "candidate-approved",
@@ -559,8 +537,7 @@ describe("formatReviewDetailsSummary", () => {
           malformed: 0,
         },
         reasons: ["candidate-publisher-published"],
-      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
-    });
+    } satisfies ReviewCandidatePublicationRuntimeDetailsSummary).join("\n");
 
     expect(result).toContain("- Review candidate publication: mode=candidate-approved approved=2 rewritten=1 publishable=3 nonPublishable=0 fixBlocked=0 published=3 directFallback=0 reasons=candidate-publisher-published");
     expect(result).not.toContain("approved=999");
@@ -568,9 +545,7 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("renders compact publication outcome buckets without raw canaries", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidatePublication: {
+    const result = formatReviewCandidatePublicationDetailsLine({
         ...candidatePublicationSummary({
           text: "Review candidate publication runtime: candidate-approved-partial approvedRefs=7 rewrittenRefs=0 publishable=5 candidatePublished=1 skipped=1 blocked=1 failed=1 movedToDetails=2 detailsOnly=2 detailsOmitted=1 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-published,candidate-publisher-skipped,candidate-publisher-blocked,candidate-publisher-failed,candidate-moved-to-details,direct-fallback-disallowed,candidate-publisher-malformed",
           mode: "candidate-approved-partial",
@@ -598,8 +573,7 @@ describe("formatReviewDetailsSummary", () => {
           fallbackDisallowed: { mode: "fallback-disallowed", count: 1, reasons: ["direct-fallback-disallowed"] },
           degraded: { mode: "degraded", count: 1, reasons: ["candidate-publisher-malformed"] },
         },
-      },
-    });
+    }).join("\n");
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
     expect(result).toContain("buckets=published:1:candidate-publisher-published");
@@ -616,9 +590,7 @@ describe("formatReviewDetailsSummary", () => {
   });
 
   it("caps compact publication outcome bucket text and redacts unsafe bucket reasons", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidatePublication: {
+    const result = formatReviewCandidatePublicationDetailsLine({
         ...candidatePublicationSummary({
           text: "Review candidate publication runtime: degraded approvedRefs=240 rewrittenRefs=0 publishable=240 candidatePublished=60 skipped=60 blocked=60 failed=60 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-partial",
           mode: "degraded",
@@ -640,8 +612,7 @@ describe("formatReviewDetailsSummary", () => {
           failed: { mode: "failed", count: 60, reasons: ["candidate-publisher-failed"] },
           degraded: { mode: "degraded", count: 1, reasons: ["malformed-publisher-result", "BEGIN PROMPT hidden instructions"] },
         },
-      },
-    });
+    }).join("\n");
 
     const line = result.split("\n").find((entry) => entry.includes("Review candidate publication:")) ?? "";
     expect(line).toContain("buckets=published:60:candidate-publisher-published");
@@ -656,9 +627,7 @@ describe("formatReviewDetailsSummary", () => {
 
 
   it("renders moved-to-details publication status plus bounded details-only findings", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidatePublication: {
+    const reviewCandidatePublication = {
         ...candidatePublicationSummary({
           text: "Review candidate publication runtime: moved-to-details approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff",
           mode: "moved-to-details",
@@ -693,14 +662,19 @@ describe("formatReviewDetailsSummary", () => {
           reason: "line-not-commentable-in-pr-diff",
           excerpt: "The enqueue path dereferences payload before validating it.",
         }],
-      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
-    });
+    } satisfies ReviewCandidatePublicationRuntimeDetailsSummary;
+    const result = formatReviewCandidatePublicationDetailsLine(reviewCandidatePublication).join("\n");
+    const summary = formatReviewDetailsSummary({ ...BASE_PARAMS, reviewCandidatePublication });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
     expect(result).toContain("- Review candidate publication: mode=moved-to-details approved=1 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=candidate-moved-to-details,line-not-commentable-in-pr-diff movedToDetails=1 detailsOmitted=0");
     expect(result).toContain("- Moved review candidates preserved in details:");
     expect(result).toContain("  - [major/correctness] Guard null payload before enqueue (src/worker.ts:42, reason=line-not-commentable-in-pr-diff) — The enqueue path dereferences payload before validating it.");
     expect(result).not.toContain("direct-fallback-published");
+
+    expect(reviewCandidatePublicationLineCount(summary)).toBe(0);
+    expect(summary).toContain("- Moved review candidates preserved in details:");
+    expect(summary).toContain("  - [major/correctness] Guard null payload before enqueue (src/worker.ts:42, reason=line-not-commentable-in-pr-diff) — The enqueue path dereferences payload before validating it.");
   });
 
   it("bounds and sanitizes moved-to-details finding lines while reporting omitted count", () => {
@@ -715,9 +689,7 @@ describe("formatReviewDetailsSummary", () => {
       excerpt: `short excerpt ${index} TOKEN=abc123 secret=value \`\`\`suggestion\nreplacement text\n\`\`\` diff --git prompt text`,
     }));
 
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidatePublication: {
+    const reviewCandidatePublication = {
         ...candidatePublicationSummary({
           text: "Review candidate publication runtime: moved-to-details approvedRefs=12 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=12 detailsOnly=12 detailsOmitted=7 directPublished=0 fallbackEvidence=0 malformed=0 reasons=candidate-moved-to-details,oversized reason one,oversized reason two,oversized reason three,oversized reason four,oversized reason five,oversized reason six,oversized reason seven",
           mode: "moved-to-details",
@@ -744,8 +716,9 @@ describe("formatReviewDetailsSummary", () => {
           },
         },
         detailsOnlyFindings: findings,
-      } satisfies ReviewCandidatePublicationRuntimeDetailsSummary,
-    });
+    } satisfies ReviewCandidatePublicationRuntimeDetailsSummary;
+    const result = formatReviewCandidatePublicationDetailsLine(reviewCandidatePublication).join("\n");
+    const summary = formatReviewDetailsSummary({ ...BASE_PARAMS, reviewCandidatePublication });
 
     expect(result).toContain("movedToDetails=12 detailsOmitted=7");
     expect(result).toContain("+2 more");
@@ -753,15 +726,17 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("Safe title 0 redacted redacted prompt-redacted");
     expect(result).toContain("[fix-redacted]");
     expect(result).not.toContain("Safe title 5");
+    expect(summary).toContain("- Moved review candidates preserved in details:");
+    expect(summary).toContain("  - ...and 7 more omitted (bounded-details-only)");
+    expect(summary).not.toContain("Safe title 5");
     for (const unsafe of ["sk-secret-value", "ghp_secret_token_value", "BEGIN PROMPT", "TOKEN=abc123", "secret=value", "replacement text", "diff --git"] as const) {
       expect(result).not.toContain(unsafe);
+      expect(summary).not.toContain(unsafe);
     }
   });
 
   it("degrades moved-to-details metadata and omits findings when projection is malformed or unsafe", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidatePublication: {
+    const reviewCandidatePublication = {
         ...candidatePublicationSummary({
           text: "Review candidate publication runtime: not-a-real-mode approvedRefs=1 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 movedToDetails=1 detailsOnly=1 detailsOmitted=0 directPublished=0 fallbackEvidence=0 malformed=0 reasons=BEGIN PROMPT,diff --git,unknown reason",
           mode: "degraded",
@@ -796,8 +771,9 @@ describe("formatReviewDetailsSummary", () => {
           reason: "line-not-commentable",
           excerpt: "PROMPT_SECRET diff --git",
         }],
-      } as never,
-    });
+    } as never;
+    const result = formatReviewCandidatePublicationDetailsLine(reviewCandidatePublication).join("\n");
+    const summary = formatReviewDetailsSummary({ ...BASE_PARAMS, reviewCandidatePublication });
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
     expect(result).toContain("mode=degraded");
@@ -806,12 +782,14 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("MUST_NOT_RENDER");
     expect(result).not.toContain("sk-secret-value");
     expect(result).not.toContain("diff --git");
+    expect(summary).not.toContain("Moved review candidates preserved in details");
+    expect(summary).not.toContain("MUST_NOT_RENDER");
+    expect(summary).not.toContain("sk-secret-value");
+    expect(summary).not.toContain("diff --git");
   });
 
   it("renders direct fallback publication state as audited fallback evidence", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidatePublication: candidatePublicationSummary({
+    const result = formatReviewCandidatePublicationDetailsLine(candidatePublicationSummary({
         text: "Review candidate publication runtime: direct-fallback approvedRefs=0 rewrittenRefs=0 publishable=0 candidatePublished=0 skipped=0 blocked=0 failed=0 directPublished=2 fallbackEvidence=2 malformed=0 reasons=direct-fallback-attempted,direct-fallback-published",
         mode: "direct-fallback",
         counts: {
@@ -820,35 +798,35 @@ describe("formatReviewDetailsSummary", () => {
           fallbackEvidence: 2,
         },
         reasons: ["direct-fallback-attempted", "direct-fallback-published"],
-      }),
-    });
+    })).join("\n");
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
     expect(result).toContain("- Review candidate publication: mode=direct-fallback approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=2 reasons=direct-fallback-attempted,direct-fallback-published");
   });
 
   it("omits missing candidate publication metadata and degrades malformed metadata without breaking Review Details", () => {
+    const malformedMetadata = {
+      label: "Review candidate publication runtime",
+      text: 17,
+    } as never;
     const omitted = formatReviewDetailsSummary({ ...BASE_PARAMS });
-    const malformed = formatReviewDetailsSummary({
+    const malformedSummary = formatReviewDetailsSummary({
       ...BASE_PARAMS,
-      reviewCandidatePublication: {
-        label: "Review candidate publication runtime",
-        text: 17,
-      } as never,
+      reviewCandidatePublication: malformedMetadata,
     });
+    const malformed = formatReviewCandidatePublicationDetailsLine(malformedMetadata).join("\n");
 
     expect(reviewCandidatePublicationLineCount(omitted)).toBe(0);
+    expect(reviewCandidatePublicationLineCount(malformedSummary)).toBe(0);
     expect(reviewCandidatePublicationLineCount(malformed)).toBe(1);
     expect(malformed).toContain("- Review candidate publication: mode=degraded approved=0 rewritten=0 publishable=0 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=malformed-runtime-summary");
     expect(malformed).toContain("buckets=degraded:1:malformed-runtime-summary");
-    expect(malformed).toContain("<summary>Review Details</summary>");
-    expect(malformed).toContain("<!-- kodiai:review-details:test-key-001 -->");
+    expect(malformedSummary).toContain("<summary>Review Details</summary>");
+    expect(malformedSummary).toContain("<!-- kodiai:review-details:test-key-001 -->");
   });
 
   it("caps oversized candidate publication reasons and redacts secret prompt and diff markers", () => {
-    const result = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      reviewCandidatePublication: candidatePublicationSummary({
+    const result = formatReviewCandidatePublicationDetailsLine(candidatePublicationSummary({
         text: "Review candidate publication runtime: degraded approvedRefs=1 rewrittenRefs=0 publishable=1 candidatePublished=0 skipped=0 blocked=0 failed=1 directPublished=0 fallbackEvidence=0 malformed=1 reasons=candidate-publisher-failed,sk-secret-value,ghp_secret_token_value,BEGIN PROMPT,diff --git,hidden instructions,oversized reason one,oversized reason two,oversized reason three,oversized reason four,oversized reason five,oversized reason six",
         mode: "degraded",
         counts: {
@@ -858,8 +836,7 @@ describe("formatReviewDetailsSummary", () => {
           malformed: 1,
         },
         reasons: ["candidate-publisher-failed", "sk-secret-value", "ghp_secret_token_value", "BEGIN PROMPT", "diff --git", "hidden instructions", "oversized reason one", "oversized reason two", "oversized reason three", "oversized reason four", "oversized reason five", "oversized reason six"],
-      }),
-    });
+    })).join("\n");
 
     expect(reviewCandidatePublicationLineCount(result)).toBe(1);
     expect(result).toContain("- Review candidate publication: mode=degraded approved=1 rewritten=0 publishable=1 nonPublishable=0 fixBlocked=0 published=0 directFallback=0 reasons=candidate-publisher-failed,redacted,redacted,prompt-redacted,diff-redacted,prompt-redacted");

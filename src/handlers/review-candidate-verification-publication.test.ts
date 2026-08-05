@@ -346,8 +346,14 @@ describe("review handler M070 candidate verification publication wiring", () => 
     expect(bridgeIndex).toBeGreaterThanOrEqual(0);
     expect(degradedPublicationIndex).toBeGreaterThan(bridgeIndex);
 
+    // Bridge telemetry moved from the user-visible Review Details comment
+    // into structured logs; the visible fallback body must not carry it.
     const fallbackBody = scenario.issueCreatePayloads.map((payload) => String(payload.body ?? "")).find((body) => body.includes("<summary>Review Details</summary>"));
-    expect(fallbackBody).toContain("M072 candidate publication bridge: status=allowed");
+    expect(fallbackBody).toBeDefined();
+    expect(fallbackBody).not.toContain("M072 candidate publication bridge:");
+
+    const bridgeLog = scenario.entries.find((entry) => entry.data?.gate === "m072-review-handler-publication-bridge");
+    expect(bridgeLog?.data?.candidatePublicationBridgeStatus).toBe("allowed");
   });
 
   test("unsafe candidate bridge diagnostics remain bounded and redact raw canaries from handler publications and logs", async () => {

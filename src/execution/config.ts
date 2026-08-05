@@ -629,8 +629,8 @@ const modelsSchema = z
   .default({});
 
 const repoConfigSchema = z.object({
-  model: z.string().default("claude-sonnet-4-5-20250929"),
-  maxTurns: z.number().min(1).max(100).default(25),
+  model: z.string().default("claude-sonnet-5"),
+  maxTurns: z.number().min(1).max(100).default(40),
   timeoutSeconds: z.number().min(30).max(1800).default(600),
   systemPromptAppend: z.string().optional(),
   /** Per-task-type model overrides (e.g., "review.full": "gpt-4o-mini"). */
@@ -805,13 +805,13 @@ export async function loadRepoConfig(
   }
 
   // model
-  const modelSchema = z.string().default("claude-sonnet-4-5-20250929");
+  const modelSchema = z.string().default("claude-sonnet-5");
   const modelResult = modelSchema.safeParse(obj.model);
   let model: string;
   if (modelResult.success) {
     model = modelResult.data;
   } else {
-    model = "claude-sonnet-4-5-20250929";
+    model = "claude-sonnet-5";
     warnings.push({
       section: "model",
       issues: modelResult.error.issues.map(
@@ -821,13 +821,13 @@ export async function loadRepoConfig(
   }
 
   // maxTurns
-  const maxTurnsSchema = z.number().min(1).max(100).default(25);
+  const maxTurnsSchema = z.number().min(1).max(100).default(40);
   const maxTurnsResult = maxTurnsSchema.safeParse(obj.maxTurns);
   let maxTurns: number;
   if (maxTurnsResult.success) {
     maxTurns = maxTurnsResult.data;
   } else {
-    maxTurns = 25;
+    maxTurns = 40;
     warnings.push({
       section: "maxTurns",
       issues: maxTurnsResult.error.issues.map(

@@ -905,7 +905,7 @@ describe("createReviewHandler repository doctrine wiring", () => {
     });
 
     const detailsBlock = extractReviewDetailsBlock(detailsCommentBody);
-    expect(detailsBlock).toContain("doctrine=applied/2/2/0");
+    expect(detailsBlock).not.toContain("doctrine=applied/2/2/0");
     expect(detailsBlock).not.toContain("PROMPT_SECRET_DO_NOT_LEAK");
     expect(detailsBlock).not.toContain("RAW_DOCTRINE_BODY_CANARY");
     expect(detailsBlock).not.toContain("RAW_MIGRATION_CANARY");
@@ -6215,10 +6215,7 @@ describe("createReviewHandler finding extraction", () => {
     expect(detailsCommentBody).toMatch(/Findings: \d+ critical, \d+ major, \d+ medium, \d+ minor/);
     expect(detailsCommentBody).toMatch(/Review completed: \d{4}-\d{2}-\d{2}T/);
     expect(detailsCommentBody).toContain(`<!-- kodiai:review-details:${reviewOutputKey} -->`);
-    expect((detailsCommentBody?.match(/Review finding lifecycle:/g) ?? [])).toHaveLength(1);
-    expect(detailsCommentBody).toContain("Review finding lifecycle: status=normalized");
-    expect(detailsCommentBody).toContain("correlation=repo:y,pull:y,reviewOutputKey:y,deliveryId:y,commit:y");
-    expect(detailsCommentBody).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n");
+    expect(detailsCommentBody).not.toContain("Review finding lifecycle:");
     expect(detailsCommentBody).not.toContain("RAW_PROMPT_CANARY");
     expect(detailsCommentBody).not.toContain("RAW_MODEL_OUTPUT_CANARY");
     expect(detailsCommentBody).not.toContain("CANDIDATE_BODY_CANARY");
@@ -6371,8 +6368,8 @@ describe("createReviewHandler finding extraction", () => {
     expect(recordedFindings).toHaveLength(1);
     expect(recordedFindings[0]?.title).toBe("Finding that would be filtered");
     expect(deletedCommentIds).toEqual([]);
-    expect(detailsCommentBody).toContain("Review reducer: degraded");
-    expect(detailsCommentBody).toContain("reason=reducer-exception");
+    expect(detailsCommentBody).not.toContain("Review reducer:");
+    expect(detailsCommentBody).not.toContain("reason=reducer-exception");
   });
 
   test("review-comment idempotency accept still publishes Review Details when no canonical issue comment exists yet", async () => {
@@ -16907,15 +16904,29 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     severity: string;
     category: string;
     title: string;
+    body?: string;
     fixReplacementText: string;
   }): string {
     return [
       `**Fix suggestion:** ${params.title}`,
       `Severity: ${params.severity} · Category: ${params.category}`,
+      ...(params.body ? ["", params.body] : []),
       "",
       "```suggestion",
       params.fixReplacementText,
       "```",
+    ].join("\n");
+  }
+
+  function formattedCandidateProseBody(params: {
+    severity: string;
+    category: string;
+    title: string;
+    body?: string;
+  }): string {
+    return [
+      `**${params.severity.toUpperCase()}** (${params.category}): ${params.title}`,
+      ...(params.body ? ["", params.body] : []),
     ].join("\n");
   }
 
@@ -16950,7 +16961,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       endLine?: number;
       severity?: string;
       category?: string;
-      fixReplacementText?: string;
+      fixReplacementText?: string | null;
     } = {},
   ) {
     return async (input: ShadowSpecialistSubflowInput): Promise<ShadowSpecialistSubflowResult> => {
@@ -16962,7 +16973,9 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       const endLine = candidate.endLine ?? line;
       const severity = candidate.severity ?? "major";
       const category = candidate.category ?? "correctness";
-      const fixReplacementText = candidate.fixReplacementText ?? candidateFixReplacementText;
+      const fixReplacementText = candidate.fixReplacementText === null
+        ? null
+        : candidate.fixReplacementText ?? candidateFixReplacementText;
       const fingerprint = reviewCandidateFingerprint({
         repo: "acme/repo",
         pullNumber: 101,
@@ -16980,12 +16993,15 @@ describe("createReviewHandler ReviewPlan wiring", () => {
         ...(line === endLine ? { line } : { startLine: line, line: endLine }),
         reviewOutputKey: candidateReviewOutputKey(baseReviewOutputKey, fingerprint),
         deliveryId: String(input.deliveryId ?? ""),
-        body: formattedCandidateFixSuggestionBody({
-          severity,
-          category,
-          title,
-          fixReplacementText,
-        }),
+        body: fixReplacementText === null
+          ? formattedCandidateProseBody({ severity, category, title, body })
+          : formattedCandidateFixSuggestionBody({
+              severity,
+              category,
+              title,
+              body,
+              fixReplacementText,
+            }),
       });
       return {
         trigger: {
@@ -17330,7 +17346,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock).toContain("graph=skipped");
+    expect(detailsBlock).not.toContain("graph=skipped");
 
     const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
     expect(readyLog?.data?.graphValidationStatus).toBe("skipped");
@@ -17346,7 +17362,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     expect(executeCalls).toHaveLength(1);
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock).toContain("graph=unavailable");
+    expect(detailsBlock).not.toContain("graph=unavailable");
 
     const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
     expect(readyLog?.data?.graphValidationStatus).toBe("unavailable");
@@ -17363,7 +17379,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     });
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock).toContain("graph=enabled");
+    expect(detailsBlock).not.toContain("graph=enabled");
 
     const readyLog = logEntries.find((entry) => entry.data?.gate === "review-plan");
     expect(readyLog?.data?.graphValidationStatus).toBe("enabled");
@@ -17381,7 +17397,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(promptBuildContexts[0]?.candidateFindingMode).toBe("preferred");
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock).toContain("candidates=preferred");
+    expect(detailsBlock).not.toContain("candidates=preferred");
   });
 
   test("passes a bounded diff snippet to shadow specialist instead of duplicating the full diff", async () => {
@@ -17434,14 +17450,8 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     });
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
-    expect(detailsBlock.match(/Review validation truth:/g) ?? []).toHaveLength(1);
-    expect(detailsBlock).toContain("Review validation truth: status=empty");
-    expect(detailsBlock).toMatch(/counts=detected:\d+,suggested:\d+,validated:\d+,revalidated:\d+,resolved:\d+,blocked:\d+,degraded:\d+,open:\d+,uncertain:\d+,inputFindings:\d+,unsafeInputFields:\d+/);
-    expect(detailsBlock).toContain("evidence=fresh:");
-    expect(detailsBlock).toContain("correlation=reviewOutputKey:y,deliveryId:y");
-    expect(detailsBlock).toContain("redaction=privateOnly:y,rawPrompts:n,rawModelOutput:n,candidateBodies:n,replacementText:n,toolPayloads:n,secretLike:n,diffs:n,unboundedArrays:n");
-    expect(detailsBlock).toContain("Review candidates: shadow recorded=2 rejected=1 errors=0 artifact=present");
+    expect(detailsBlock).not.toContain("Review candidates:");
+    expect(detailsBlock).not.toContain("Review validation truth:");
     expect(detailsBlock).not.toContain("RAW TITLE MUST NOT LEAK");
     expect(detailsBlock).not.toContain("RAW BODY MUST NOT LEAK");
     expect(detailsBlock).not.toContain("/tmp/workspace");
@@ -17603,7 +17613,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(String(createdReviewComments[0]?.body)).toContain(candidateTitle);
     expect(String(createdReviewComments[0]?.body)).toContain("```suggestion");
     expect(String(createdReviewComments[0]?.body)).toContain(candidateFixReplacementText);
-    expect(String(createdReviewComments[0]?.body)).not.toContain(candidateBody);
+    expect(String(createdReviewComments[0]?.body)).toContain(candidateBody);
 
     expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
     expect(recordFindingEntries).toHaveLength(1);
@@ -17717,7 +17727,10 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const reviewOutputKey = String(executeCalls[0]?.reviewOutputKey ?? "");
     const deliveryId = "delivery-123";
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    const validationTruthLineCount = detailsBlock.split("\n").filter((line) => line.includes("Review validation truth:")).length;
+    // Validation-truth projection moved from the user-visible Review Details
+    // comment into structured logs; evidence now counts the log projection.
+    const validationTruthLogEntries = logEntries.filter((entry) => entry.data?.gate === "review-validation-truth");
+    const validationTruthLineCount = validationTruthLogEntries.length;
     const lifecycleLog = logEntries.find((entry) => entry.data?.gate === "review-finding-lifecycle");
     const fixEligibilityLog = logEntries.find((entry) => entry.data?.gate === "review-fix-eligibility");
     const validationTruthLog = logEntries.find((entry) => entry.data?.gate === "review-validation-truth");
@@ -17729,9 +17742,8 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(createdSuggestion?.line).toBe(2);
     expect(String(createdSuggestion?.body)).toContain("```suggestion");
     expect(String(createdSuggestion?.body)).toContain(candidateFixReplacementText);
-    expect(String(createdSuggestion?.body)).not.toContain(candidateBody);
-    expect(detailsBlock).toContain("Review validation truth:");
-    expect(detailsBlock).toContain("correlation=reviewOutputKey:y,deliveryId:y");
+    expect(String(createdSuggestion?.body)).toContain(candidateBody);
+    expect(detailsBlock).not.toContain("Review validation truth:");
 
     const evidence: M074S06EvidenceSnapshot = {
       schema: "m074-s06-production-like-proof.v1",
@@ -17802,11 +17814,11 @@ describe("createReviewHandler ReviewPlan wiring", () => {
         statusCode: "m074_s05_ok",
         checkIds: ["review-details-validation-truth", "visible-volume-bounds", "diagnostic-correlation", "redaction-flags-and-canaries"],
         sourceAvailable: true,
-        correlationPresent: detailsBlock.includes("correlation=reviewOutputKey:y,deliveryId:y"),
+        correlationPresent: validationTruthLog?.data?.reviewOutputKey === reviewOutputKey && validationTruthLog?.data?.deliveryId === deliveryId,
         counts: { validationTruthLineCount },
         validationTruthLineCount,
-        reviewOutputKeyPresent: detailsBlock.includes("reviewOutputKey:y"),
-        deliveryIdPresent: detailsBlock.includes("deliveryId:y"),
+        reviewOutputKeyPresent: validationTruthLog?.data?.reviewOutputKey === reviewOutputKey,
+        deliveryIdPresent: validationTruthLog?.data?.deliveryId === deliveryId,
         addedLines: validationTruthLineCount,
         maxAddedLines: 1,
         visibleCharDelta: detailsBlock.length,
@@ -17992,10 +18004,15 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     }));
   });
 
-  test("missing-replacement candidates surface concrete findings before bounded Review Details", async () => {
-    const { updatedSummaryBody, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
+  test("missing-replacement candidates publish inline as prose comments", async () => {
+    const { updatedSummaryBody, createdReviewComments, recordReviewEntries, recordFindingEntries, logEntries } = await runReviewPlanScenario({
       executorPublished: false,
       exposeSummaryComment: true,
+      shadowSpecialistSubflow: buildCandidateVerificationShadowSubflow("verified", {
+        title: "Candidate without replacement",
+        body: "This candidate has no generated replacement, but the concrete risk needs author attention.",
+        fixReplacementText: null,
+      }),
       candidateFindingResult: {
         status: "shadow",
         repo: "acme/repo",
@@ -18045,38 +18062,35 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       }),
     });
 
-    expect(recordReviewEntries[0]?.findingsTotal).toBe(0);
-    expect(recordFindingEntries).toHaveLength(0);
+    expect(recordReviewEntries[0]?.findingsTotal).toBe(1);
+    expect(recordFindingEntries).toHaveLength(1);
+
+    expect(createdReviewComments).toHaveLength(1);
+    expect(createdReviewComments[0]?.path).toBe("README.md");
+    expect(createdReviewComments[0]?.line).toBe(2);
+    const inlineBody = String(createdReviewComments[0]?.body);
+    expect(inlineBody).toContain("**MAJOR** (correctness): Candidate without replacement");
+    expect(inlineBody).toContain("This candidate has no generated replacement, but the concrete risk needs author attention.");
+    expect(inlineBody).not.toContain("```suggestion");
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(updatedSummaryBody).toContain("Decision: NOT APPROVED");
-    expect(updatedSummaryBody).not.toContain("Decision: APPROVE");
-    expect(updatedSummaryBody).toContain("- **MAJOR** `README.md:2` — Candidate without replacement");
-    expect(updatedSummaryBody).toContain("This candidate has no generated replacement, but the concrete risk needs author attention.");
     expect(updatedSummaryBody).not.toContain("Kodiai found 1 unpublished finding that requires human review.");
     expect(updatedSummaryBody).not.toContain("Raw finding text was kept private");
-    expect(detailsBlock).toContain("Review candidate publication: mode=moved-to-details");
-    expect(detailsBlock).toContain("approved=1");
-    expect(detailsBlock).toContain("publishable=0");
-    expect(detailsBlock).toContain("nonPublishable=1");
-    expect(detailsBlock).toContain("fixBlocked=1");
-    expect(detailsBlock).toContain("reasons=candidate-moved-to-details,fix-eligibility-blocked");
-    expect(detailsBlock).toContain("movedToDetails=1");
-    expect(detailsBlock).toContain("Moved review candidates preserved in details:");
-    expect(detailsBlock).toContain("reason=missing-replacement");
+    expect(detailsBlock).not.toContain("Review candidate publication:");
+    expect(detailsBlock).not.toContain("Moved review candidates preserved in details:");
+    expect(detailsBlock).not.toContain("reason=missing-replacement");
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
     expect(publicationLog?.level).toBe("info");
-    expect(publicationLog?.message).toBe("Review candidate publication completed");
+    expect(publicationLog?.data?.gateResult).toBe("candidate-approved");
     expect(publicationLog?.data?.counts).toEqual(expect.objectContaining({
       approvedReferences: 1,
-      candidatePublishable: 0,
-      candidatePublished: 0,
-      candidateMovedToDetails: 1,
-      fixEligibilityBlocked: 1,
-      nonPublishableReferences: 1,
+      candidatePublishable: 1,
+      candidatePublished: 1,
+      candidateMovedToDetails: 0,
+      fixEligibilityBlocked: 0,
+      nonPublishableReferences: 0,
     }));
-    expect(publicationLog?.data?.reasons).toEqual(["candidate-moved-to-details", "fix-eligibility-blocked"]);
   });
 
   test("candidate draft prioritization respects maxComments before inline publication", async () => {
@@ -18249,10 +18263,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock).toContain("Review candidate publication: mode=direct-fallback");
-    expect(detailsBlock).toContain("published=0");
-    expect(detailsBlock).toContain("directFallback=1");
-    expect(detailsBlock).toContain("buckets=blocked:1:approval-blocked+no-candidate-publication-path,direct-fallback:1:direct-fallback-attempted+direct-fallback-published+direct-fallback-audited");
+    expect(detailsBlock).not.toContain("Review candidate publication:");
 
     const publicationLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-publication");
     expect(publicationLog?.data?.gateResult).toBe("direct-fallback");
@@ -18353,15 +18364,11 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     const movedDetailsBody = createdIssueComments
       .map((comment) => String(comment.body ?? ""))
-      .find((body) => body.includes("Review candidate publication: mode=moved-to-details"));
+      .find((body) => body.includes("Moved review candidates preserved in details:"));
     expect(movedDetailsBody).toBeDefined();
     const detailsBlock = extractReviewDetailsBlock(movedDetailsBody ?? "");
-    expect(detailsBlock).toContain("Review candidate publication: mode=moved-to-details");
-    expect(detailsBlock).toContain("published=0");
-    expect(detailsBlock).toContain("directFallback=0");
-    expect(detailsBlock).toContain("movedToDetails=1");
+    expect(detailsBlock).not.toContain("Review candidate publication:");
     expect(detailsBlock).toContain("Moved review candidates preserved in details:");
-    expect(detailsBlock).toContain("buckets=moved-to-details:1:candidate-moved-to-details+line-not-commentable");
     expect(detailsBlock).toContain("[major/correctness] Unpublishable candidate line (README.md:999, reason=line-not-commentable)");
     expect(detailsBlock).not.toContain("PROMPT_SECRET");
     expect(detailsBlock).not.toContain("TOKEN=abc123");
@@ -18515,8 +18522,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario();
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
-    expect(detailsBlock).toContain("Review candidates: unavailable");
+    expect(detailsBlock).not.toContain("Review candidates:");
 
     const candidateLog = logEntries.find((entry) => entry.data?.gate === "review-candidate-finding");
     expect(candidateLog?.data?.gateResult).toBe("unavailable");
@@ -18548,9 +18554,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     });
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock.match(/Review candidates:/g) ?? []).toHaveLength(1);
-    expect(detailsBlock).toContain("Review candidates: degraded");
-    expect(detailsBlock).toContain("errors=2");
+    expect(detailsBlock).not.toContain("Review candidates:");
     expect(detailsBlock).not.toContain("PROMPT_SECRET");
     expect(detailsBlock).not.toContain("TOKEN=abc123");
 
@@ -18568,7 +18572,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     });
   });
 
-  test("successful review publishes a compact ready Review plan line and preserves executor dispatch inputs", async () => {
+  test("successful review logs a compact ready Review plan and preserves executor dispatch inputs", async () => {
     const { updatedSummaryBody, executeCalls, logEntries } = await runReviewPlanScenario();
 
     expect(executeCalls).toHaveLength(1);
@@ -18587,10 +18591,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     }));
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock.match(/Review plan:/g) ?? []).toHaveLength(1);
-    expect(detailsBlock).toContain("Review plan: ready");
-    expect(detailsBlock).toContain("task=review.small-diff");
-    expect(detailsBlock).toContain("route=tiny-diff");
+    expect(detailsBlock).not.toContain("Review plan:");
     expect(detailsBlock).not.toContain("safe test prompt");
     expect(detailsBlock).not.toContain("base\\nfeature");
 
@@ -18624,7 +18625,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(serialized).not.toContain("diffContent");
   });
 
-  test("injected ready review reducer publishes compact details, logs counts, and stores safe snapshot", async () => {
+  test("injected ready review reducer keeps details compact, logs counts, and stores safe snapshot", async () => {
     const { updatedSummaryBody, recordReviewEntries, logEntries } = await runReviewPlanScenario({
       reviewReducer: async (input) => {
         const counts = {
@@ -18659,8 +18660,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     });
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock.match(/Review reducer:/g) ?? []).toHaveLength(1);
-    expect(detailsBlock).toContain("Review reducer: ready");
+    expect(detailsBlock).not.toContain("Review reducer:");
     expect(detailsBlock).not.toContain("safe test prompt");
     expect(detailsBlock).not.toContain("diff --git");
 
@@ -18688,9 +18688,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
 
     expect(executeCalls).toHaveLength(1);
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock.match(/Review reducer:/g) ?? []).toHaveLength(1);
-    expect(detailsBlock).toContain("Review reducer: degraded");
-    expect(detailsBlock).toContain("reason=reducer-exception");
+    expect(detailsBlock).not.toContain("Review reducer:");
     expect(detailsBlock).not.toContain("PROMPT_SECRET");
     expect(detailsBlock).not.toContain("TOKEN=abc123");
     expect(detailsBlock).not.toContain("diff --git");
@@ -18708,7 +18706,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(JSON.stringify(configSnapshot)).not.toContain("diff --git");
   });
 
-  test("builder failure still dispatches executor and renders a degraded Review plan line", async () => {
+  test("builder failure still dispatches executor and logs a degraded Review plan", async () => {
     const { updatedSummaryBody, executeCalls, recordReviewEntries, logEntries } = await runReviewPlanScenario({
       reviewPlanBuilder: () => {
         throw new Error("boom raw prompt token diff should not leak");
@@ -18720,9 +18718,7 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     expect(executeCalls[0]?.prompt).toBe("safe test prompt");
 
     const detailsBlock = extractReviewDetailsBlock(updatedSummaryBody ?? "");
-    expect(detailsBlock.match(/Review plan:/g) ?? []).toHaveLength(1);
-    expect(detailsBlock).toContain("Review plan: degraded");
-    expect(detailsBlock).toContain("reason=builder-error");
+    expect(detailsBlock).not.toContain("Review plan:");
     expect(detailsBlock).not.toContain("raw prompt");
     expect(detailsBlock).not.toContain("boom raw prompt token diff should not leak");
     expect(detailsBlock).not.toContain("diffContent");

@@ -217,11 +217,11 @@ describe("generateStructuredWithFallback", () => {
     await expect(result).resolves.toMatchObject({
       usedFallback: true,
       fallbackReason: "domain-grounding-rejection",
-      model: "claude-sonnet-4-5-20250929",
+      model: "claude-sonnet-5",
     });
     expect(capturedModels).toEqual([
       "claude-haiku-4-5-20251001",
-      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-5",
     ]);
     expect(loadCount).toBe(2);
     expect(trackAgentSdkCall).toHaveBeenCalledTimes(2);
@@ -258,7 +258,7 @@ describe("generateStructuredWithFallback", () => {
     });
     expect(capturedModels).toEqual([
       "claude-haiku-4-5-20251001",
-      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-5",
     ]);
   });
 
@@ -302,7 +302,7 @@ describe("generateStructuredWithFallback", () => {
     expect(result).toMatchObject({
       usedFallback: true,
       fallbackReason: "execution-error",
-      model: "claude-sonnet-4-5-20250929",
+      model: "claude-sonnet-5",
     });
     expect(trackAgentSdkCall).toHaveBeenCalledTimes(2);
     expect(trackAgentSdkCall).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -316,7 +316,7 @@ describe("generateStructuredWithFallback", () => {
     expect(trackAgentSdkCall).toHaveBeenNthCalledWith(2, expect.objectContaining({
       repo: "xbmc/repo-plugins",
       taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
-      model: "claude-sonnet-4-5-20250929",
+      model: "claude-sonnet-5",
       deliveryId: "delivery-fallback",
       usedFallback: true,
       fallbackReason: "execution-error",

@@ -14,7 +14,7 @@ import { extractProvider } from "./providers.ts";
 
 /** Result of resolving a task type to a concrete model. */
 export interface ResolvedModel {
-  /** The model ID to use (e.g., "claude-sonnet-4-5-20250929"). */
+  /** The model ID to use (e.g., "claude-sonnet-5"). */
   modelId: string;
   /** The provider name (e.g., "anthropic", "openai", "google"). */
   provider: string;
@@ -30,7 +30,7 @@ export interface ResolvedModel {
 export interface TaskRouterConfig {
   /** Task type to model ID mappings. Supports wildcards like "review.*". */
   models: Record<string, string>;
-  /** Global default model. Defaults to claude-sonnet-4-5-20250929. */
+  /** Global default model. Defaults to claude-sonnet-5. */
   defaultModel?: string;
   /** Default fallback model. Defaults to a distinct Sonnet/Haiku counterpart. */
   defaultFallbackModel?: string;
@@ -42,7 +42,7 @@ export interface TaskRouter {
   resolve(taskType: string): ResolvedModel;
 }
 
-const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
+const DEFAULT_MODEL = "claude-sonnet-5";
 const DEFAULT_HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
 /**

@@ -60,12 +60,12 @@ describe("review-routing", () => {
     });
   });
 
-  test("does not apply risk scaling to small-diff reviews without an explicit routing override", () => {
+  test("applies risk scaling to small-diff reviews the same as full reviews", () => {
     expect(resolveReviewMaxTurnsOverride({
       taskType: TASK_TYPES.REVIEW_SMALL_DIFF,
       timeoutRiskLevel: "high",
       baseMaxTurns: 25,
-    })).toBeUndefined();
+    })).toBe(HIGH_RISK_REVIEW_MAX_TURNS);
   });
 
   test("raises standard full-review turn budget for medium and high timeout risk", () => {
