@@ -1,4 +1,5 @@
 import { applyEnforcement } from "../enforcement/index.ts";
+import type { SemanticGroundingLLM, SemanticGroundingOptions } from "../enforcement/index.ts";
 import type { FeedbackSuppressionResult } from "../feedback/index.ts";
 import { adjustConfidenceForFeedback } from "../feedback/index.ts";
 import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
@@ -141,6 +142,12 @@ type EnforcedExtractedFinding = ProcessedReviewFinding & {
   severityElevated: boolean;
   toolingSuppressed: boolean;
   enforcementPatternId?: string;
+  groundingDowngraded?: boolean;
+  groundingReason?: string;
+  preGroundingSeverity?: FindingSeverity;
+  semanticGroundingDowngraded?: boolean;
+  semanticGroundingReason?: string;
+  preSemanticGroundingSeverity?: FindingSeverity;
 };
 
 type ReviewGuardrailRunner = (opts: unknown) => Promise<unknown>;
@@ -159,6 +166,14 @@ export type ReviewReducerInput = {
   filesByCategory: Record<string, string[]>;
   filesByLanguage: Record<string, string[]>;
   languageRules?: LanguageRulesConfig;
+  /**
+   * Optional LLM + options for the semantic grounding re-verification pass
+   * (enforcement/semantic-grounding.ts). When omitted, or when
+   * `semanticGroundingOptions.enabled` is not true, the pass is a no-op --
+   * semantic grounding is opt-in, same as graph validation below.
+   */
+  semanticGroundingLLM?: SemanticGroundingLLM | null;
+  semanticGroundingOptions?: SemanticGroundingOptions;
   reviewSuppressions: Array<string | SuppressionPattern>;
   minConfidence: number;
   prioritizationWeights?: FindingPriorityWeights;
@@ -325,8 +340,11 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
           filesByCategory: input.filesByCategory,
           filesByLanguage: input.filesByLanguage,
           languageRules: input.languageRules,
+          diffText: input.diffContent,
+          semanticGroundingLLM: input.semanticGroundingLLM,
+          semanticGroundingOptions: input.semanticGroundingOptions,
           logger: input.logger,
-        }) as EnforcedExtractedFinding[]
+        }) as unknown as EnforcedExtractedFinding[]
       : [];
 
     const toolingSuppressedCount = enforcedFindings.filter((finding) => finding.toolingSuppressed).length;
@@ -336,6 +354,38 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       input.logger.info(
         { ...input.baseLog, toolingSuppressedCount, severityElevatedCount },
         "Language enforcement applied",
+      );
+    }
+
+    const groundingDowngradedCount = enforcedFindings.filter((finding) => finding.groundingDowngraded === true).length;
+    if (groundingDowngradedCount > 0) {
+      audit.push({ action: "severity-demoted", source: "enforcement", count: groundingDowngradedCount });
+      input.logger.info(
+        {
+          ...input.baseLog,
+          groundingDowngradedCount,
+          groundingReasons: enforcedFindings
+            .filter((finding) => finding.groundingDowngraded === true)
+            .map((finding) => finding.groundingReason)
+            .slice(0, 20),
+        },
+        "Diff grounding downgraded findings with unverifiable file:line citations",
+      );
+    }
+
+    const semanticGroundingDowngradedCount = enforcedFindings.filter((finding) => finding.semanticGroundingDowngraded === true).length;
+    if (semanticGroundingDowngradedCount > 0) {
+      audit.push({ action: "severity-demoted", source: "enforcement", count: semanticGroundingDowngradedCount });
+      input.logger.info(
+        {
+          ...input.baseLog,
+          semanticGroundingDowngradedCount,
+          semanticGroundingReasons: enforcedFindings
+            .filter((finding) => finding.semanticGroundingDowngraded === true)
+            .map((finding) => finding.semanticGroundingReason)
+            .slice(0, 20),
+        },
+        "Semantic grounding downgraded findings whose reasoning did not match the actual code",
       );
     }
 

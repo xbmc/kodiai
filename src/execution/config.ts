@@ -138,6 +138,12 @@ const graphValidationSchema = z
   })
   .default({ enabled: false });
 
+const semanticGroundingSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .default({ enabled: false });
+
 const repoDoctrineContractSchema = z.object({
   id: z.string().trim().min(1).max(REPO_DOCTRINE_LIMITS.maxIdLength),
   type: z.enum(REPO_DOCTRINE_CONTRACT_TYPES),
@@ -210,6 +216,7 @@ const reviewSchema = z
     prioritization: findingPrioritizationWeightsSchema,
     formatterSuggestions: formatterSuggestionsSchema,
     graphValidation: graphValidationSchema,
+    semanticGrounding: semanticGroundingSchema,
     doctrine: repoDoctrineSchema,
     pathInstructions: z.array(pathInstructionSchema).default([]),
     profile: z.enum(["strict", "balanced", "minimal"]).optional(),
@@ -255,6 +262,7 @@ const reviewSchema = z
       maxSuggestions: 10,
     },
     graphValidation: { enabled: false },
+    semanticGrounding: { enabled: false },
     doctrine: { enabled: false, contracts: [] },
     pathInstructions: [],
     outputLanguage: "en",
