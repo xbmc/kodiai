@@ -11,6 +11,7 @@ import { resolveReviewContinuationMergeContext } from "./review-continuation-mer
 import { resolveReviewContinuationRevisionCounts } from "./review-continuation-revision-counts.ts";
 import type { ReviewDetailsPublicationRuntime } from "./review-details-publication-runtime.ts";
 import { discardCheckpointsFailOpen } from "./review-handler-utils.ts";
+import { publishReviewExecutionErrorFallback } from "./review-error-publication.ts";
 import {
   publishRetryMergeContinuationResults,
   type RetryMergeContinuationPublicationStatus,
@@ -21,9 +22,28 @@ import {
 } from "./review-retry-settlement.ts";
 
 type PublishRetryMergeContinuationResults = typeof publishRetryMergeContinuationResults;
+type PublishReviewExecutionErrorFallback = typeof publishReviewExecutionErrorFallback;
+
+/**
+ * When a retry/continuation attempt itself fails to produce usable results (e.g. it
+ * also exhausts its turn budget), the settlement below quietly discards it on the
+ * assumption that the *original* first-pass review already published a partial
+ * review to the PR. That assumption only holds when the original attempt actually
+ * published something. If the original attempt deferred publication in favor of
+ * this retry (the normal "let the retry publish the final result" flow) and the
+ * retry then also fails to produce results, quiet-settling would leave the PR with
+ * zero visible output even though two full review attempts ran. Detect that case
+ * so we can fail open with a clear "ran out of steps" comment instead of silence.
+ */
+function shouldForceTurnLimitFallback(params: {
+  retryCompletedWithResults: boolean;
+  partialCommentId?: number;
+}): boolean {
+  return !params.retryCompletedWithResults && params.partialCommentId === undefined;
+}
 
 export type RetryContinuationSettlementStatus =
-  | (RetryNoAdditionalResultsSettlementStatus & { published: false })
+  | (RetryNoAdditionalResultsSettlementStatus & { published: boolean })
   | { status: "settled-without-canonical-update"; published: false; reason: string }
   | RetryMergeContinuationPublicationStatus;
 
@@ -42,7 +62,7 @@ export async function settleRetryContinuationResults(params: {
   reviewOutputKey: string;
   canonicalReviewOutputKey: string;
   retryReviewOutputKey: string;
-  retryResult: Pick<ExecutionResult, "conclusion" | "isTimeout" | "published">;
+  retryResult: Pick<ExecutionResult, "conclusion" | "isTimeout" | "published" | "stopReason" | "failureSubtype" | "errorMessage">;
   firstPassOutcome: Pick<ExecutionResult, "conclusion" | "stopReason" | "failureSubtype" | "isTimeout">;
   baseCheckpoint: CheckpointRecord | null;
   retryCheckpoint: CheckpointRecord | null;
@@ -67,8 +87,51 @@ export async function settleRetryContinuationResults(params: {
   }) => Promise<void>;
   persistContinuationFamilyState: Parameters<typeof publishRetryMergeContinuationResults>[0]["persistContinuationFamilyState"];
   publishRetryMergeContinuationResultsFn?: PublishRetryMergeContinuationResults;
+  publishReviewExecutionErrorFallbackFn?: PublishReviewExecutionErrorFallback;
 }): Promise<RetryContinuationSettlementResult> {
   if (!params.retryCompletedWithResults) {
+    let postedTurnLimitFallback = false;
+    if (shouldForceTurnLimitFallback(params)) {
+      const exhaustedTurnBudget =
+        params.firstPassOutcome.stopReason === "max_turns" ||
+        params.firstPassOutcome.failureSubtype === "error_max_turns" ||
+        params.retryResult.stopReason === "max_turns" ||
+        params.retryResult.failureSubtype === "error_max_turns";
+
+      const publishExecutionErrorFallback =
+        params.publishReviewExecutionErrorFallbackFn ?? publishReviewExecutionErrorFallback;
+      const fallbackPublication = await publishExecutionErrorFallback({
+        octokit: await params.getOctokit(),
+        owner: params.owner,
+        repo: params.repo,
+        prNumber: params.prNumber,
+        exhaustedTurnBudget,
+        retryScheduled: false,
+        category: exhaustedTurnBudget ? "timeout" : "internal_error",
+        errorMessage: exhaustedTurnBudget
+          ? undefined
+          : (params.retryResult.errorMessage ?? "The retry review run did not produce a publishable result."),
+        totalTimeoutSeconds: params.timeoutDurationSeconds,
+        complexityInfo: "Retry review run also failed to produce publishable results.",
+        logger: params.logger,
+        canPublishVisibleOutput: (reason) =>
+          params.canPublishReviewWorkOutput(params.attemptId, reason, params.deliveryId),
+        setReviewWorkPhase: params.setPublishPhase,
+      });
+
+      postedTurnLimitFallback = fallbackPublication.ok ? fallbackPublication.value.published : false;
+
+      params.logger.info(
+        {
+          deliveryId: params.deliveryId,
+          prNumber: params.prNumber,
+          retryConclusion: params.retryResult.conclusion,
+          published: postedTurnLimitFallback,
+        },
+        "Retry produced no additional results and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
+      );
+    }
+
     const quietSettlement = await settleRetryWithNoAdditionalResults({
       logger: params.logger,
       deliveryId: params.deliveryId,
@@ -78,13 +141,13 @@ export async function settleRetryContinuationResults(params: {
     if (!quietSettlement.ok) {
       return ok({
         status: "quiet-settled",
-        published: false,
+        published: postedTurnLimitFallback,
         persistedContinuationState: false,
         discardedCheckpoints: false,
         reason: "no-retry-results",
       });
     }
-    return ok({ ...quietSettlement.value, published: false });
+    return ok({ ...quietSettlement.value, published: postedTurnLimitFallback });
   }
 
   if (!params.baseCheckpoint) {

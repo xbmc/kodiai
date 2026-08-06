@@ -42,7 +42,7 @@ function makeParams(
     deliveryId: "delivery-1",
     reviewOutputKey: "review-key",
     retryReviewOutputKey: "retry-key",
-    retryResult: { conclusion: "success", isTimeout: false, published: false },
+    retryResult: { conclusion: "success", isTimeout: false, published: false, errorMessage: undefined },
     firstPassOutcome: { conclusion: "failure", isTimeout: true },
     baseCheckpoint: checkpoint(),
     retryCheckpoint: checkpoint({
@@ -94,6 +94,59 @@ describe("settleRetryContinuationResults", () => {
         reason: "no-retry-results",
       },
     });
+  });
+
+  test("posts a turn-limit fallback comment when retry fails and nothing has been published yet", async () => {
+    const fallbackCalls: Array<Record<string, unknown>> = [];
+    const params = makeParams({
+      partialCommentId: undefined,
+      retryResult: {
+        conclusion: "failure",
+        isTimeout: false,
+        published: false,
+        stopReason: "max_turns",
+        errorMessage: undefined,
+      },
+      firstPassOutcome: { conclusion: "failure", isTimeout: false, stopReason: "max_turns" },
+      publishReviewExecutionErrorFallbackFn: async (callParams) => {
+        fallbackCalls.push(callParams as unknown as Record<string, unknown>);
+        return {
+          ok: true,
+          value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" },
+        };
+      },
+    });
+
+    const result = await settleRetryContinuationResults(params);
+
+    expect(fallbackCalls).toHaveLength(1);
+    expect(fallbackCalls[0]?.exhaustedTurnBudget).toBe(true);
+    expect(fallbackCalls[0]?.retryScheduled).toBe(false);
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        status: "quiet-settled",
+        published: true,
+        persistedContinuationState: false,
+        discardedCheckpoints: false,
+        reason: "no-retry-results",
+      },
+    });
+  });
+
+  test("does not post a fallback comment when the original review already published a partial review", async () => {
+    const fallbackCalls: unknown[] = [];
+    const params = makeParams({
+      partialCommentId: 321,
+      publishReviewExecutionErrorFallbackFn: async () => {
+        fallbackCalls.push(true);
+        return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+      },
+    });
+
+    await settleRetryContinuationResults(params);
+
+    expect(fallbackCalls).toHaveLength(0);
   });
 
   test("returns merge publication Result when continuation is publishable", async () => {
