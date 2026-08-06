@@ -255,7 +255,7 @@ export function buildReviewReducerCounts(
       lowConfidence += 1;
     }
 
-    if (finding.severityDemoted === true) {
+    if (finding.severityDemoted === true || finding.groundingDowngraded === true || finding.semanticGroundingDowngraded === true) {
       severityDemoted += 1;
     }
 

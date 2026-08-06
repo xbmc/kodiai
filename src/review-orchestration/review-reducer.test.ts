@@ -71,6 +71,18 @@ describe("buildReviewReducerCounts", () => {
     ], undefined, { minConfidence: 50 })).not.toThrow();
   });
 
+  test("counts grounding-gate downgrades as severity demotions", () => {
+    expect(buildReviewReducerCounts([
+      baseFinding({ commentId: 1, groundingDowngraded: true, preGroundingSeverity: "critical" }),
+      baseFinding({ commentId: 2, semanticGroundingDowngraded: true, preSemanticGroundingSeverity: "major" }),
+      baseFinding({ commentId: 3, severityDemoted: true, preDemotionSeverity: "critical", demotionReason: "external-claim" }),
+      baseFinding({ commentId: 4 }),
+    ], [], { minConfidence: 50 })).toMatchObject({
+      input: 4,
+      severityDemoted: 3,
+    });
+  });
+
   test("counts overlapping filtered states with reducer-visible predicates", () => {
     expect(buildReviewReducerCounts([
       baseFinding({ commentId: 1, suppressed: true, filterAction: "suppressed", confidence: 10 }),
