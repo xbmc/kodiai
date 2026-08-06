@@ -248,6 +248,63 @@ describe("findDependencyConsumers", () => {
     const uniquePaths = new Set(result.consumers.map((c) => c.filePath));
     expect(uniquePaths.size).toBe(result.consumers.length);
   });
+
+  test("matches libavcodec/libavformat headers for library ffmpeg (alias-aware)", async () => {
+    // Real xbmc code never includes "ffmpeg" literally -- it includes the
+    // sub-library headers directly (libavcodec/avcodec.h, etc.). A search
+    // for the literal package name alone would find 0 consumers here.
+    const result = await findDependencyConsumers({
+      workspaceDir: "/fake",
+      libraryName: "ffmpeg",
+      octokit: createMockOctokit(),
+      owner: "xbmc",
+      repo: "xbmc",
+      timeBudgetMs: 5000,
+      __runGrepForTests: mockGrepRunner(
+        "xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp:10:#include <libavcodec/avcodec.h>\n" +
+        "xbmc/cores/VideoPlayer/DVDDemuxers/DVDDemuxFFmpeg.cpp:12:#include <libavformat/avformat.h>\n",
+      ),
+      __runCmakeGrepForTests: mockGrepRunner("", 1),
+    });
+
+    expect(result.consumers.length).toBe(2);
+    expect(result.consumers.some((c) => c.filePath.includes("DVDVideoCodecFFmpeg.cpp"))).toBe(true);
+    expect(result.consumers.some((c) => c.filePath.includes("DVDDemuxFFmpeg.cpp"))).toBe(true);
+  });
+
+  test("matches uppercase CMake FFMPEG_LIBRARIES variable for library ffmpeg (case-insensitive)", async () => {
+    const result = await findDependencyConsumers({
+      workspaceDir: "/fake",
+      libraryName: "ffmpeg",
+      octokit: createMockOctokit(),
+      owner: "xbmc",
+      repo: "xbmc",
+      timeBudgetMs: 5000,
+      __runGrepForTests: mockGrepRunner("", 1),
+      __runCmakeGrepForTests: mockGrepRunner(
+        "xbmc/cores/VideoPlayer/CMakeLists.txt:20:target_link_libraries(VideoPlayer PRIVATE ${FFMPEG_LIBRARIES})\n",
+      ),
+    });
+
+    expect(result.consumers.length).toBe(1);
+    expect(result.consumers[0]!.filePath).toBe("xbmc/cores/VideoPlayer/CMakeLists.txt");
+  });
+
+  test("returns 0 consumers for ffmpeg when nothing in the tree references any known alias", async () => {
+    const result = await findDependencyConsumers({
+      workspaceDir: "/fake",
+      libraryName: "ffmpeg",
+      octokit: createMockOctokit(),
+      owner: "xbmc",
+      repo: "xbmc",
+      timeBudgetMs: 5000,
+      __runGrepForTests: mockGrepRunner("", 1),
+      __runCmakeGrepForTests: mockGrepRunner("", 1),
+    });
+
+    expect(result.consumers.length).toBe(0);
+    expect(result.degradationNote).toBeNull();
+  });
 });
 
 // ─── parseCmakeFindModule ────────────────────────────────────────────────────
