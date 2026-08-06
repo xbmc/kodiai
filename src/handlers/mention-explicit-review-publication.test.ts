@@ -139,6 +139,44 @@ describe("publishExplicitMentionReviewResult", () => {
     expect(call.body).toContain("<!-- kodiai:review-output-key:review-key -->");
   });
 
+  test("never leaks lifecycle telemetry counts into the published APPROVE body, even when non-blocking findings were recorded", async () => {
+    // Regression guard for PR #206: kodiai once published "Decision: APPROVE"
+    // / "Issues: none" in the same comment as an internal telemetry line
+    // reporting non-zero minor findings (severity=...minor:2), contradicting
+    // itself. That telemetry line is now log-only -- verify it never
+    // reappears in the published body, whatever findings were recorded.
+    const harness = createOctokit({});
+    const result = await publishExplicitMentionReviewResult(baseParams({
+      octokit: harness.octokit as never,
+      explicitReviewFindingLifecycleResult: {
+        projection: {
+          schema: "review-finding-lifecycle.v1",
+          status: "normalized",
+          counts: {
+            input: 2,
+            recorded: 2,
+            rejected: 0,
+            unsafeInputFields: 0,
+            status: { detected: 2, open: 2, validated: 0, degraded: 0 },
+            severity: { critical: 0, major: 0, medium: 0, minor: 2 },
+            actionability: { actionable: 0, "needs-human-review": 2, blocked: 0 },
+          },
+          rejectedReasonCodes: [],
+          redaction: { unsafeInputFieldCount: 0 },
+        },
+      } as never,
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(harness.createReview).toHaveBeenCalledTimes(1);
+    const call = harness.createReview.mock.calls[0]![0] as { body: string; event: string };
+    expect(call.event).toBe("APPROVE");
+    expect(call.body).toContain("Decision: APPROVE");
+    expect(call.body).not.toContain("severity=");
+    expect(call.body).not.toContain("actionability=");
+    expect(call.body).not.toContain("needs-human-review");
+  });
+
   test("publishes an approval-shaped comment instead of a pull review when autoApprove is false", async () => {
     const harness = createOctokit({});
     const result = await publishExplicitMentionReviewResult(baseParams({
