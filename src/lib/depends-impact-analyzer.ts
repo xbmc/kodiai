@@ -17,6 +17,40 @@ import { withTimeBudget } from "./usage-analyzer.ts";
 
 const MODULE_CONTENT_FETCH_CONCURRENCY = 4;
 
+// ─── Name Alias Resolution ──────────────────────────────────────────────────
+
+/**
+ * Known mappings for [depends] package names whose upstream package name
+ * doesn't match the identifiers actually used in #include paths / CMake
+ * variables throughout the xbmc source tree.
+ *
+ * The canonical example is "ffmpeg": xbmc never references the literal
+ * string "ffmpeg" in source -- it includes ffmpeg's individual libraries
+ * (libavcodec/avcodec.h, libavformat/avformat.h, ...) and links against the
+ * CMake variable FFMPEG_LIBRARIES. A pattern search for the literal package
+ * name alone returns 0 consumers even though the library is used pervasively.
+ */
+const KNOWN_LIBRARY_ALIASES: Record<string, string[]> = {
+  ffmpeg: [
+    "ffmpeg",
+    "libavcodec",
+    "libavformat",
+    "libavutil",
+    "libavfilter",
+    "libavdevice",
+    "libswscale",
+    "libswresample",
+  ],
+};
+
+function resolveSearchAliases(libraryName: string): string[] {
+  return KNOWN_LIBRARY_ALIASES[libraryName.toLowerCase()] ?? [libraryName];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type IncludeConsumer = {
@@ -116,18 +150,27 @@ export async function findDependencyConsumers(params: {
   let timeLimitReached = false;
   const seenPaths = new Set<string>();
 
-  const libLower = libraryName.toLowerCase();
+  // Search under all known aliases for this library (e.g. "ffmpeg" also
+  // searches "libavcodec", "libavformat", etc.) so that a dependency whose
+  // upstream package name differs from the identifiers used in source is
+  // still found. Falls back to the literal name when no aliases are known.
+  const searchAliases = resolveSearchAliases(libraryName);
+  const aliasLowerSet = new Set(searchAliases.map((alias) => alias.toLowerCase()));
+  const aliasPattern = searchAliases.map(escapeRegExp).join("|");
 
   try {
     // --- #include pass ---
-    const includePattern = `#include.*[<"]${libraryName}[/.]`;
+    // Case-insensitive: CMake identifiers derived from these names are
+    // conventionally uppercase (e.g. FFMPEG_LIBRARIES) even though #include
+    // paths are lowercase, so a single case-insensitive pass covers both.
+    const includePattern = `#include.*[<"](?:${aliasPattern})[/.]`;
 
     const runIncludeGrep: GrepRunner =
       __runGrepForTests ??
       (async (p) => {
         return await runCommandWithCappedOutput({
           command: "git",
-          args: ["grep", "-rn", "--max-count=100", "-E", p.pattern],
+          args: ["grep", "-rn", "--max-count=100", "-i", "-E", p.pattern],
           cwd: p.workspaceDir,
           timeoutMs: timeBudgetMs,
           maxStdoutBytes: 256 * 1024,
@@ -151,8 +194,10 @@ export async function findDependencyConsumers(params: {
 
       const parsed = parseGrepOutput(stdoutText);
       for (const entry of parsed) {
-        // Filter: the snippet must actually reference this library
-        if (!entry.snippet.toLowerCase().includes(libLower)) continue;
+        // Filter: the snippet must actually reference this library or one
+        // of its known aliases (e.g. "libavcodec" for "ffmpeg")
+        const snippetLower = entry.snippet.toLowerCase();
+        if (![...aliasLowerSet].some((alias) => snippetLower.includes(alias))) continue;
 
         seenPaths.add(entry.filePath);
         consumers.push({
@@ -166,14 +211,18 @@ export async function findDependencyConsumers(params: {
 
     // --- cmake target_link_libraries pass ---
     if (!timeLimitReached) {
-      const cmakePattern = `target_link_libraries.*${libraryName}`;
+      // Case-insensitive: CMake conventionally uppercases variable names
+      // derived from the library (e.g. target_link_libraries(foo ${FFMPEG_LIBRARIES})
+      // or PkgConfig::FFMPEG), which a case-sensitive match on the lowercase
+      // package name would miss entirely.
+      const cmakePattern = `target_link_libraries.*(?:${aliasPattern})`;
 
       const runCmakeGrep: GrepRunner =
         __runCmakeGrepForTests ??
         (async (p) => {
           return await runCommandWithCappedOutput({
             command: "git",
-            args: ["grep", "-rn", "--max-count=100", "-E", p.pattern, "--", p.pathspec ?? "*/CMakeLists.txt"],
+            args: ["grep", "-rn", "--max-count=100", "-i", "-E", p.pattern, "--", p.pathspec ?? "*/CMakeLists.txt"],
             cwd: p.workspaceDir,
             timeoutMs: Math.max(timeBudgetMs / 2, 1000),
             maxStdoutBytes: 256 * 1024,
