@@ -36,11 +36,41 @@ export {
   IMPORT_ORDER_KEYWORDS,
 } from "./tooling-suppression.ts";
 
+// Diff grounding
+export {
+  enforceDiffGrounding,
+  buildDiffGroundingIndex,
+  DIFF_GROUNDING_DOWNGRADE_TARGET,
+} from "./diff-grounding.ts";
+export type { DiffGroundingReasonCode, DiffGroundingResult } from "./diff-grounding.ts";
+
+// Semantic grounding
+export {
+  enforceSemanticGrounding,
+  buildSemanticGroundingSourceIndex,
+  SEMANTIC_GROUNDING_DOWNGRADE_TARGET,
+} from "./semantic-grounding.ts";
+export type {
+  SemanticGroundingReasonCode,
+  SemanticGroundingResult,
+  SemanticGroundingLLM,
+  SemanticGroundingOptions,
+} from "./semantic-grounding.ts";
+
+import type { Logger } from "pino";
 import type { FindingSeverity } from "../knowledge/types.ts";
 import type { LanguageRulesConfig, EnforcedFinding } from "./types.ts";
 import { detectRepoTooling } from "./tooling-detection.ts";
 import { suppressToolingFindings } from "./tooling-suppression.ts";
 import { enforceSeverityFloors } from "./severity-floors.ts";
+import { enforceDiffGrounding, buildDiffGroundingIndex, type DiffGroundingResult } from "./diff-grounding.ts";
+import {
+  enforceSemanticGrounding,
+  buildSemanticGroundingSourceIndex,
+  type SemanticGroundingLLM,
+  type SemanticGroundingOptions,
+  type SemanticGroundingResult,
+} from "./semantic-grounding.ts";
 
 /**
  * Minimum shape required by the enforcement pipeline.
@@ -60,6 +90,10 @@ type EnforcementFinding = {
  *   1. Detect repo tooling (filesystem scan)
  *   2. Suppress tooling-covered findings
  *   3. Enforce severity floors
+ *   4. Ground critical/major file:line citations against the collected diff
+ *   5. Semantically re-verify critical/major findings that survived step 4
+ *      (opt-in, LLM-backed; no-op unless a `semanticGroundingLLM` and
+ *      `semanticGroundingOptions.enabled: true` are supplied)
  *
  * Fail-open: any error in enforcement logs a warning and returns
  * findings unchanged with default enforcement metadata.
@@ -70,8 +104,17 @@ export async function applyEnforcement(params: {
   filesByCategory: Record<string, string[]>;
   filesByLanguage: Record<string, string[]>;
   languageRules?: LanguageRulesConfig;
-  logger?: { warn: (obj: unknown, msg: string) => void };
-}): Promise<(EnforcementFinding & EnforcedFinding)[]> {
+  /** Raw unified diff text collected for this review, used to ground file:line citations. */
+  diffText?: string | null;
+  /**
+   * Optional LLM used for the semantic grounding re-verification pass (step
+   * 5). When omitted or when `semanticGroundingOptions.enabled` is not
+   * true, the step is a no-op passthrough -- semantic grounding is opt-in.
+   */
+  semanticGroundingLLM?: SemanticGroundingLLM | null;
+  semanticGroundingOptions?: SemanticGroundingOptions;
+  logger?: Logger | { warn: (obj: unknown, msg: string) => void; info?: (obj: unknown, msg: string) => void };
+}): Promise<(EnforcementFinding & EnforcedFinding & DiffGroundingResult & SemanticGroundingResult)[]> {
   try {
     // Step 1: Detect repo tooling (filesystem scan)
     const detectedTooling = await detectRepoTooling(params.workspaceDir, params.logger);
@@ -96,10 +139,36 @@ export async function applyEnforcement(params: {
     // Merge toolingSuppressed from step 2 back into step 3 results.
     // enforceSeverityFloors always sets toolingSuppressed: false because it
     // operates independently; we restore the actual suppression state here.
-    return enforced.map((finding, i) => ({
+    const merged = enforced.map((finding, i) => ({
       ...finding,
       toolingSuppressed: afterTooling[i]?.toolingSuppressed ?? false,
-    })) as (EnforcementFinding & EnforcedFinding)[];
+    }));
+
+    // Step 4: Ground critical/major citations against the collected diff.
+    // Runs last so a hallucinated line reference can pull an elevated
+    // severity back down; it never re-elevates.
+    const diffLineIndex = buildDiffGroundingIndex(params.diffText);
+    const grounded = enforceDiffGrounding({
+      findings: merged as (typeof merged[number] & { severity: FindingSeverity })[],
+      diffLineIndex,
+    });
+
+    // Step 5: Semantically re-verify critical/major findings that survived
+    // structural diff grounding. Opt-in (no-op passthrough when no LLM is
+    // supplied) and bounded (at most a handful of LLM calls per review --
+    // see semantic-grounding.ts for the cap). Runs last for the same reason
+    // as step 4: it can only pull an already-elevated severity back down,
+    // never re-elevate.
+    const sourceIndex = buildSemanticGroundingSourceIndex(params.diffText);
+    const semanticallyGrounded = await enforceSemanticGrounding({
+      findings: grounded as (typeof grounded[number] & { severity: FindingSeverity })[],
+      sourceIndex,
+      llm: params.semanticGroundingLLM,
+      options: params.semanticGroundingOptions,
+      logger: params.logger,
+    });
+
+    return semanticallyGrounded as (EnforcementFinding & EnforcedFinding & DiffGroundingResult & SemanticGroundingResult)[];
   } catch (err) {
     // Fail-open: log warning, return findings unchanged with default metadata
     params.logger?.warn(
@@ -111,6 +180,13 @@ export async function applyEnforcement(params: {
       originalSeverity: f.severity,
       severityElevated: false,
       toolingSuppressed: false,
+      groundingChecked: false,
+      groundingVerified: true,
+      groundingDowngraded: false,
+      groundingReason: "no-diff-available" as const,
+      semanticGroundingChecked: false,
+      semanticGroundingDowngraded: false,
+      semanticGroundingReason: "disabled" as const,
     }));
   }
 }

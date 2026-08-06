@@ -22,7 +22,7 @@ import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type DependsVerdict = {
-  level: "safe" | "risky" | "needs-attention";
+  level: "safe" | "risky" | "needs-attention" | "inconclusive";
   emoji: string;
   label: string;
   summary: string;
@@ -61,6 +61,14 @@ export type InlineComment = {
  * - "safe": no breaking changes, no hash mismatches, no new transitive deps, < 5 consumers
  * - "needs-attention": has breaking changes OR new transitive deps OR > 5 consumers OR hash unavailable
  * - "risky": hash mismatch OR breaking changes + many consumers OR patch removals
+ * - "inconclusive": the impact scan did not run, errored, timed out, or found
+ *   zero consuming files with no other corroborating signal. A pattern-based
+ *   #include/CMake search can never *prove* a dependency is unused -- it can
+ *   only fail to find usage, which may mean the search patterns didn't match
+ *   this codebase's naming conventions (e.g. searching for the literal string
+ *   "ffmpeg" finds nothing in code that only references "libavcodec"). Zero
+ *   results must never be reported with the same confidence as a genuinely
+ *   verified "no consumers" result.
  */
 export function computeDependsVerdict(data: DependsReviewData): DependsVerdict {
   const hasHashMismatch = data.hashResults.some(
@@ -78,6 +86,17 @@ export function computeDependsVerdict(data: DependsReviewData): DependsVerdict {
   const hasHashUnavailable = data.hashResults.some(
     (h) => h.result.status === "unavailable",
   );
+
+  // The impact scan is inconclusive when it didn't run at all, hit an error,
+  // timed out before finishing, or ran cleanly but matched zero consuming
+  // files. Zero matches is inherently ambiguous for a pattern-based search:
+  // it cannot distinguish "genuinely unused" from "search patterns didn't
+  // match this codebase's naming conventions for this dependency."
+  const impactScanInconclusive =
+    data.impact === null ||
+    Boolean(data.impact.degradationNote) ||
+    data.impact.timeLimitReached ||
+    data.impact.consumers.length === 0;
 
   // Risky: hash mismatch, or breaking changes + many consumers, or patch removals
   if (hasHashMismatch) {
@@ -144,6 +163,15 @@ export function computeDependsVerdict(data: DependsReviewData): DependsVerdict {
     };
   }
 
+  if (impactScanInconclusive) {
+    return {
+      level: "inconclusive",
+      emoji: "\u{1F50D}",
+      label: "Impact scan inconclusive",
+      summary: buildInconclusiveSummary(data.impact),
+    };
+  }
+
   // Safe
   return {
     level: "safe",
@@ -151,6 +179,20 @@ export function computeDependsVerdict(data: DependsReviewData): DependsVerdict {
     label: "Safe to merge",
     summary: "No breaking changes, hashes verified, limited impact scope.",
   };
+}
+
+/** Builds an honest summary for why the impact scan could not confirm safety. */
+function buildInconclusiveSummary(impact: ImpactResult | null): string {
+  if (impact === null) {
+    return "Impact scan did not run \u2014 unable to determine which files consume this dependency.";
+  }
+  if (impact.degradationNote) {
+    return `Impact scan failed: ${impact.degradationNote}`;
+  }
+  if (impact.timeLimitReached) {
+    return "Impact scan timed out before completing \u2014 results may be incomplete.";
+  }
+  return "0 consuming files matched via #include/CMake pattern search. This does not confirm the dependency is unused \u2014 pattern-based search can miss indirect usage or naming conventions it doesn't cover. Verify manually before merging.";
 }
 
 // ─── Comment Builder ────────────────────────────────────────────────────────
@@ -247,9 +289,18 @@ export function buildDependsReviewComment(data: DependsReviewData): string {
     sections.push("");
 
     const count = data.impact.consumers.length;
-    sections.push(
-      `**${count} consuming file${count !== 1 ? "s" : ""}** found in the codebase.`,
-    );
+    if (count === 0) {
+      sections.push(
+        "**0 consuming files matched** via #include/CMake pattern search. " +
+        "This does not confirm the dependency is unused — the search only covers direct " +
+        "`#include` and `target_link_libraries` patterns and can miss indirect usage or " +
+        "naming conventions it doesn't cover. Verify manually before merging.",
+      );
+    } else {
+      sections.push(
+        `**${count} consuming file${count !== 1 ? "s" : ""}** found in the codebase.`,
+      );
+    }
     sections.push("");
 
     if (count > 0) {

@@ -42,6 +42,8 @@ export function buildReviewReducerInput(params: {
   guardrailAuditStore: ReviewReducerInput["guardrailAuditStore"];
   guardrailStrictness: ReviewReducerInput["guardrailStrictness"];
   graphValidationLLM: ReviewReducerInput["graphValidationLLM"];
+  semanticGroundingLLM?: ReviewReducerInput["semanticGroundingLLM"];
+  semanticGroundingOptions?: ReviewReducerInput["semanticGroundingOptions"];
   repoDoctrine: ReviewReducerInput["repoDoctrine"];
 }): ReviewReducerInput {
   const commentSlopFindings = toCommentSlopReducerFindings(
@@ -80,6 +82,8 @@ export function buildReviewReducerInput(params: {
     guardrailAuditStore: params.guardrailAuditStore,
     guardrailStrictness: params.guardrailStrictness,
     graphValidationLLM: params.graphValidationLLM,
+    semanticGroundingLLM: params.semanticGroundingLLM,
+    semanticGroundingOptions: params.semanticGroundingOptions,
     repoDoctrine: params.repoDoctrine,
   };
 }

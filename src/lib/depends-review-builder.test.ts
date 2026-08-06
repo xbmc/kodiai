@@ -204,6 +204,69 @@ describe("computeDependsVerdict", () => {
     expect(verdict.level).toBe("needs-attention");
     expect(verdict.summary).toContain("unavailable");
   });
+
+  // ─── Impact scan confidence (regression: xbmc/xbmc#28832 ffmpeg 9.0 bump) ──
+  //
+  // kodiai previously posted "0 consuming files found" + "Safe to merge" for
+  // a major ffmpeg bump because the pattern search for the literal string
+  // "ffmpeg" found nothing (real usage is via libavcodec/libavformat/...).
+  // A zero-consumer scan must never be reported with "safe" confidence.
+
+  test("returns inconclusive (not safe) when impact scan found 0 consumers", () => {
+    const data = makeSafeData({
+      impact: {
+        consumers: [],
+        transitive: { dependents: [], newDependencies: [], circular: [] },
+        timeLimitReached: false,
+        degradationNote: null,
+      },
+    });
+    const verdict = computeDependsVerdict(data);
+    expect(verdict.level).toBe("inconclusive");
+    expect(verdict.label).toBe("Impact scan inconclusive");
+    expect(verdict.summary).not.toContain("Safe to merge");
+    expect(verdict.summary.toLowerCase()).toContain("does not confirm");
+  });
+
+  test("returns inconclusive when impact scan did not run (null)", () => {
+    const data = makeSafeData({ impact: null, transitive: null });
+    const verdict = computeDependsVerdict(data);
+    expect(verdict.level).toBe("inconclusive");
+    expect(verdict.summary).toContain("did not run");
+  });
+
+  test("returns inconclusive when impact scan errored", () => {
+    const data = makeSafeData({
+      impact: {
+        consumers: [],
+        transitive: { dependents: [], newDependencies: [], circular: [] },
+        timeLimitReached: false,
+        degradationNote: "Impact analysis error: git not found",
+      },
+    });
+    const verdict = computeDependsVerdict(data);
+    expect(verdict.level).toBe("inconclusive");
+    expect(verdict.summary).toContain("git not found");
+  });
+
+  test("returns inconclusive when impact scan timed out with 0 consumers", () => {
+    const data = makeSafeData({
+      impact: {
+        consumers: [],
+        transitive: { dependents: [], newDependencies: [], circular: [] },
+        timeLimitReached: true,
+        degradationNote: null,
+      },
+    });
+    const verdict = computeDependsVerdict(data);
+    expect(verdict.level).toBe("inconclusive");
+    expect(verdict.summary).toContain("timed out");
+  });
+
+  test("stays safe when impact scan found a nonzero (but low) consumer count", () => {
+    const verdict = computeDependsVerdict(makeSafeData());
+    expect(verdict.level).toBe("safe");
+  });
 });
 
 // ─── buildDependsReviewComment ──────────────────────────────────────────────
@@ -252,6 +315,22 @@ describe("buildDependsReviewComment", () => {
     expect(comment).toContain("### Impact Assessment");
     expect(comment).toContain("2 consuming files");
     expect(comment).toContain("Compress.cpp");
+  });
+
+  test("hedges impact assessment wording when 0 consumers found (does not assert safety)", () => {
+    const data = makeSafeData({
+      impact: {
+        consumers: [],
+        transitive: { dependents: [], newDependencies: [], circular: [] },
+        timeLimitReached: false,
+        degradationNote: null,
+      },
+    });
+    const comment = buildDependsReviewComment(data);
+    expect(comment).toContain("Impact scan inconclusive");
+    expect(comment).not.toContain("Safe to merge");
+    expect(comment).toContain("0 consuming files matched");
+    expect(comment.toLowerCase()).toContain("does not confirm the dependency is unused");
   });
 
   test("includes hash verification", () => {
