@@ -947,6 +947,23 @@ describe("review handler structure", () => {
     expect(preparationSource).toContain("./review-graph-validation-llm.ts");
   });
 
+  test("keeps semantic-grounding LLM routing out of the monster handler", () => {
+    const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
+    const preparationSource = readFileSync(
+      new URL("./review-candidate-publication-preparation.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("const semanticGroundingLLM = ");
+    expect(source).not.toContain("const { createTaskRouter } = await import(\"../llm/task-router.ts\")");
+    expect(source).not.toContain("const genResult = await generateWithFallback({");
+    expect(source).toContain("resolveReviewCandidatePublicationPreparation");
+    expect(preparationSource).toContain("resolveReviewSemanticGroundingLLM");
+    expect(preparationSource).toContain("./review-semantic-grounding-llm.ts");
+    expect(preparationSource).toContain("enabled: params.config.review.semanticGrounding.enabled");
+    expect(preparationSource).toContain("maxFindingsToCheck: 5");
+  });
+
   test("keeps candidate approval adapter context out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
     const preparationSource = readFileSync(

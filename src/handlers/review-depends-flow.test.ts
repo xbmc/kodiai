@@ -170,7 +170,9 @@ describe("resolveReviewDependsFlow", () => {
     });
     expect(info.mock.calls.at(-1)?.[0]).toMatchObject({
       gate: "depends-review-continue",
-      verdict: "safe",
+      // impact is null here (no workspaceDir was provided) -- the scan never
+      // ran, so the verdict must be "inconclusive", not a confident "safe".
+      verdict: "inconclusive",
       hasSourceChanges: true,
     });
     expect(info.mock.calls.at(-1)?.[1]).toBe(

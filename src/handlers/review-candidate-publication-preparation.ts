@@ -27,6 +27,7 @@ import type { ReviewReducerRuntime } from "./review-reducer-runtime.ts";
 import { resolveReviewCandidateFindingContext } from "./review-candidate-finding-context.ts";
 import { resolveReviewFeedbackSuppression } from "./review-feedback-suppression.ts";
 import { resolveReviewGraphValidationLLM } from "./review-graph-validation-llm.ts";
+import { resolveReviewSemanticGroundingLLM } from "./review-semantic-grounding-llm.ts";
 import { buildReviewReducerInput } from "./review-reducer-input.ts";
 import { runReviewReducerFailOpen } from "./review-reducer-runtime.ts";
 import { resolveReviewCandidateApprovalContext } from "./review-candidate-approval-context.ts";
@@ -127,6 +128,18 @@ export async function resolveReviewCandidatePublicationPreparation(params: {
     logger: params.logger,
   });
 
+  // Semantic grounding follows the same repo-config opt-in pattern as graph
+  // validation above (review.semanticGrounding.enabled, default false).
+  // Cost stays bounded once enabled because enforcement/semantic-grounding.ts
+  // caps actual LLM calls at maxFindingsToCheck regardless of how many
+  // findings are eligible.
+  const semanticGroundingLLM = resolveReviewSemanticGroundingLLM({
+    enabled: params.config.review.semanticGrounding.enabled,
+    repo: `${params.owner}/${params.repo}`,
+    deliveryId: params.deliveryId,
+    logger: params.logger,
+  });
+
   const reviewReducerInput = buildReviewReducerInput({
     extractedFindings,
     reviewCandidateFindingResult,
@@ -155,6 +168,8 @@ export async function resolveReviewCandidatePublicationPreparation(params: {
     guardrailAuditStore: params.guardrailAuditStore,
     guardrailStrictness: params.config.guardrails?.strictness ?? "standard",
     graphValidationLLM,
+    semanticGroundingLLM,
+    semanticGroundingOptions: { enabled: params.config.review.semanticGrounding.enabled, maxFindingsToCheck: 5 },
     repoDoctrine: params.repoDoctrineReviewSurface,
   });
 

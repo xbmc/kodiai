@@ -433,6 +433,71 @@ export function buildPrDiffCommentabilityIndex(prDiffText: string): PrDiffCommen
   return index;
 }
 
+/** Per-file map from post-change line number to the literal source text at that line. */
+export type PrDiffLineTextIndex = Map<string, Map<number, string>>;
+
+/**
+ * Build a per-file, per-line index of literal source text (post-change /
+ * right-hand-side numbering) from a unified PR diff. Shares the same
+ * single-pass parsing approach as `buildPrDiffCommentabilityIndex` (same
+ * header/hunk regexes, same cursor bookkeeping) but retains the line text
+ * instead of only its presence, so callers can pull the actual code at a
+ * cited line without re-parsing the diff with a heavier parser.
+ */
+export function buildPrDiffLineTextIndex(prDiffText: string): PrDiffLineTextIndex {
+  const index: PrDiffLineTextIndex = new Map();
+  let currentPath: string | undefined;
+  let rightCursor: number | undefined;
+
+  for (const line of prDiffText.split(/\r?\n/)) {
+    const diffHeaderMatch = GIT_DIFF_HEADER_RE.exec(line);
+    if (diffHeaderMatch) {
+      currentPath = parseDiffHeaderPath(diffHeaderMatch[2]!);
+      rightCursor = undefined;
+      continue;
+    }
+
+    if (line.startsWith("+++ ")) {
+      currentPath = parseFileHeaderPath(line);
+      rightCursor = undefined;
+      continue;
+    }
+
+    if (line.startsWith("@@")) {
+      const hunkHeaderMatch = PR_HUNK_HEADER_RE.exec(line);
+      rightCursor = hunkHeaderMatch ? Number.parseInt(hunkHeaderMatch[1]!, 10) : undefined;
+      continue;
+    }
+
+    if (!currentPath || rightCursor === undefined) {
+      continue;
+    }
+
+    if (line.startsWith(" ") || line.startsWith("+")) {
+      let pathLines = index.get(currentPath);
+      if (!pathLines) {
+        pathLines = new Map<number, string>();
+        index.set(currentPath, pathLines);
+      }
+      pathLines.set(rightCursor, line.slice(1));
+      rightCursor += 1;
+      continue;
+    }
+
+    if (line.startsWith("-")) {
+      continue;
+    }
+
+    if (line.startsWith("\\ No newline at end of file") || line === "") {
+      continue;
+    }
+
+    rightCursor = undefined;
+  }
+
+  return index;
+}
+
 interface FormatterChangeGroup {
   removed: FormatterDiffLine[];
   added: FormatterDiffLine[];
