@@ -228,6 +228,46 @@ test("createJobQueue updates active job snapshots when setPhase is called", asyn
   expect(queue.getActiveJobs(42)).toHaveLength(0);
 });
 
+test("createJobQueue getAllActiveJobs flattens active jobs across every installation", async () => {
+  const queue = createJobQueue(createNoopLogger());
+  const releaseA = Promise.withResolvers<void>();
+  const releaseB = Promise.withResolvers<void>();
+  const startedA = Promise.withResolvers<void>();
+  const startedB = Promise.withResolvers<void>();
+
+  const jobA = queue.enqueue(
+    1,
+    async () => {
+      startedA.resolve();
+      await releaseA.promise;
+      return "a";
+    },
+    { lane: "review", key: "acme/widgets#1" },
+  );
+  const jobB = queue.enqueue(
+    2,
+    async () => {
+      startedB.resolve();
+      await releaseB.promise;
+      return "b";
+    },
+    { lane: "review", key: "acme/other#2" },
+  );
+
+  await Promise.all([startedA.promise, startedB.promise]);
+
+  const all = queue.getAllActiveJobs!();
+  expect(all).toHaveLength(2);
+  expect(all.map((snapshot) => snapshot.installationId).sort()).toEqual([1, 2]);
+  expect(all.map((snapshot) => snapshot.key).sort()).toEqual(["acme/other#2", "acme/widgets#1"]);
+
+  releaseA.resolve();
+  releaseB.resolve();
+  await Promise.all([jobA, jobB]);
+
+  expect(queue.getAllActiveJobs!()).toHaveLength(0);
+});
+
 test("createJobQueue counts jobs as in-flight work for shutdown drain from enqueue to completion", async () => {
   const { tracker, counts } = createRequestTrackerFake();
   const queue = createJobQueue(createNoopLogger(), { requestTracker: tracker });
