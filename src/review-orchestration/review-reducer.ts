@@ -20,6 +20,41 @@ import { splitDiffByFile } from "../lib/review-git-utils.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { validateGraphAmplifiedFindings as defaultValidateGraphAmplifiedFindings, type GraphValidationFinding, type GraphValidationResult, type GraphValidationVerdict, type ValidationLLM } from "../review-graph/validation.ts";
 import type { LanguageRulesConfig } from "../enforcement/types.ts";
+
+// Re-exported so existing importers keep a single entry point for the reducer.
+export type {
+  ProcessedReviewFinding,
+  RepoDoctrineReducerProjection,
+  RepoDoctrineReducerStatus,
+  ReviewReducerAuditEvent,
+  ReviewReducerCounts,
+  ReviewReducerDetailsSummary,
+  ReviewReducerFindingAction,
+  ReviewReducerInput,
+  ReviewReducerPrioritizationStats,
+  ReviewReducerResult,
+  ReviewReducerStatus,
+} from "./review-reducer-types.ts";
+export { toReviewReducerDetailsSummary } from "./review-reducer-summary.ts";
+
+import type {
+  CountOptions,
+  DegradedReviewReducerInput,
+  EnforcedExtractedFinding,
+  ProcessedReviewFinding,
+  RepoDoctrineReducerProjection,
+  ReviewReducerAuditEvent,
+  ReviewReducerCounts,
+  ReviewReducerInput,
+  ReviewReducerPrioritizationStats,
+  ReviewReducerResult,
+  ReviewReducerStatus,
+} from "./review-reducer-types.ts";
+import {
+  normalizeRepoDoctrineReducerProjection,
+  sanitizeSummaryToken,
+  toReviewReducerDetailsSummary,
+} from "./review-reducer-summary.ts";
 import {
   severityBeforeGates,
   wasDowngradedByGate,
@@ -34,189 +69,6 @@ const GATE_DOWNGRADE_LOG_MESSAGES: ReadonlyArray<readonly [SeverityGate, string]
   ["semantic-grounding", "Semantic grounding downgraded findings whose reasoning did not match the actual code"],
 ];
 
-export type ReviewReducerStatus = "ready" | "degraded";
-export type RepoDoctrineReducerStatus = "disabled" | "skipped" | "degraded" | "applied";
-export type RepoDoctrineReducerProjection = {
-  status: RepoDoctrineReducerStatus;
-  contractCount: number;
-  matchedCount: number;
-  omittedCount: number;
-  reasonCodes: string[];
-};
-
-export type ReviewReducerFindingAction =
-  | "kept"
-  | "suppressed"
-  | "rewritten"
-  | "guardrail-suppressed"
-  | "guardrail-rewritten"
-  | "deprioritized"
-  | "low-confidence"
-  | "severity-demoted"
-  | "graph-validated"
-  | "degraded-fail-open";
-
-export type ProcessedReviewFinding = {
-  commentId: number;
-  filePath: string;
-  title: string;
-  severity: FindingSeverity | string;
-  category: FindingCategory | string;
-  startLine?: number;
-  endLine?: number;
-  suppressed?: boolean;
-  confidence?: number;
-  suppressionPattern?: string;
-  deprioritized?: boolean;
-  claimClassification?: FindingClaimClassification;
-  preDemotionSeverity?: FindingSeverity | string;
-  severityDemoted?: boolean;
-  demotionReason?: string;
-  filterAction?: "rewritten" | "suppressed" | "guardrail-suppressed" | "guardrail-rewritten";
-  originalTitle?: string;
-  graphValidated?: boolean;
-  graphValidationVerdict?: GraphValidationVerdict | "confirmed" | "uncertain" | "skipped" | string;
-  toolingSuppressed?: boolean;
-  enforcementPatternId?: string;
-  originalSeverity?: FindingSeverity | string;
-  severityElevated?: boolean;
-  /** Per-gate fact-check outcomes recorded by the enforcement pipeline. */
-  gateOutcomes?: GateOutcome[];
-  [key: string]: unknown;
-};
-
-export type ReviewReducerCounts = {
-  input: number;
-  kept: number;
-  suppressed: number;
-  rewritten: number;
-  deprioritized: number;
-  lowConfidence: number;
-  auditEvents: number;
-  severityDemoted: number;
-  graphValidated: number;
-  graphUncertain: number;
-};
-
-export type ReviewReducerAuditEvent = {
-  action: ReviewReducerFindingAction;
-  source: string;
-  count?: number;
-  reason?: string;
-};
-
-export type ReviewReducerDetailsSummary = {
-  label: "Review reducer";
-  text: string;
-  status: ReviewReducerStatus;
-};
-
-export type ReviewReducerResult = {
-  status: ReviewReducerStatus;
-  findings: ProcessedReviewFinding[];
-  visibleFindings: ProcessedReviewFinding[];
-  filteredInlineFindings: ProcessedReviewFinding[];
-  lowConfidenceFindings: ProcessedReviewFinding[];
-  suppressionMatchCounts: Map<string, number>;
-  filterRecords: FilteredFindingRecord[];
-  prioritizationStats?: ReviewReducerPrioritizationStats;
-  counts: ReviewReducerCounts;
-  audit: ReviewReducerAuditEvent[];
-  reason?: string;
-  detailsSummary: ReviewReducerDetailsSummary;
-};
-
-export type ReviewReducerPrioritizationStats = {
-  findingsScored: number;
-  topScore: number | null;
-  thresholdScore: number | null;
-  maxComments?: number;
-  selectedFindings?: number;
-  omittedFindings?: number;
-};
-
-type ReducerLogger = {
-  info: (obj: unknown, msg: string) => void;
-  warn: (obj: unknown, msg: string) => void;
-  error?: (obj: unknown, msg: string) => void;
-  debug?: (obj: unknown, msg: string) => void;
-};
-
-type TieredReducerFiles = {
-  isLargePR: boolean;
-  abbreviated: Array<{ filePath: string }>;
-};
-
-type FileRiskInput = {
-  filePath: string;
-  score: number;
-};
-
-type EnforcedExtractedFinding = ProcessedReviewFinding & {
-  originalSeverity: FindingSeverity;
-  severityElevated: boolean;
-  toolingSuppressed: boolean;
-  enforcementPatternId?: string;
-} & GateAdjustedFinding;
-
-type ReviewGuardrailRunner = (opts: unknown) => Promise<unknown>;
-
-type GraphValidationRunner = <T extends GraphValidationFinding>(
-  findings: T[],
-  blastRadius: ReviewGraphBlastRadiusResult | null | undefined,
-  llm: ValidationLLM | null | undefined,
-  options: { enabled?: boolean },
-  logger: ReducerLogger,
-) => Promise<GraphValidationResult<T>>;
-
-export type ReviewReducerInput = {
-  findings: ProcessedReviewFinding[];
-  workspaceDir: string;
-  filesByCategory: Record<string, string[]>;
-  filesByLanguage: Record<string, string[]>;
-  languageRules?: LanguageRulesConfig;
-  /**
-   * Optional LLM + options for the semantic grounding re-verification pass
-   * (enforcement/semantic-grounding.ts). When omitted, or when
-   * `semanticGroundingOptions.enabled` is not true, the pass is a no-op --
-   * semantic grounding is opt-in, same as graph validation below.
-   */
-  semanticGroundingLLM?: SemanticGroundingLLM | null;
-  semanticGroundingOptions?: SemanticGroundingOptions;
-  reviewSuppressions: Array<string | SuppressionPattern>;
-  minConfidence: number;
-  prioritizationWeights?: FindingPriorityWeights;
-  feedbackSuppression: FeedbackSuppressionResult;
-  priorFindingContext?: PriorFindingContext | null;
-  diffContent?: string | null;
-  prBody?: string | null;
-  commitMessages: string[];
-  tieredFiles: TieredReducerFiles;
-  graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
-  graphValidationEnabled: boolean;
-  riskScores: FileRiskInput[];
-  resolvedMaxComments?: number;
-  logger: ReducerLogger;
-  baseLog: Record<string, unknown>;
-  repo: string;
-  clusterModelStore?: SuggestionClusterStore | null;
-  embeddingProvider?: EmbeddingProvider | null;
-  guardrailAuditStore?: GuardrailAuditStore;
-  guardrailStrictness?: "standard" | "strict" | "lenient";
-  graphValidationLLM?: ValidationLLM | null;
-  repoDoctrine?: Partial<RepoDoctrineReducerProjection> | null;
-  runGuardrailPipeline?: ReviewGuardrailRunner;
-  validateGraphAmplifiedFindings?: GraphValidationRunner;
-};
-
-type CountOptions = {
-  minConfidence?: number;
-};
-
-type DegradedReviewReducerInput = {
-  findings: ProcessedReviewFinding[];
-  reason: string;
-};
 
 // 40 keeps every severity/category combination from computeConfidence visible
 // (the lowest, minor+documentation, scores exactly 40). The old default of 50
@@ -828,87 +680,3 @@ if (finding.suppressed || (typeof finding.confidence === "number" && Number.isFi
   }
 }
 
-export function toReviewReducerDetailsSummary(resultLike: {
-  status: ReviewReducerStatus;
-  counts: ReviewReducerCounts;
-  reason?: string;
-  repoDoctrine?: Partial<RepoDoctrineReducerProjection> | null;
-}): ReviewReducerDetailsSummary {
-  const { counts } = resultLike;
-  const reason = resultLike.status === "degraded"
-    ? ` reason=${sanitizeSummaryToken(resultLike.reason ?? "unknown")}`
-    : "";
-  const repoDoctrine = normalizeRepoDoctrineReducerProjection(resultLike.repoDoctrine);
-
-  return {
-    label: "Review reducer",
-    status: resultLike.status,
-    text: boundSummary([
-      `Review reducer: ${resultLike.status}`,
-      `input=${formatCount(counts.input)}`,
-      `kept=${formatCount(counts.kept)}`,
-      `suppressed=${formatCount(counts.suppressed)}`,
-      `rewritten=${formatCount(counts.rewritten)}`,
-      `deprioritized=${formatCount(counts.deprioritized)}`,
-      `lowConfidence=${formatCount(counts.lowConfidence)}`,
-      `auditEvents=${formatCount(counts.auditEvents)}`,
-      `severityDemoted=${formatCount(counts.severityDemoted)}`,
-      `graphValidated=${formatCount(counts.graphValidated)}`,
-      `graphUncertain=${formatCount(counts.graphUncertain)}${reason}`,
-      `doctrine=${formatRepoDoctrineReducerProjection(repoDoctrine)}`,
-    ].join(" ")),
-  };
-}
-
-
-function normalizeRepoDoctrineReducerProjection(input: Partial<RepoDoctrineReducerProjection> | null | undefined): RepoDoctrineReducerProjection {
-  const status = input?.status === "applied" || input?.status === "degraded" || input?.status === "disabled" || input?.status === "skipped"
-    ? input.status
-    : "skipped";
-  const reasonCodes = Array.isArray(input?.reasonCodes)
-    ? input.reasonCodes.map((reason) => sanitizeSummaryToken(String(reason))).filter(Boolean).slice(0, 8)
-    : [];
-  if (reasonCodes.length === 0) reasonCodes.push(status === "applied" ? "none" : status);
-  return {
-    status,
-    contractCount: normalizeReducerCount(input?.contractCount),
-    matchedCount: normalizeReducerCount(input?.matchedCount),
-    omittedCount: normalizeReducerCount(input?.omittedCount),
-    reasonCodes,
-  };
-}
-
-function normalizeReducerCount(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
-}
-
-function formatRepoDoctrineReducerProjection(doctrine: RepoDoctrineReducerProjection): string {
-  return `${doctrine.status}/${doctrine.contractCount}/${doctrine.matchedCount}/${doctrine.omittedCount} reasons=${doctrine.reasonCodes.slice(0, 4).join(",")}`;
-}
-
-function formatCount(value: number): string {
-  if (!Number.isFinite(value) || value < 0) {
-    return "0";
-  }
-
-  return Math.floor(value).toString();
-}
-
-function sanitizeSummaryToken(value: string): string {
-  const normalized = value
-    .replace(/sk-[a-zA-Z0-9_-]+/g, "redacted")
-    .replace(/gh[pousr]_[a-zA-Z0-9_]+/g, "redacted")
-    .replace(/TOKEN\s*=\s*[^\s]+/gi, "token-redacted")
-    .replace(/PROMPT[_-]?SECRET/gi, "prompt-redacted")
-    .replace(/diff --git/gi, "diff-redacted")
-    .replace(/[^a-zA-Z0-9._:-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, MAX_REASON_LENGTH);
-
-  return normalized || "unknown";
-}
-
-function boundSummary(value: string): string {
-  return value.length <= MAX_SUMMARY_LENGTH ? value : `${value.slice(0, MAX_SUMMARY_LENGTH - 1)}…`;
-}
