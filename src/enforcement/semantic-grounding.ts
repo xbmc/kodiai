@@ -37,7 +37,7 @@ import { mapWithConcurrency } from "../lib/concurrency.ts";
  *   call per review (default 5) -- this is one LLM call per finding, so an
  *   unbounded fan-out would be expensive on large reviews.
  * - **Scoped to already-grounded findings.** Only findings that
- *   diff-grounding.ts verified (`groundingChecked && groundingVerified`)
+ *   diff-grounding.ts recorded as checked and verified in `gateOutcomes`
  *   are eligible -- there is no point semantically re-checking a citation
  *   that was already proven fabricated.
  */
@@ -99,8 +99,6 @@ export type SemanticGroundingFindingInput = GateAdjustedFinding & {
   reasoning?: string;
   startLine?: number;
   endLine?: number;
-  groundingChecked?: boolean;
-  groundingVerified?: boolean;
   [key: string]: unknown;
 };
 

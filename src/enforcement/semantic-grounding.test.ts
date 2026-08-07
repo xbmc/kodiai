@@ -359,14 +359,8 @@ describe("enforceSemanticGrounding", () => {
 
     const [result] = await enforceSemanticGrounding({
       findings: [{
-        filePath: "src/foo.cpp",
-        severity: "critical" as FindingSeverity,
-        startLine: 10,
-        endLine: 11,
-        title: "Some finding",
+        ...makeFinding({ filePath: "src/foo.cpp", severity: "critical", startLine: 10, endLine: 11 }),
         category: "correctness",
-        groundingChecked: true,
-        groundingVerified: true,
       }],
       sourceIndex,
       llm,
@@ -374,6 +368,10 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.category).toBe("correctness");
+    // Assert the finding actually went through the gate -- otherwise this test
+    // would pass just as well on the ineligible passthrough path.
+    expect(outcome(result).checked).toBe(true);
+    expect(outcome(result).reason).toBe("matched");
   });
 
   it("fact-checks the finding's reasoning, not its one-line title, when reasoning is present", async () => {
