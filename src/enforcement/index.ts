@@ -159,7 +159,10 @@ export async function applyEnforcement(params: {
     // see semantic-grounding.ts for the cap). Runs last for the same reason
     // as step 4: it can only pull an already-elevated severity back down,
     // never re-elevate.
-    const sourceIndex = buildSemanticGroundingSourceIndex(params.diffText);
+    const semanticGroundingEnabled = (params.semanticGroundingOptions?.enabled ?? false) && !!params.semanticGroundingLLM;
+    const sourceIndex = semanticGroundingEnabled
+      ? buildSemanticGroundingSourceIndex(params.diffText)
+      : new Map();
     const semanticallyGrounded = await enforceSemanticGrounding({
       findings: grounded as (typeof grounded[number] & { severity: FindingSeverity })[],
       sourceIndex,
