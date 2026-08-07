@@ -218,6 +218,60 @@ describe("reduceReviewFindings", () => {
     expect(result.detailsSummary.text).toContain("Review reducer: ready");
   });
 
+  test("a grounding-downgraded critical finding is not dropped by abbreviated-tier suppression", async () => {
+    // Diff grounding downgrades to `medium`, which is exactly what abbreviated-
+    // tier suppression drops -- so without the pre-grounding-severity exemption
+    // the module's "never drop, downgrade instead" invariant silently breaks.
+    const diffContent = [
+      "diff --git a/src/abbrev.ts b/src/abbrev.ts",
+      "--- a/src/abbrev.ts",
+      "+++ b/src/abbrev.ts",
+      "@@ -1,3 +1,3 @@",
+      " const a = 1;",
+      "+const b = 2;",
+      " const c = 3;",
+    ].join("\n");
+
+    const result = await reduceReviewFindings({
+      findings: [baseFinding({
+        commentId: 1,
+        filePath: "src/abbrev.ts",
+        severity: "critical",
+        category: "correctness",
+        startLine: 900,
+        endLine: 900,
+      })],
+      workspaceDir: ".",
+      filesByCategory: {},
+      filesByLanguage: {},
+      languageRules: undefined,
+      reviewSuppressions: [],
+      minConfidence: 50,
+      feedbackSuppression: { suppressedFingerprints: new Set(), suppressedPatternCount: 0, patterns: [] },
+      priorFindingContext: null,
+      diffContent,
+      prBody: null,
+      commitMessages: [],
+      tieredFiles: { isLargePR: true, abbreviated: [{ filePath: "src/abbrev.ts" }] },
+      graphBlastRadius: null,
+      graphValidationEnabled: false,
+      riskScores: [],
+      logger: testLogger(),
+      baseLog: { repo: "owner/repo", prNumber: 1 },
+      repo: "owner/repo",
+      clusterModelStore: null,
+      embeddingProvider: null,
+      guardrailAuditStore: undefined,
+      graphValidationLLM: null,
+    });
+
+    const finding = result.findings.find((f) => f.commentId === 1);
+    expect(finding?.groundingDowngraded).toBe(true);
+    expect(finding?.severity).toBe("medium");
+    expect(finding?.suppressed).toBe(false);
+    expect(result.visibleFindings.map((f) => f.commentId)).toEqual([1]);
+  });
+
   test("keeps graph validation metadata-only and fails open when graph validation throws", async () => {
     const findings = [
       baseFinding({ commentId: 1, filePath: "src/direct.ts" }),

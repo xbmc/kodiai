@@ -36,12 +36,20 @@ type PublishReviewExecutionErrorFallback = typeof publishReviewExecutionErrorFal
  * with zero visible output even though a full review attempt ran. Detect that
  * case so we can fail open with a clear "ran out of steps" comment instead of
  * silence.
+ *
+ * The retry's own publication state counts too: a retry that posted inline
+ * findings via MCP (`retryResult.published`) has already put visible output on
+ * the PR, so a settlement branch that discards its *checkpoint* must not then
+ * post a "ran out of steps" comment contradicting the review the reader can see.
  */
 function hasNothingBeenPublishedYet(params: {
   partialCommentId?: number;
   hasPublishedInlines?: boolean;
+  retryResult: Pick<ExecutionResult, "published">;
 }): boolean {
-  return params.partialCommentId === undefined && !params.hasPublishedInlines;
+  return params.partialCommentId === undefined
+    && !params.hasPublishedInlines
+    && !params.retryResult.published;
 }
 
 export type RetryContinuationSettlementStatus =

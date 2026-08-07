@@ -487,8 +487,20 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
             suppressionFingerprints: input.priorFindingContext.suppressionFingerprints,
           })
         : false;
+      // The grounding passes promise "never drop, downgrade instead" -- but
+      // their downgrade target is `medium`, which is exactly what abbreviated-
+      // tier suppression drops. Without this exemption a grounding downgrade
+      // turns into a silent removal on large PRs, breaking that invariant.
+      // Judge both drop paths on the pre-grounding severity instead.
+      const groundingDowngraded = finding.groundingDowngraded === true
+        || finding.semanticGroundingDowngraded === true;
+      // Diff grounding runs before semantic grounding, so its
+      // `preGroundingSeverity` is the earliest (most trustworthy) severity.
+      const preGroundingEffectiveSeverity = groundingDowngraded
+        ? (finding.preGroundingSeverity ?? finding.preSemanticGroundingSeverity ?? finding.severity)
+        : finding.severity;
       const abbreviatedSuppressed = abbreviatedFileSet.has(finding.filePath)
-        && (finding.severity === "medium" || finding.severity === "minor");
+        && (preGroundingEffectiveSeverity === "medium" || preGroundingEffectiveSeverity === "minor");
       const titleFp = fingerprintFindingTitle(finding.title);
       const feedbackSuppressed = input.feedbackSuppression.suppressedFingerprints.has(titleFp);
       const suppressed = finding.toolingSuppressed || Boolean(matchedSuppression) || dedupSuppressed || abbreviatedSuppressed || feedbackSuppressed;
@@ -502,8 +514,12 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       }
 
       const feedbackPattern = feedbackPatternByFingerprint.get(titleFp);
+      // Same "never drop" reasoning as abbreviatedSuppressed above: findings
+      // below `minConfidence` are filtered out of visibleFindings entirely, so
+      // scoring confidence off the downgraded severity would let a grounding
+      // downgrade remove the finding rather than merely demote it.
       const baseConfidence = computeConfidence({
-        severity: finding.severity as FindingSeverity,
+        severity: preGroundingEffectiveSeverity as FindingSeverity,
         category,
         matchesKnownPattern: Boolean(matchedSuppression),
       });

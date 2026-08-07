@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   buildDiffGroundingIndex,
   enforceDiffGrounding,
+  isDiffTruncated,
   DIFF_GROUNDING_DOWNGRADE_TARGET,
 } from "./diff-grounding.ts";
 import type { FindingSeverity } from "../knowledge/types.ts";
@@ -99,14 +100,31 @@ describe("enforceDiffGrounding", () => {
     expect(result?.groundingReason).toBe("line-outside-diff");
   });
 
-  it("downgrades a major finding whose range partially spills outside the hunk", () => {
+  it("keeps a major finding whose range partially spills outside the hunk", () => {
+    // A finding about a whole function legitimately spans past the hunk that
+    // changed it -- the trailing lines are unchanged context the diff never
+    // carried. One diff-visible line in the range proves the citation is real,
+    // so this must not be treated as a fabricated citation.
     const diffLineIndex = buildDiffGroundingIndex(SAMPLE_DIFF);
     const [result] = enforceDiffGrounding({
       findings: [makeFinding({ filePath: "src/foo.cpp", severity: "major", startLine: 12, endLine: 20 })],
       diffLineIndex,
     });
-    expect(result?.groundingDowngraded).toBe(true);
-    expect(result?.groundingReason).toBe("line-outside-diff");
+    expect(result?.severity).toBe("major");
+    expect(result?.groundingDowngraded).toBe(false);
+    expect(result?.groundingReason).toBe("grounded");
+  });
+
+  it("fails open when the collected diff was truncated (a missing line proves nothing)", () => {
+    const truncatedDiff = `${SAMPLE_DIFF}\n[Full diff truncated at 2097152 bytes]\n`;
+    const [result] = enforceDiffGrounding({
+      findings: [makeFinding({ filePath: "src/foo.cpp", severity: "critical", startLine: 500, endLine: 500 })],
+      diffLineIndex: buildDiffGroundingIndex(truncatedDiff),
+      diffTruncated: isDiffTruncated(truncatedDiff),
+    });
+    expect(result?.severity).toBe("critical");
+    expect(result?.groundingDowngraded).toBe(false);
+    expect(result?.groundingReason).toBe("diff-truncated");
   });
 
   it("fails open on a finding citing a file that never appears in the diff (ambiguous, not necessarily hallucinated)", () => {

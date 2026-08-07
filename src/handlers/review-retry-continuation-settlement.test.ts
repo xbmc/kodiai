@@ -197,6 +197,31 @@ describe("settleRetryContinuationResults", () => {
     expect(fallbackCalls).toHaveLength(0);
   });
 
+  test("does not post a fallback when the retry itself already published inline findings", async () => {
+    const fallbackCalls: unknown[] = [];
+    const params = makeParams({
+      retryCompletedWithResults: true,
+      partialCommentId: undefined,
+      retryResult: {
+        conclusion: "success",
+        isTimeout: false,
+        published: true,
+        stopReason: undefined,
+        failureSubtype: undefined,
+        errorMessage: undefined,
+      },
+      retryCheckpoint: null,
+      publishReviewExecutionErrorFallbackFn: async () => {
+        fallbackCalls.push(true);
+        return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+      },
+    });
+
+    await settleRetryContinuationResults(params);
+
+    expect(fallbackCalls).toHaveLength(0);
+  });
+
   test("returns merge publication Result when continuation is publishable", async () => {
     const params = makeParams({
       retryCompletedWithResults: true,

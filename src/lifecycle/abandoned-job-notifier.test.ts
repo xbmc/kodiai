@@ -128,6 +128,75 @@ describe("createAbandonedJobNotifier", () => {
     expect(logger._entries.some((e) => e.level === "warn" && e.message.includes("did not resolve"))).toBe(true);
   });
 
+  test("notifies an abandoned explicit-review mention job", async () => {
+    const { octokit, calls } = createOctokitHarness();
+    const notifier = createAbandonedJobNotifier({
+      logger: createTestLogger(),
+      getInstallationOctokit: async () => octokit,
+      getAppSlug: () => "kodiai",
+    });
+
+    await notifier.notify([createJobSnapshot({
+      jobType: "mention",
+      lane: "interactive-review",
+      key: "acme/widgets#7",
+      prNumber: 7,
+    })]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.issue_number).toBe(7);
+    expect(String(calls[0]?.body)).toContain("Request interrupted by deploy");
+  });
+
+  test("posts one notice per PR when a review and its retry are both abandoned", async () => {
+    const { octokit, calls } = createOctokitHarness();
+    const notifier = createAbandonedJobNotifier({
+      logger: createTestLogger(),
+      getInstallationOctokit: async () => octokit,
+      getAppSlug: () => "kodiai",
+    });
+
+    await notifier.notify([
+      createJobSnapshot({ jobId: "1-1", jobType: "pull-request-review", key: "acme/widgets#7", prNumber: 7 }),
+      createJobSnapshot({ jobId: "1-2", jobType: "pull-request-review-retry", key: "acme/widgets#7", prNumber: 7 }),
+    ]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.issue_number).toBe(7);
+  });
+
+  test("does not claim a never-started queued job was running", async () => {
+    const { octokit, calls } = createOctokitHarness();
+    const notifier = createAbandonedJobNotifier({
+      logger: createTestLogger(),
+      getInstallationOctokit: async () => octokit,
+      getAppSlug: () => "kodiai",
+    });
+
+    await notifier.notify([createJobSnapshot({ phase: "queued" })]);
+
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0]?.body)).toContain("still queued and had not started");
+    expect(String(calls[0]?.body)).not.toContain("still running");
+  });
+
+  test("prefers the started job's wording when a queued duplicate shares the PR", async () => {
+    const { octokit, calls } = createOctokitHarness();
+    const notifier = createAbandonedJobNotifier({
+      logger: createTestLogger(),
+      getInstallationOctokit: async () => octokit,
+      getAppSlug: () => "kodiai",
+    });
+
+    await notifier.notify([
+      createJobSnapshot({ jobId: "1-1", phase: "queued", key: "acme/widgets#7", prNumber: 7 }),
+      createJobSnapshot({ jobId: "1-2", phase: "running", key: "acme/widgets#7", prNumber: 7 }),
+    ]);
+
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0]?.body)).toContain("still running");
+  });
+
   test("does nothing for an empty job list", async () => {
     const { octokit, calls } = createOctokitHarness();
     const getInstallationOctokit = mock(async () => octokit);

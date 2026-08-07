@@ -28,6 +28,7 @@ import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "
 export type DiffGroundingReasonCode =
   | "not-applicable"
   | "no-diff-available"
+  | "diff-truncated"
   | "file-not-in-diff"
   | "line-outside-diff"
   | "grounded";
@@ -66,6 +67,23 @@ export function buildDiffGroundingIndex(diffText: string | null | undefined): Pr
 }
 
 /**
+ * Markers the diff collector appends when it hits its output cap
+ * (review-diff-collection.ts). A truncated diff can cut off mid-file, leaving
+ * that file present in the index with only its early hunks -- so a correct
+ * citation to a later line looks identical to a hallucinated one. Detecting
+ * truncation lets the gate fail open rather than demote real findings.
+ */
+const DIFF_TRUNCATION_MARKERS = [
+  "[Full diff truncated at",
+  "[GitHub patch fallback truncated]",
+];
+
+export function isDiffTruncated(diffText: string | null | undefined): boolean {
+  if (!diffText) return false;
+  return DIFF_TRUNCATION_MARKERS.some((marker) => diffText.includes(marker));
+}
+
+/**
  * Verify that critical/major findings cite a file:line that actually falls
  * within the collected diff's changed-line ranges. Findings below the
  * gated severities, findings without an explicit line citation, findings
@@ -78,6 +96,7 @@ export function buildDiffGroundingIndex(diffText: string | null | undefined): Pr
 export function enforceDiffGrounding<T extends DiffGroundingFindingInput>(params: {
   findings: T[];
   diffLineIndex: PrDiffCommentabilityIndex;
+  diffTruncated?: boolean;
 }): (T & DiffGroundingResult)[] {
   const { findings, diffLineIndex } = params;
   const diffAvailable = diffLineIndex.size > 0;
@@ -98,6 +117,12 @@ export function enforceDiffGrounding<T extends DiffGroundingFindingInput>(params
       return passThrough(finding, "no-diff-available");
     }
 
+    if (params.diffTruncated) {
+      // The collected diff hit its size cap and may have been cut mid-file, so
+      // a missing line proves nothing about the citation. Fail open.
+      return passThrough(finding, "diff-truncated");
+    }
+
     const commentableLines = diffLineIndex.get(finding.filePath);
     if (!commentableLines) {
       // The file is entirely absent from this delivery's diff slice --
@@ -106,12 +131,22 @@ export function enforceDiffGrounding<T extends DiffGroundingFindingInput>(params
       return passThrough(finding, "file-not-in-diff");
     }
 
+    // Intersection, not containment: a finding about a whole function
+    // legitimately spans lines beyond the hunk that changed it (the rest being
+    // unchanged context the diff never carried). Requiring *every* cited line
+    // to be in the index would demote those as fabricated. One diff-visible
+    // line in the cited range is enough to prove the citation is real.
     const lo = Math.min(startLine, endLine);
     const hi = Math.max(startLine, endLine);
+    let intersectsDiff = false;
     for (let line = lo; line <= hi; line += 1) {
-      if (!commentableLines.has(line)) {
-        return downgrade(finding, "line-outside-diff");
+      if (commentableLines.has(line)) {
+        intersectsDiff = true;
+        break;
       }
+    }
+    if (!intersectsDiff) {
+      return downgrade(finding, "line-outside-diff");
     }
 
     return {

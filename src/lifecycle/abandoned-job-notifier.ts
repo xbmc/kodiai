@@ -4,21 +4,43 @@ import type { JobSnapshot } from "../jobs/types.ts";
 import { createIssueCommentWithPublicationPipeline } from "../lib/github-publication.ts";
 import { raceWithTimeout } from "../lib/with-timeout.ts";
 
-// Job types whose `key` is the `owner/repo#prNumber` review-family key (see
-// buildReviewFamilyKey in jobs/review-work-coordinator.ts) and whose loss is
-// worth a PR-visible notice. Other job types (sync, background maintenance)
-// have no PR to notify and are silently skipped.
-const NOTIFIABLE_JOB_TYPES = new Set(["pull-request-review", "pull-request-review-retry"]);
+// Job types whose `key` is an `owner/repo#number` queue key (buildReviewFamilyKey
+// in jobs/review-work-coordinator.ts, buildMentionQueueKey in
+// handlers/mention-workspace.ts) and whose loss is worth a PR-visible notice.
+// `mention` is included because an explicit `@kodiai review` request is the work
+// a user is most likely to notice going missing. Other job types (sync,
+// background maintenance) have no PR to notify and are silently skipped.
+const NOTIFIABLE_JOB_TYPES = new Set([
+  "pull-request-review",
+  "pull-request-review-retry",
+  "mention",
+]);
 
 const REVIEW_FAMILY_KEY_PATTERN = /^([^/]+)\/([^#]+)#(\d+)$/;
 
 const DEFAULT_PER_NOTICE_TIMEOUT_MS = 8_000;
 
-const ABANDONED_JOB_NOTICE_BODY =
-  "**Review interrupted by deploy.** This review job was still running when the service " +
-  "restarted for a deploy and could not finish. Nothing was silently skipped -- the job " +
-  "was abandoned in place. Please retry (e.g. comment `@kodiai review`, or push a new " +
-  "commit) to get a fresh review.";
+/** Phase assigned at enqueue time; a job still in it never began executing. */
+const QUEUED_PHASE = "queued";
+
+const RETRY_HINT =
+  "Please retry (e.g. comment `@kodiai review`, or push a new commit) to get a fresh review.";
+
+/**
+ * The notice must describe what actually happened to *this* job. A job still in
+ * the `queued` phase never started, so claiming it "was still running" is a
+ * false statement to the reader; a `mention` job is not necessarily a review at
+ * all. Pick wording from the job's own state rather than asserting one story.
+ */
+function buildAbandonedJobNoticeBody(job: JobSnapshot): string {
+  const label = job.jobType === "mention" ? "Request" : "Review";
+  const whatHappened = job.phase === QUEUED_PHASE
+    ? "was still queued and had not started when the service restarted for a deploy"
+    : "was still running when the service restarted for a deploy and could not finish";
+
+  return `**${label} interrupted by deploy.** This ${label.toLowerCase()} ${whatHappened}. `
+    + `Nothing was silently skipped -- the job was abandoned in place. ${RETRY_HINT}`;
+}
 
 interface ParsedReviewFamilyKey {
   owner: string;
@@ -72,7 +94,10 @@ export function createAbandonedJobNotifier(deps: AbandonedJobNotifierDeps): Aban
       );
       return;
     }
-    const { owner, repo, prNumber } = parsed;
+    const { owner, repo } = parsed;
+    // The snapshot's own prNumber is authoritative when present; the key is only
+    // a fallback for job types that do not carry one.
+    const prNumber = job.prNumber ?? parsed.prNumber;
 
     const outcome = await raceWithTimeout(
       (async () => {
@@ -81,7 +106,7 @@ export function createAbandonedJobNotifier(deps: AbandonedJobNotifierDeps): Aban
           owner,
           repo,
           issue_number: prNumber,
-          body: ABANDONED_JOB_NOTICE_BODY,
+          body: buildAbandonedJobNoticeBody(job),
           botHandles: [getAppSlug(), "claude"],
         });
       })().then(
@@ -111,12 +136,36 @@ export function createAbandonedJobNotifier(deps: AbandonedJobNotifierDeps): Aban
         return;
       }
 
+      // A review job and the retry it spawned share a review-family key and can
+      // both be active at force-exit, which would post two identical notices on
+      // one PR. Collapse to one notice per resolved PR, preferring a job that
+      // actually started so the wording reflects the furthest progress made.
+      const byPr = new Map<string, JobSnapshot>();
+      for (const job of notifiable) {
+        const parsed = parseReviewFamilyKey(job.key);
+        if (!parsed) {
+          // Unresolvable keys can't collide; keep them so notifyOne logs the skip.
+          byPr.set(`unresolved:${job.jobId}`, job);
+          continue;
+        }
+        const prKey = `${parsed.owner}/${parsed.repo}#${job.prNumber ?? parsed.prNumber}`;
+        const existing = byPr.get(prKey);
+        if (!existing || (existing.phase === QUEUED_PHASE && job.phase !== QUEUED_PHASE)) {
+          byPr.set(prKey, job);
+        }
+      }
+      const deduped = [...byPr.values()];
+
       logger.warn(
-        { count: notifiable.length, jobIds: notifiable.map((job) => job.jobId) },
+        {
+          count: deduped.length,
+          suppressedDuplicates: notifiable.length - deduped.length,
+          jobIds: deduped.map((job) => job.jobId),
+        },
         "Notifying PRs of review jobs abandoned by shutdown force-exit",
       );
 
-      await Promise.allSettled(notifiable.map((job) => notifyOne(job)));
+      await Promise.allSettled(deduped.map((job) => notifyOne(job)));
     },
   };
 }

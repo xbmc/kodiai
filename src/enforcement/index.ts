@@ -40,6 +40,7 @@ export {
 export {
   enforceDiffGrounding,
   buildDiffGroundingIndex,
+  isDiffTruncated,
   DIFF_GROUNDING_DOWNGRADE_TARGET,
 } from "./diff-grounding.ts";
 export type { DiffGroundingReasonCode, DiffGroundingResult } from "./diff-grounding.ts";
@@ -63,7 +64,7 @@ import type { LanguageRulesConfig, EnforcedFinding } from "./types.ts";
 import { detectRepoTooling } from "./tooling-detection.ts";
 import { suppressToolingFindings } from "./tooling-suppression.ts";
 import { enforceSeverityFloors } from "./severity-floors.ts";
-import { enforceDiffGrounding, buildDiffGroundingIndex, type DiffGroundingResult } from "./diff-grounding.ts";
+import { enforceDiffGrounding, buildDiffGroundingIndex, isDiffTruncated, type DiffGroundingResult } from "./diff-grounding.ts";
 import {
   enforceSemanticGrounding,
   buildSemanticGroundingSourceIndex,
@@ -149,6 +150,7 @@ export async function applyEnforcement(params: {
     // severity back down; it never re-elevates.
     const diffLineIndex = buildDiffGroundingIndex(params.diffText);
     const grounded = enforceDiffGrounding({
+      diffTruncated: isDiffTruncated(params.diffText),
       findings: merged as (typeof merged[number] & { severity: FindingSeverity })[],
       diffLineIndex,
     });
