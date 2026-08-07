@@ -107,7 +107,6 @@ type BuildProofHarnessOptions = EvaluateOptions & {
   stderr?: StdWriter;
 };
 
-type SnapshotDiagnostics = NonNullable<EvaluationReport["diagnostics"]>;
 type SnapshotDerived = XbmcFixtureSnapshotInspection;
 
 export async function evaluateM046S01(

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { isFeedbackSuppressionProtected } from "./safety-guard.ts";
-import type { FindingSeverity, FindingCategory } from "../knowledge/types.ts";
 
 describe("isFeedbackSuppressionProtected", () => {
   test("protects critical security", () => {

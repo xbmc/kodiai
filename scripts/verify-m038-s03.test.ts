@@ -217,8 +217,6 @@ describe("buildM038S03ProofHarness", () => {
   });
 
   test("failure harness writes status codes to stderr and returns exit code 1", async () => {
-    const stdoutChunks: string[] = [];
-    const stderrChunks: string[] = [];
 
     // Build a failing report manually and verify the rendering path.
     const failingReport: M038S03EvaluationReport = {

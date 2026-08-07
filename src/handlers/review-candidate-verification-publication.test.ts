@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import type { Logger } from "pino";
 
 import { buildMcpServers } from "../execution/mcp/index.ts";
 import type { ExecutionContext, ExecutionResult } from "../execution/types.ts";

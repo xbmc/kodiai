@@ -25,7 +25,6 @@ import {
   buildToneGuidelinesSection,
   buildEpistemicBoundarySection,
   buildSecurityPolicySection,
-  buildVerdictLogicSection,
   formatClusterPatterns,
   formatReviewPrecedents,
   matchPathInstructions,

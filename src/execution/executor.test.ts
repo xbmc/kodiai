@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { test, expect, afterEach, mock, beforeEach, vi } from "bun:test";
+import { test, expect, afterEach, mock } from "bun:test";
 import { mkdtemp, rm, readFile, writeFile, mkdir, lstat, symlink, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -202,101 +202,6 @@ function makeJobResult(overrides?: Partial<ExecutionResult>): ExecutionResult {
 // Pattern used here: mock the imported module functions using mock.module() which
 // Bun supports. We call mock.module() in beforeEach / afterEach to control behavior.
 
-// Track calls across tests
-let launchAcaJobCallArgs: unknown[] = [];
-let pollUntilCompleteCallArgs: unknown[] = [];
-let cancelAcaJobCallArgs: unknown[] = [];
-let readJobResultCallArgs: unknown[] = [];
-let createAzureFilesWorkspaceDirCallArgs: unknown[] = [];
-
-// Mutable return values controlled per-test
-let mockPollStatus: "succeeded" | "failed" | "timed-out" = "succeeded";
-let mockPollDurationMs = 5000;
-let mockJobResult: ExecutionResult = makeJobResult();
-let mockWorkspaceDir = "/mnt/kodiai-workspaces/test-delivery-id";
-
-beforeEach(() => {
-  launchAcaJobCallArgs = [];
-  pollUntilCompleteCallArgs = [];
-  cancelAcaJobCallArgs = [];
-  readJobResultCallArgs = [];
-  createAzureFilesWorkspaceDirCallArgs = [];
-  mockPollStatus = "succeeded";
-  mockPollDurationMs = 5000;
-  mockJobResult = makeJobResult();
-  mockWorkspaceDir = "/mnt/kodiai-workspaces/test-delivery-id";
-});
-
-// ── Helper: build executor with injectable ACA fns via a thin wrapper ──────
-
-/**
- * Creates a test-controlled executor variant.
- *
- * Since createExecutor() imports aca-launcher functions statically, we use
- * bun:test's mock() to replace the module exports for the test session. The
- * approach here avoids re-implementing the entire executor — instead we assert
- * the expected observable outcomes (registry state, results, error paths) by
- * inspecting the registry and the returned ExecutionResult.
- *
- * For ACA launch/poll/cancel/readJobResult, we pass injectable fns to a small
- * harness wrapper around createExecutor.
- */
-function buildTestExecutor(opts: {
-  config?: Partial<AppConfig>;
-  pollStatus?: "succeeded" | "failed" | "timed-out";
-  pollDurationMs?: number;
-  jobResult?: ExecutionResult;
-  workspaceDirOverride?: string;
-  githubApp?: GitHubApp;
-}) {
-  const config = makeConfig(opts.config);
-  const logger = makeLogger();
-  const githubApp = opts.githubApp ?? makeGithubApp();
-  const registry = createMcpJobRegistry();
-
-  // Track what tokens get registered/unregistered
-  const registeredTokens: string[] = [];
-  const unregisteredTokens: string[] = [];
-  const originalRegister = registry.register.bind(registry);
-  const originalUnregister = registry.unregister.bind(registry);
-
-  const wrappedRegistry = {
-    ...registry,
-    register: (
-      token: string,
-      factories: Record<string, () => unknown>,
-      ttlMs?: number,
-    ) => {
-      registeredTokens.push(token);
-      originalRegister(token, factories as never, ttlMs);
-    },
-    unregister: (token: string) => {
-      unregisteredTokens.push(token);
-      originalUnregister(token);
-    },
-    hasToken: registry.hasToken.bind(registry),
-    getFactory: registry.getFactory.bind(registry),
-  };
-
-  // Captured token from register call for later assertions
-  let capturedToken: string | undefined;
-
-  // Create executor with wrapped registry
-  const executor = createExecutor({
-    githubApp,
-    logger,
-    config,
-    mcpJobRegistry: wrappedRegistry as never,
-  });
-
-  return {
-    executor,
-    registry: wrappedRegistry,
-    registeredTokens,
-    unregisteredTokens,
-    getCapturedToken: () => registeredTokens[0],
-  };
-}
 
 // ── Integration-style tests using module mocking ───────────────────────────
 //

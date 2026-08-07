@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   detectDependsBump,
-  type DependsBumpInfo,
 } from "./depends-bump-detector";
 
 describe("detectDependsBump", () => {

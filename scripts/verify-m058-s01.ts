@@ -332,9 +332,6 @@ function extractRunSteps(ciContent: string): Array<{ index: number; text: string
   return steps;
 }
 
-function escapeForRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function passCheck(id: M058S01CheckId, status_code: string, detail?: unknown): Check {
   return {

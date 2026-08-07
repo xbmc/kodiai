@@ -4,7 +4,6 @@ import {
   DEFAULT_INFRA_OVERHEAD_BUDGET_SECONDS,
   estimateTimeoutRisk,
   MAX_TIMEOUT_BUDGET_SECONDS,
-  type TimeoutEstimate,
 } from "./timeout-estimator.ts";
 
 // ---------- computeLanguageComplexity ----------

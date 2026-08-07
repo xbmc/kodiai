@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { selectExemplarSections, extractPageStyle, buildVoicePreservingPrompt, sampleSpreadContent, extractWikiConventions, computeContentHash, getCachedStyle, cacheStyleDescription } from "./wiki-voice-analyzer.ts";
+import { selectExemplarSections, extractPageStyle, buildVoicePreservingPrompt, sampleSpreadContent, extractWikiConventions, computeContentHash, getCachedStyle } from "./wiki-voice-analyzer.ts";
 import type { WikiPageRecord } from "./wiki-types.ts";
 import type { VoiceAnalyzerOptions, PageStyleDescription } from "./wiki-voice-types.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";

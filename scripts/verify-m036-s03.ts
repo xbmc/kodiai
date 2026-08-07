@@ -4,14 +4,11 @@ import {
   shouldRetireRule,
   DEFAULT_RETIREMENT_FLOOR,
   DEFAULT_MIN_MEMBER_COUNT,
-  type ApplyRetirementPolicyOptions,
   type RetirementPolicyResult,
 } from "../src/knowledge/generated-rule-retirement.ts";
 import {
   notifyLifecycleRun,
   notifyRetirement,
-  type NotifyLifecycleRunOptions,
-  type NotifyRetirementOptions,
   type LifecycleNotifyResult,
 } from "../src/knowledge/generated-rule-notify.ts";
 import type { GeneratedRuleStore, GeneratedRuleRecord } from "../src/knowledge/generated-rule-store.ts";
