@@ -318,5 +318,15 @@ export function createJobQueue(
         .sort((left, right) => left.queuedAtMs - right.queuedAtMs)
         .map((snapshot) => ({ ...snapshot }));
     },
+
+    getAllActiveJobs(): JobSnapshot[] {
+      const all: JobSnapshot[] = [];
+      for (const jobs of activeJobs.values()) {
+        for (const snapshot of jobs.values()) {
+          all.push({ ...snapshot });
+        }
+      }
+      return all.sort((left, right) => left.queuedAtMs - right.queuedAtMs);
+    },
   };
 }

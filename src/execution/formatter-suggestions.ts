@@ -379,8 +379,20 @@ export function parseFormatterUnifiedDiff(diffText: string): ParseFormatterUnifi
   return result;
 }
 
-export function buildPrDiffCommentabilityIndex(prDiffText: string): PrDiffCommentabilityIndex {
-  const index: PrDiffCommentabilityIndex = new Map();
+/**
+ * Single pass over a unified PR diff, invoking `onLine` for every commentable
+ * (context or added) line with its post-change line number and text.
+ *
+ * Both public indexes below are built from this one walk: keeping them as
+ * separate copies let the hunk-cursor bookkeeping drift between them, but
+ * deriving the cheaper Set index from the fully-materialized text index wasted
+ * a string allocation per diff line only to discard it. A callback gives both
+ * a shared parser and lets each build exactly what it needs.
+ */
+function walkPrDiffCommentableLines(
+  prDiffText: string,
+  onLine: (path: string, lineNumber: number, text: string) => void,
+): void {
   let currentPath: string | undefined;
   let rightCursor: number | undefined;
 
@@ -409,12 +421,7 @@ export function buildPrDiffCommentabilityIndex(prDiffText: string): PrDiffCommen
     }
 
     if (line.startsWith(" ") || line.startsWith("+")) {
-      let pathLines = index.get(currentPath);
-      if (!pathLines) {
-        pathLines = new Set<number>();
-        index.set(currentPath, pathLines);
-      }
-      pathLines.add(rightCursor);
+      onLine(currentPath, rightCursor, line.slice(1));
       rightCursor += 1;
       continue;
     }
@@ -429,7 +436,18 @@ export function buildPrDiffCommentabilityIndex(prDiffText: string): PrDiffCommen
 
     rightCursor = undefined;
   }
+}
 
+export function buildPrDiffCommentabilityIndex(prDiffText: string): PrDiffCommentabilityIndex {
+  const index: PrDiffCommentabilityIndex = new Map();
+  walkPrDiffCommentableLines(prDiffText, (path, lineNumber) => {
+    let pathLines = index.get(path);
+    if (!pathLines) {
+      pathLines = new Set<number>();
+      index.set(path, pathLines);
+    }
+    pathLines.add(lineNumber);
+  });
   return index;
 }
 
@@ -438,63 +456,18 @@ export type PrDiffLineTextIndex = Map<string, Map<number, string>>;
 
 /**
  * Build a per-file, per-line index of literal source text (post-change /
- * right-hand-side numbering) from a unified PR diff. Shares the same
- * single-pass parsing approach as `buildPrDiffCommentabilityIndex` (same
- * header/hunk regexes, same cursor bookkeeping) but retains the line text
- * instead of only its presence, so callers can pull the actual code at a
- * cited line without re-parsing the diff with a heavier parser.
+ * right-hand-side numbering) from a unified PR diff.
  */
 export function buildPrDiffLineTextIndex(prDiffText: string): PrDiffLineTextIndex {
   const index: PrDiffLineTextIndex = new Map();
-  let currentPath: string | undefined;
-  let rightCursor: number | undefined;
-
-  for (const line of prDiffText.split(/\r?\n/)) {
-    const diffHeaderMatch = GIT_DIFF_HEADER_RE.exec(line);
-    if (diffHeaderMatch) {
-      currentPath = parseDiffHeaderPath(diffHeaderMatch[2]!);
-      rightCursor = undefined;
-      continue;
+  walkPrDiffCommentableLines(prDiffText, (path, lineNumber, text) => {
+    let pathLines = index.get(path);
+    if (!pathLines) {
+      pathLines = new Map<number, string>();
+      index.set(path, pathLines);
     }
-
-    if (line.startsWith("+++ ")) {
-      currentPath = parseFileHeaderPath(line);
-      rightCursor = undefined;
-      continue;
-    }
-
-    if (line.startsWith("@@")) {
-      const hunkHeaderMatch = PR_HUNK_HEADER_RE.exec(line);
-      rightCursor = hunkHeaderMatch ? Number.parseInt(hunkHeaderMatch[1]!, 10) : undefined;
-      continue;
-    }
-
-    if (!currentPath || rightCursor === undefined) {
-      continue;
-    }
-
-    if (line.startsWith(" ") || line.startsWith("+")) {
-      let pathLines = index.get(currentPath);
-      if (!pathLines) {
-        pathLines = new Map<number, string>();
-        index.set(currentPath, pathLines);
-      }
-      pathLines.set(rightCursor, line.slice(1));
-      rightCursor += 1;
-      continue;
-    }
-
-    if (line.startsWith("-")) {
-      continue;
-    }
-
-    if (line.startsWith("\\ No newline at end of file") || line === "") {
-      continue;
-    }
-
-    rightCursor = undefined;
-  }
-
+    pathLines.set(lineNumber, text);
+  });
   return index;
 }
 

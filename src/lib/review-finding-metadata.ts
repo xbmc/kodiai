@@ -66,10 +66,26 @@ export function normalizeCategory(value: string | undefined): FindingCategory {
   return "correctness";
 }
 
+/**
+ * Strip the bookkeeping comments the publisher appends (output-key and
+ * inline-output-key markers) so they never leak into the reasoning text that
+ * gets fact-checked or re-rendered.
+ */
+function stripHtmlComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, "").trim();
+}
+
 export function parseInlineCommentMetadata(body: string): {
   severity: FindingSeverity | null;
   category: FindingCategory;
   title: string;
+  /**
+   * The finding's prose body -- everything after the title line, with metadata
+   * blocks and HTML bookkeeping comments removed. Empty when the comment is a
+   * bare title. Consumed by enforcement/semantic-grounding.ts, which
+   * fact-checks the reasoning rather than the one-line summary.
+   */
+  reasoning: string;
 } {
   const text = body.replace(/<!--\s*kodiai:review-output-key:[\s\S]*?-->/gi, "").trim();
   const yamlMatch = text.match(/^```yaml\s*([\s\S]*?)```/i);
@@ -89,26 +105,37 @@ export function parseInlineCommentMetadata(body: string): {
     }
 
     const titleSection = text.slice(yamlMatch[0].length).trim();
-    const titleLine = titleSection
-      .split("\n")
-      .map((line) => line.trim())
-      .find((line) => line.length > 0) ?? "Untitled finding";
+    const titleSectionLines = titleSection.split("\n");
+    const titleLineIndex = titleSectionLines.findIndex((line) => line.trim().length > 0);
+    const titleLine = titleLineIndex >= 0
+      ? titleSectionLines[titleLineIndex]!.trim()
+      : "Untitled finding";
     const title = titleLine.replace(/^\*\*(.+)\*\*$/, "$1").trim();
 
     return {
       severity: normalizeSeverity(metadata.get("severity")),
       category: normalizeCategory(metadata.get("category")),
       title,
+      reasoning: titleLineIndex >= 0
+        ? stripHtmlComments(titleSectionLines.slice(titleLineIndex + 1).join("\n"))
+        : "",
     };
   }
 
-  const firstLine = text.split("\n").map((line) => line.trim()).find((line) => line.length > 0) ?? "";
+  const lines = text.split("\n");
+  const firstLineIndex = lines.findIndex((line) => line.trim().length > 0);
+  const firstLine = firstLineIndex >= 0 ? lines[firstLineIndex]!.trim() : "";
+  const reasoning = firstLineIndex >= 0
+    ? stripHtmlComments(lines.slice(firstLineIndex + 1).join("\n"))
+    : "";
+
   const severityPrefix = firstLine.match(/^\[(critical|major|medium|minor)\]\s*(.*)$/i);
   if (severityPrefix) {
     return {
       severity: normalizeSeverity(severityPrefix[1]),
       category: "correctness",
       title: (severityPrefix[2] || "Untitled finding").trim(),
+      reasoning,
     };
   }
 
@@ -116,5 +143,6 @@ export function parseInlineCommentMetadata(body: string): {
     severity: null,
     category: "correctness",
     title: firstLine || "Untitled finding",
+    reasoning,
   };
 }

@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import type { JobSnapshot } from "../jobs/types.ts";
 import type { RequestTracker, ShutdownManager } from "./types.ts";
 
 interface ShutdownManagerDeps {
@@ -7,6 +8,18 @@ interface ShutdownManagerDeps {
   closeDb: () => Promise<void>;
   graceMs?: number;
   maxTotalGraceMs?: number;
+  /**
+   * Returns the jobs still in flight, for use only after a drain has already
+   * timed out and the process is about to be force-exited. Optional so
+   * callers/tests that don't care about abandoned-job visibility can omit it.
+   */
+  getAbandonedJobs?: () => JobSnapshot[];
+  /**
+   * Best-effort notice (e.g. a PR comment) for jobs about to be abandoned by
+   * a force-exit. Never allowed to block shutdown indefinitely -- awaited
+   * once, with its own internal timeout, before the process exits.
+   */
+  notifyAbandonedJobs?: (jobs: JobSnapshot[]) => Promise<void>;
   /** Test-only: override process exit for deterministic shutdown tests. */
   __exitForTests?: (code: number) => void;
 }
@@ -70,6 +83,25 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
       }
     }
 
+    // Best-effort: before abandoning in-flight work, tell affected PRs their
+    // review was interrupted rather than letting it vanish with no signal.
+    // Never allowed to block the force-exit itself -- the notifier bounds its
+    // own per-notice timeout, and any failure here is logged and swallowed.
+    async function safeNotifyAbandonedJobs(): Promise<void> {
+      if (!deps.getAbandonedJobs || !deps.notifyAbandonedJobs) {
+        return;
+      }
+      const abandonedJobs = deps.getAbandonedJobs();
+      if (abandonedJobs.length === 0) {
+        return;
+      }
+      try {
+        await deps.notifyAbandonedJobs(abandonedJobs);
+      } catch (err) {
+        logger.error({ err }, "notifyAbandonedJobs failed (continuing to exit)");
+      }
+    }
+
     // First drain attempt
     try {
       await requestTracker.waitForDrain(graceMs);
@@ -101,6 +133,7 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
           },
           "Force exit after shutdown grace budget exhausted, work abandoned",
         );
+        await safeNotifyAbandonedJobs();
         await safeCloseDb();
         exitProcess(1);
         return;
@@ -122,6 +155,7 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
           },
           "Force exit after extended grace timeout, work abandoned",
         );
+        await safeNotifyAbandonedJobs();
         await safeCloseDb();
         exitProcess(1);
       }

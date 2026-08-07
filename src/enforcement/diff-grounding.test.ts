@@ -2,9 +2,23 @@ import { describe, expect, it } from "bun:test";
 import {
   buildDiffGroundingIndex,
   enforceDiffGrounding,
+  isDiffTruncated,
   DIFF_GROUNDING_DOWNGRADE_TARGET,
 } from "./diff-grounding.ts";
 import type { FindingSeverity } from "../knowledge/types.ts";
+import type { GateAdjustedFinding } from "./gate-outcome.ts";
+
+/** Read this gate's recorded outcome off a result finding. */
+function outcome(result: GateAdjustedFinding | undefined) {
+  const o = result?.gateOutcomes?.find((entry) => entry.gate === "diff-grounding");
+  return {
+    checked: o?.checked,
+    verified: o?.verified,
+    downgraded: o?.from !== undefined,
+    reason: o?.reason,
+    from: o?.from,
+  };
+}
 
 // A realistic unified diff hunk touching src/foo.cpp lines 10-13 (post-change
 // numbering), with one leading context line at 9.
@@ -69,10 +83,10 @@ describe("enforceDiffGrounding", () => {
       diffLineIndex,
     });
     expect(result?.severity).toBe("critical");
-    expect(result?.groundingChecked).toBe(true);
-    expect(result?.groundingVerified).toBe(true);
-    expect(result?.groundingDowngraded).toBe(false);
-    expect(result?.groundingReason).toBe("grounded");
+    expect(outcome(result).checked).toBe(true);
+    expect(outcome(result).verified).toBe(true);
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("grounded");
   });
 
   it("passes through a critical finding whose full range is inside the diff hunk", () => {
@@ -82,7 +96,7 @@ describe("enforceDiffGrounding", () => {
       diffLineIndex,
     });
     expect(result?.severity).toBe("major");
-    expect(result?.groundingDowngraded).toBe(false);
+    expect(outcome(result).downgraded).toBe(false);
   });
 
   it("downgrades a critical finding whose cited line is outside every hunk in its file", () => {
@@ -92,21 +106,62 @@ describe("enforceDiffGrounding", () => {
       diffLineIndex,
     });
     expect(result?.severity).toBe(DIFF_GROUNDING_DOWNGRADE_TARGET);
-    expect(result?.preGroundingSeverity).toBe("critical");
-    expect(result?.groundingChecked).toBe(true);
-    expect(result?.groundingVerified).toBe(false);
-    expect(result?.groundingDowngraded).toBe(true);
-    expect(result?.groundingReason).toBe("line-outside-diff");
+    expect(outcome(result).from).toBe("critical");
+    expect(outcome(result).checked).toBe(true);
+    expect(outcome(result).verified).toBe(false);
+    expect(outcome(result).downgraded).toBe(true);
+    expect(outcome(result).reason).toBe("line-outside-diff");
   });
 
-  it("downgrades a major finding whose range partially spills outside the hunk", () => {
+  it("keeps a major finding whose range partially spills outside the hunk", () => {
+    // A finding about a whole function legitimately spans past the hunk that
+    // changed it -- the trailing lines are unchanged context the diff never
+    // carried. One diff-visible line in the range proves the citation is real,
+    // so this must not be treated as a fabricated citation.
     const diffLineIndex = buildDiffGroundingIndex(SAMPLE_DIFF);
     const [result] = enforceDiffGrounding({
       findings: [makeFinding({ filePath: "src/foo.cpp", severity: "major", startLine: 12, endLine: 20 })],
       diffLineIndex,
     });
-    expect(result?.groundingDowngraded).toBe(true);
-    expect(result?.groundingReason).toBe("line-outside-diff");
+    expect(result?.severity).toBe("major");
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("grounded");
+  });
+
+  it("checks a single-line citation where GitHub supplied only endLine (start_line: null)", () => {
+    // extractFindingsFromReviewComments maps GitHub's null start_line to
+    // undefined, so most real findings arrive endLine-only. Requiring both
+    // bounds silently skipped the gate for exactly those.
+    const diffLineIndex = buildDiffGroundingIndex(SAMPLE_DIFF);
+    const [result] = enforceDiffGrounding({
+      findings: [makeFinding({ filePath: "src/foo.cpp", severity: "critical", startLine: undefined, endLine: 500 })],
+      diffLineIndex,
+    });
+    expect(outcome(result).checked).toBe(true);
+    expect(outcome(result).reason).toBe("line-outside-diff");
+    expect(result?.severity).toBe(DIFF_GROUNDING_DOWNGRADE_TARGET);
+  });
+
+  it("grounds an endLine-only citation that does fall inside a hunk", () => {
+    const diffLineIndex = buildDiffGroundingIndex(SAMPLE_DIFF);
+    const [result] = enforceDiffGrounding({
+      findings: [makeFinding({ filePath: "src/foo.cpp", severity: "critical", startLine: undefined, endLine: 10 })],
+      diffLineIndex,
+    });
+    expect(outcome(result).reason).toBe("grounded");
+    expect(result?.severity).toBe("critical");
+  });
+
+  it("fails open when the collected diff was truncated (a missing line proves nothing)", () => {
+    const truncatedDiff = `${SAMPLE_DIFF}\n[Full diff truncated at 2097152 bytes]\n`;
+    const [result] = enforceDiffGrounding({
+      findings: [makeFinding({ filePath: "src/foo.cpp", severity: "critical", startLine: 500, endLine: 500 })],
+      diffLineIndex: buildDiffGroundingIndex(truncatedDiff),
+      diffTruncated: isDiffTruncated(truncatedDiff),
+    });
+    expect(result?.severity).toBe("critical");
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("diff-truncated");
   });
 
   it("fails open on a finding citing a file that never appears in the diff (ambiguous, not necessarily hallucinated)", () => {
@@ -115,8 +170,8 @@ describe("enforceDiffGrounding", () => {
       findings: [makeFinding({ filePath: "src/other.cpp", severity: "critical", startLine: 5, endLine: 5 })],
       diffLineIndex,
     });
-    expect(result?.groundingDowngraded).toBe(false);
-    expect(result?.groundingReason).toBe("file-not-in-diff");
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("file-not-in-diff");
     expect(result?.severity).toBe("critical");
   });
 
@@ -139,9 +194,9 @@ describe("enforceDiffGrounding", () => {
       diffLineIndex,
     });
     expect(result?.severity).toBe("minor");
-    expect(result?.groundingChecked).toBe(false);
-    expect(result?.groundingDowngraded).toBe(false);
-    expect(result?.groundingReason).toBe("not-applicable");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("not-applicable");
   });
 
   it("does not check findings without an explicit line citation", () => {
@@ -151,8 +206,8 @@ describe("enforceDiffGrounding", () => {
       diffLineIndex,
     });
     expect(result?.severity).toBe("critical");
-    expect(result?.groundingChecked).toBe(false);
-    expect(result?.groundingReason).toBe("not-applicable");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).reason).toBe("not-applicable");
   });
 
   it("fails open (never downgrades) when no diff text was collected for the review", () => {
@@ -162,10 +217,10 @@ describe("enforceDiffGrounding", () => {
       diffLineIndex,
     });
     expect(result?.severity).toBe("critical");
-    expect(result?.groundingChecked).toBe(false);
-    expect(result?.groundingVerified).toBe(true);
-    expect(result?.groundingDowngraded).toBe(false);
-    expect(result?.groundingReason).toBe("no-diff-available");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).verified).toBe(true);
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("no-diff-available");
   });
 
   it("treats startLine-only citations as a single-line range", () => {
@@ -174,8 +229,8 @@ describe("enforceDiffGrounding", () => {
       findings: [makeFinding({ filePath: "src/foo.cpp", severity: "critical", startLine: 11 })],
       diffLineIndex,
     });
-    expect(result?.groundingDowngraded).toBe(false);
-    expect(result?.groundingReason).toBe("grounded");
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("grounded");
   });
 
   it("preserves unrelated finding fields", () => {

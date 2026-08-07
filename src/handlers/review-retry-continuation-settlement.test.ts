@@ -42,7 +42,7 @@ function makeParams(
     deliveryId: "delivery-1",
     reviewOutputKey: "review-key",
     retryReviewOutputKey: "retry-key",
-    retryResult: { conclusion: "success", isTimeout: false, published: false },
+    retryResult: { conclusion: "success", isTimeout: false, published: false, errorMessage: undefined },
     firstPassOutcome: { conclusion: "failure", isTimeout: true },
     baseCheckpoint: checkpoint(),
     retryCheckpoint: checkpoint({
@@ -94,6 +94,244 @@ describe("settleRetryContinuationResults", () => {
         reason: "no-retry-results",
       },
     });
+  });
+
+  test("posts a turn-limit fallback comment when retry fails and nothing has been published yet", async () => {
+    const fallbackCalls: Array<Record<string, unknown>> = [];
+    const params = makeParams({
+      partialCommentId: undefined,
+      retryResult: {
+        conclusion: "failure",
+        isTimeout: false,
+        published: false,
+        stopReason: "max_turns",
+        errorMessage: undefined,
+      },
+      firstPassOutcome: { conclusion: "failure", isTimeout: false, stopReason: "max_turns" },
+      publishReviewExecutionErrorFallbackFn: async (callParams) => {
+        fallbackCalls.push(callParams as unknown as Record<string, unknown>);
+        return {
+          ok: true,
+          value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" },
+        };
+      },
+    });
+
+    const result = await settleRetryContinuationResults(params);
+
+    expect(fallbackCalls).toHaveLength(1);
+    expect(fallbackCalls[0]?.exhaustedTurnBudget).toBe(true);
+    expect(fallbackCalls[0]?.retryScheduled).toBe(false);
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        status: "quiet-settled",
+        published: true,
+        persistedContinuationState: false,
+        discardedCheckpoints: false,
+        reason: "no-retry-results",
+      },
+    });
+  });
+
+  test("does not post a fallback comment when the original review already published a partial review", async () => {
+    const fallbackCalls: unknown[] = [];
+    const params = makeParams({
+      partialCommentId: 321,
+      publishReviewExecutionErrorFallbackFn: async () => {
+        fallbackCalls.push(true);
+        return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+      },
+    });
+
+    await settleRetryContinuationResults(params);
+
+    expect(fallbackCalls).toHaveLength(0);
+  });
+
+  test("does not post an error comment when a cleanly-completed retry simply found nothing new", async () => {
+    const fallbackCalls: unknown[] = [];
+    const params = makeParams({
+      retryCompletedWithResults: true,
+      partialCommentId: undefined,
+      retryResult: { conclusion: "success", isTimeout: false, published: false, stopReason: undefined, failureSubtype: undefined, errorMessage: undefined },
+      retryCheckpoint: checkpoint({
+        reviewOutputKey: "retry-key",
+        filesReviewed: ["src/a.ts"],
+        findingCount: 0,
+        summaryDraft: "retry summary",
+      }),
+      publishReviewExecutionErrorFallbackFn: async () => {
+        fallbackCalls.push(true);
+        return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+      },
+    });
+
+    const noFindingsCalls: unknown[] = [];
+    params.publishReviewNoFindingsNoticeFn = async () => {
+      noFindingsCalls.push(true);
+      return { ok: true, value: { published: true, resolution: "no-findings-notice" } };
+    };
+
+    const result = await settleRetryContinuationResults(params);
+
+    // The retry ran to completion and found nothing -- that is not a failure,
+    // so narrating an internal error would be a false notice. It still has to
+    // say something, or a clean result looks identical to a dropped review.
+    expect(fallbackCalls).toHaveLength(0);
+    expect(noFindingsCalls).toHaveLength(1);
+    expect(result.ok && result.value.published).toBe(true);
+  });
+
+  test("settles the retry even when the no-findings notice throws", async () => {
+    const params = makeParams({
+      retryCompletedWithResults: true,
+      partialCommentId: undefined,
+      retryResult: { conclusion: "success", isTimeout: false, published: false, stopReason: undefined, failureSubtype: undefined, errorMessage: undefined },
+      retryCheckpoint: checkpoint({ reviewOutputKey: "retry-key", filesReviewed: ["src/a.ts"], findingCount: 0 }),
+      publishReviewNoFindingsNoticeFn: async () => {
+        throw new Error("network down");
+      },
+    });
+
+    const result = await settleRetryContinuationResults(params);
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.published).toBe(false);
+  });
+
+  test("still posts a fallback when the same route follows a turn-budget exhaustion", async () => {
+    const fallbackCalls: unknown[] = [];
+    const params = makeParams({
+      retryCompletedWithResults: true,
+      partialCommentId: undefined,
+      retryResult: { conclusion: "success", isTimeout: false, published: false, stopReason: undefined, failureSubtype: undefined, errorMessage: undefined },
+      firstPassOutcome: { conclusion: "failure", isTimeout: false, stopReason: "max_turns" },
+      retryCheckpoint: checkpoint({ reviewOutputKey: "retry-key", filesReviewed: ["src/a.ts"], findingCount: 0 }),
+      publishReviewExecutionErrorFallbackFn: async () => {
+        fallbackCalls.push(true);
+        return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+      },
+    });
+
+    const result = await settleRetryContinuationResults(params);
+
+    expect(fallbackCalls).toHaveLength(1);
+    expect(result.ok && result.value.published).toBe(true);
+  });
+
+  test("settles the retry even when the fallback publication throws", async () => {
+    const params = makeParams({
+      retryCompletedWithResults: false,
+      partialCommentId: undefined,
+      retryResult: {
+        conclusion: "failure", isTimeout: false, published: false,
+        stopReason: "max_turns", failureSubtype: undefined, errorMessage: undefined,
+      },
+      publishReviewExecutionErrorFallbackFn: async () => {
+        throw new Error("token refresh failed");
+      },
+    });
+
+    // Must not reject: a thrown fallback previously skipped settlement and
+    // stranded the retry's checkpoints and continuation family state.
+    const result = await settleRetryContinuationResults(params);
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.published).toBe(false);
+  });
+
+  test("does not post a fallback when retry settles to a non-merge decision but inline findings were already published", async () => {
+    const fallbackCalls: unknown[] = [];
+    const params = makeParams({
+      retryCompletedWithResults: true,
+      partialCommentId: undefined,
+      hasPublishedInlines: true,
+      retryResult: { conclusion: "success", isTimeout: false, published: false, stopReason: undefined, failureSubtype: undefined, errorMessage: undefined },
+      retryCheckpoint: checkpoint({
+        reviewOutputKey: "retry-key",
+        filesReviewed: ["src/a.ts"],
+        findingCount: 0,
+        summaryDraft: "retry summary",
+      }),
+      publishReviewExecutionErrorFallbackFn: async () => {
+        fallbackCalls.push(true);
+        return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+      },
+    });
+
+    await settleRetryContinuationResults(params);
+
+    expect(fallbackCalls).toHaveLength(0);
+  });
+
+  test("does not post a fallback when the retry itself already published inline findings", async () => {
+    const fallbackCalls: unknown[] = [];
+    const params = makeParams({
+      retryCompletedWithResults: true,
+      partialCommentId: undefined,
+      retryResult: {
+        conclusion: "success",
+        isTimeout: false,
+        published: true,
+        stopReason: undefined,
+        failureSubtype: undefined,
+        errorMessage: undefined,
+      },
+      retryCheckpoint: null,
+      publishReviewExecutionErrorFallbackFn: async () => {
+        fallbackCalls.push(true);
+        return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+      },
+    });
+
+    await settleRetryContinuationResults(params);
+
+    expect(fallbackCalls).toHaveLength(0);
+  });
+
+  test("every non-publishing settlement route checks whether anything reached the PR", async () => {
+    // The fallback is applied once, at the single point all non-merge outcomes
+    // funnel through. This asserts that property across the distinct routes so
+    // a future settlement branch cannot silently skip the check -- the exact
+    // failure mode this module exists to prevent.
+    const routes: Array<{ name: string; overrides: Parameters<typeof makeParams>[0] }> = [
+      { name: "no-retry-results", overrides: { retryCompletedWithResults: false } },
+      { name: "missing-base-checkpoint", overrides: { retryCompletedWithResults: true, baseCheckpoint: null } },
+      {
+        name: "non-merge-decision",
+        overrides: {
+          retryCompletedWithResults: true,
+          retryCheckpoint: checkpoint({ reviewOutputKey: "retry-key", filesReviewed: ["src/a.ts"], findingCount: 0 }),
+        },
+      },
+    ];
+
+    for (const route of routes) {
+      const fallbackCalls: unknown[] = [];
+      const params = makeParams({
+        ...route.overrides,
+        partialCommentId: undefined,
+        hasPublishedInlines: false,
+        retryResult: {
+          conclusion: "failure",
+          isTimeout: false,
+          published: false,
+          stopReason: "max_turns",
+          failureSubtype: undefined,
+          errorMessage: undefined,
+        },
+        publishReviewExecutionErrorFallbackFn: async () => {
+          fallbackCalls.push(true);
+          return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+        },
+      });
+
+      const result = await settleRetryContinuationResults(params);
+
+      expect(fallbackCalls, `route ${route.name} must post a fallback`).toHaveLength(1);
+      expect(result.ok && result.value.published, `route ${route.name} must report published`).toBe(true);
+    }
   });
 
   test("returns merge publication Result when continuation is publishable", async () => {

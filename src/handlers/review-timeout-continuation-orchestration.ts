@@ -483,6 +483,7 @@ export async function handleReviewTimeoutContinuationOutcome(params: {
           parentDeliveryId: params.event.id,
           prAuthor: params.pr.user.login,
           partialCommentId,
+          hasPublishedInlines,
           getCheckpoint: retryOutcomeCheckpointLookup,
           reviewOutputKey: params.reviewOutputKey,
           canonicalReviewOutputKey: params.canonicalReviewOutputKey,

@@ -57,6 +57,7 @@ import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
 import { registerFatalShutdownHandlers } from "./lifecycle/fatal-shutdown-handlers.ts";
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
 import { replayQueuedWebhook } from "./lifecycle/webhook-replay.ts";
+import { createAbandonedJobNotifier } from "./lifecycle/abandoned-job-notifier.ts";
 import type { WebhookQueueEntry } from "./lifecycle/types.ts";
 import { createPullRequestWithPublicationPipeline } from "./lib/github-publication.ts";
 
@@ -167,6 +168,16 @@ let _wikiStalenessDetectorRef: { stop: () => void } | null = null;
 let _clusterSchedulerRef: { stop: () => void; runNow: () => Promise<void> } | null = null;
 let _wikiPopularityScorerRef: { stop: () => void } | null = null;
 
+// Best-effort visibility for review jobs a shutdown force-exit abandons: post
+// a "review interrupted by deploy" notice on the affected PR instead of
+// letting the job vanish with no user-visible signal (the abandoning process
+// has already ack'd the triggering webhook, so GitHub will not redeliver it).
+const abandonedJobNotifier = createAbandonedJobNotifier({
+  logger,
+  getInstallationOctokit: (installationId) => githubApp.getInstallationOctokit(installationId),
+  getAppSlug: () => githubApp.getAppSlug(),
+});
+
 const shutdownManager = createShutdownManager({
   logger,
   requestTracker,
@@ -178,6 +189,8 @@ const shutdownManager = createShutdownManager({
     _wikiPopularityScorerRef?.stop();
     await closeDb();
   },
+  getAbandonedJobs: () => jobQueue.getAllActiveJobs?.() ?? [],
+  notifyAbandonedJobs: (jobs) => abandonedJobNotifier.notify(jobs),
 });
 
 // Startup maintenance: purge old rows (TELEM-07)

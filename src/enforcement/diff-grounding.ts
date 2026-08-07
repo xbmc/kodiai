@@ -1,5 +1,11 @@
 import type { FindingSeverity } from "../knowledge/types.ts";
 import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
+import {
+  GATE_DOWNGRADE_TARGET,
+  GATE_ELIGIBLE_SEVERITIES,
+  withGateOutcome,
+  type GateAdjustedFinding,
+} from "./gate-outcome.ts";
 
 /**
  * Diff grounding: a cheap structural fact-check applied to high-severity
@@ -28,25 +34,17 @@ import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "
 export type DiffGroundingReasonCode =
   | "not-applicable"
   | "no-diff-available"
+  | "diff-truncated"
   | "file-not-in-diff"
   | "line-outside-diff"
   | "grounded";
 
-export type DiffGroundingResult = {
-  groundingChecked: boolean;
-  groundingVerified: boolean;
-  groundingDowngraded: boolean;
-  groundingReason: DiffGroundingReasonCode;
-  preGroundingSeverity?: FindingSeverity;
-};
-
-/** Severities whose file:line citation is expensive enough to warrant a grounding check. */
-const GROUNDING_GATED_SEVERITIES: ReadonlySet<FindingSeverity> = new Set(["critical", "major"]);
+export type DiffGroundingResult = Required<GateAdjustedFinding>;
 
 /** Target severity when a citation cannot be located in the diff. */
-export const DIFF_GROUNDING_DOWNGRADE_TARGET: FindingSeverity = "medium";
+export const DIFF_GROUNDING_DOWNGRADE_TARGET = GATE_DOWNGRADE_TARGET;
 
-export type DiffGroundingFindingInput = {
+export type DiffGroundingFindingInput = GateAdjustedFinding & {
   filePath: string;
   severity: FindingSeverity;
   startLine?: number;
@@ -66,6 +64,23 @@ export function buildDiffGroundingIndex(diffText: string | null | undefined): Pr
 }
 
 /**
+ * Markers the diff collector appends when it hits its output cap
+ * (review-diff-collection.ts). A truncated diff can cut off mid-file, leaving
+ * that file present in the index with only its early hunks -- so a correct
+ * citation to a later line looks identical to a hallucinated one. Detecting
+ * truncation lets the gate fail open rather than demote real findings.
+ */
+const DIFF_TRUNCATION_MARKERS = [
+  "[Full diff truncated at",
+  "[GitHub patch fallback truncated]",
+];
+
+export function isDiffTruncated(diffText: string | null | undefined): boolean {
+  if (!diffText) return false;
+  return DIFF_TRUNCATION_MARKERS.some((marker) => diffText.includes(marker));
+}
+
+/**
  * Verify that critical/major findings cite a file:line that actually falls
  * within the collected diff's changed-line ranges. Findings below the
  * gated severities, findings without an explicit line citation, findings
@@ -78,24 +93,31 @@ export function buildDiffGroundingIndex(diffText: string | null | undefined): Pr
 export function enforceDiffGrounding<T extends DiffGroundingFindingInput>(params: {
   findings: T[];
   diffLineIndex: PrDiffCommentabilityIndex;
+  diffTruncated?: boolean;
 }): (T & DiffGroundingResult)[] {
   const { findings, diffLineIndex } = params;
   const diffAvailable = diffLineIndex.size > 0;
 
   return findings.map((finding) => {
-    if (!GROUNDING_GATED_SEVERITIES.has(finding.severity)) {
+    if (!GATE_ELIGIBLE_SEVERITIES.has(finding.severity)) {
       return passThrough(finding, "not-applicable");
     }
 
-    const startLine = normalizeLine(finding.startLine);
-    const endLine = normalizeLine(finding.endLine) ?? startLine;
-    if (!startLine || !endLine) {
+    const citedRange = resolveCitedLineRange(finding);
+    if (!citedRange) {
       // No explicit line citation to fact-check.
       return passThrough(finding, "not-applicable");
     }
+    const { startLine, endLine } = citedRange;
 
     if (!diffAvailable) {
       return passThrough(finding, "no-diff-available");
+    }
+
+    if (params.diffTruncated) {
+      // The collected diff hit its size cap and may have been cut mid-file, so
+      // a missing line proves nothing about the citation. Fail open.
+      return passThrough(finding, "diff-truncated");
     }
 
     const commentableLines = diffLineIndex.get(finding.filePath);
@@ -106,53 +128,88 @@ export function enforceDiffGrounding<T extends DiffGroundingFindingInput>(params
       return passThrough(finding, "file-not-in-diff");
     }
 
+    // Intersection, not containment: a finding about a whole function
+    // legitimately spans lines beyond the hunk that changed it (the rest being
+    // unchanged context the diff never carried). Requiring *every* cited line
+    // to be in the index would demote those as fabricated. One diff-visible
+    // line in the cited range is enough to prove the citation is real.
     const lo = Math.min(startLine, endLine);
     const hi = Math.max(startLine, endLine);
+    let intersectsDiff = false;
     for (let line = lo; line <= hi; line += 1) {
-      if (!commentableLines.has(line)) {
-        return downgrade(finding, "line-outside-diff");
+      if (commentableLines.has(line)) {
+        intersectsDiff = true;
+        break;
       }
     }
+    if (!intersectsDiff) {
+      return downgrade(finding, "line-outside-diff");
+    }
 
-    return {
-      ...finding,
-      groundingChecked: true,
-      groundingVerified: true,
-      groundingDowngraded: false,
-      groundingReason: "grounded",
-    };
+    return grounded(finding);
   });
 }
 
+/** Gate evaluated the citation and it holds. */
+function grounded<T extends DiffGroundingFindingInput>(finding: T): T & DiffGroundingResult {
+  return withGateOutcome(finding, {
+    gate: "diff-grounding",
+    reason: "grounded",
+    checked: true,
+    verified: true,
+  });
+}
+
+/** Gate could not evaluate the citation -- fail open, severity untouched. */
 function passThrough<T extends DiffGroundingFindingInput>(
   finding: T,
   reason: DiffGroundingReasonCode,
 ): T & DiffGroundingResult {
-  return {
-    ...finding,
-    groundingChecked: false,
-    groundingVerified: true,
-    groundingDowngraded: false,
-    groundingReason: reason,
-  };
+  return withGateOutcome(finding, {
+    gate: "diff-grounding",
+    reason,
+    checked: false,
+    verified: true,
+  });
 }
 
 function downgrade<T extends DiffGroundingFindingInput>(
   finding: T,
   reason: DiffGroundingReasonCode,
 ): T & DiffGroundingResult {
-  return {
-    ...finding,
-    severity: DIFF_GROUNDING_DOWNGRADE_TARGET,
-    preGroundingSeverity: finding.severity,
-    groundingChecked: true,
-    groundingVerified: false,
-    groundingDowngraded: true,
-    groundingReason: reason,
-  };
+  return withGateOutcome({ ...finding, severity: GATE_DOWNGRADE_TARGET }, {
+    gate: "diff-grounding",
+    reason,
+    checked: true,
+    verified: false,
+    from: finding.severity,
+    to: GATE_DOWNGRADE_TARGET,
+  });
 }
 
 function normalizeLine(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 1) return undefined;
   return Math.floor(value);
+}
+
+/**
+ * Resolve a finding's cited line range, tolerating either bound being absent.
+ *
+ * This must accept an `endLine`-only citation: GitHub returns `start_line: null`
+ * for every *single-line* review comment, so `extractFindingsFromReviewComments`
+ * yields `{ startLine: undefined, endLine: <line> }` for the most common finding
+ * shape there is. Requiring both bounds silently skipped the grounding gates for
+ * exactly those findings -- the gates reported "not-applicable" and checked
+ * nothing. A single present bound collapses to a one-line range.
+ */
+export function resolveCitedLineRange(finding: {
+  startLine?: unknown;
+  endLine?: unknown;
+}): { startLine: number; endLine: number } | undefined {
+  const start = normalizeLine(finding.startLine);
+  const end = normalizeLine(finding.endLine);
+  const startLine = start ?? end;
+  const endLine = end ?? start;
+  if (startLine === undefined || endLine === undefined) return undefined;
+  return { startLine, endLine };
 }
