@@ -106,12 +106,12 @@ export function enforceDiffGrounding<T extends DiffGroundingFindingInput>(params
       return passThrough(finding, "not-applicable");
     }
 
-    const startLine = normalizeLine(finding.startLine);
-    const endLine = normalizeLine(finding.endLine) ?? startLine;
-    if (!startLine || !endLine) {
+    const citedRange = resolveCitedLineRange(finding);
+    if (!citedRange) {
       // No explicit line citation to fact-check.
       return passThrough(finding, "not-applicable");
     }
+    const { startLine, endLine } = citedRange;
 
     if (!diffAvailable) {
       return passThrough(finding, "no-diff-available");
@@ -190,4 +190,26 @@ function downgrade<T extends DiffGroundingFindingInput>(
 function normalizeLine(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 1) return undefined;
   return Math.floor(value);
+}
+
+/**
+ * Resolve a finding's cited line range, tolerating either bound being absent.
+ *
+ * This must accept an `endLine`-only citation: GitHub returns `start_line: null`
+ * for every *single-line* review comment, so `extractFindingsFromReviewComments`
+ * yields `{ startLine: undefined, endLine: <line> }` for the most common finding
+ * shape there is. Requiring both bounds silently skipped the grounding gates for
+ * exactly those findings -- the gates reported "not-applicable" and checked
+ * nothing. A single present bound collapses to a one-line range.
+ */
+export function resolveCitedLineRange(finding: {
+  startLine?: unknown;
+  endLine?: unknown;
+}): { startLine: number; endLine: number } | undefined {
+  const start = normalizeLine(finding.startLine);
+  const end = normalizeLine(finding.endLine);
+  const startLine = start ?? end;
+  const endLine = end ?? start;
+  if (startLine === undefined || endLine === undefined) return undefined;
+  return { startLine, endLine };
 }

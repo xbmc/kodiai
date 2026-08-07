@@ -148,9 +148,18 @@ export async function applyEnforcement(params: {
     // Step 4: Ground critical/major citations against the collected diff.
     // Runs last so a hallucinated line reference can pull an elevated
     // severity back down; it never re-elevates.
-    const diffLineIndex = buildDiffGroundingIndex(params.diffText);
+    // Parsing the diff is the expensive part of this gate, so skip it entirely
+    // when nothing is gated: only critical/major findings are ever checked, and
+    // most reviews carry none. Passing an empty index makes enforceDiffGrounding
+    // fail open, which is the same result those findings would have reached.
+    const needsDiffGrounding = merged.some((finding) =>
+      finding.severity === "critical" || finding.severity === "major"
+    );
+    const diffLineIndex = needsDiffGrounding
+      ? buildDiffGroundingIndex(params.diffText)
+      : new Map();
     const grounded = enforceDiffGrounding({
-      diffTruncated: isDiffTruncated(params.diffText),
+      diffTruncated: needsDiffGrounding && isDiffTruncated(params.diffText),
       findings: merged as (typeof merged[number] & { severity: FindingSeverity })[],
       diffLineIndex,
     });

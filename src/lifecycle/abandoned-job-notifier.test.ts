@@ -197,6 +197,29 @@ describe("createAbandonedJobNotifier", () => {
     expect(String(calls[0]?.body)).toContain("still running");
   });
 
+  test("caps notices per deploy and spends the cap on jobs that actually started", async () => {
+    const { octokit, calls } = createOctokitHarness();
+    const logger = createTestLogger();
+    const notifier = createAbandonedJobNotifier({
+      logger,
+      getInstallationOctokit: async () => octokit,
+      getAppSlug: () => "kodiai",
+      maxNotices: 2,
+    });
+
+    await notifier.notify([
+      createJobSnapshot({ jobId: "1-1", phase: "queued", key: "acme/w#1", prNumber: 1 }),
+      createJobSnapshot({ jobId: "1-2", phase: "queued", key: "acme/w#2", prNumber: 2 }),
+      createJobSnapshot({ jobId: "1-3", phase: "running", key: "acme/w#3", prNumber: 3 }),
+    ]);
+
+    expect(calls).toHaveLength(2);
+    // The started job must not be the one dropped.
+    expect(calls.map((c) => c.issue_number)).toContain(3);
+    // Truncation must be visible, never silent.
+    expect(logger._entries.some((e) => e.bindings.droppedForCap === 1)).toBe(true);
+  });
+
   test("does nothing for an empty job list", async () => {
     const { octokit, calls } = createOctokitHarness();
     const getInstallationOctokit = mock(async () => octokit);

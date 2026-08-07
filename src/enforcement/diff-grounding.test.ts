@@ -115,6 +115,30 @@ describe("enforceDiffGrounding", () => {
     expect(result?.groundingReason).toBe("grounded");
   });
 
+  it("checks a single-line citation where GitHub supplied only endLine (start_line: null)", () => {
+    // extractFindingsFromReviewComments maps GitHub's null start_line to
+    // undefined, so most real findings arrive endLine-only. Requiring both
+    // bounds silently skipped the gate for exactly those.
+    const diffLineIndex = buildDiffGroundingIndex(SAMPLE_DIFF);
+    const [result] = enforceDiffGrounding({
+      findings: [makeFinding({ filePath: "src/foo.cpp", severity: "critical", startLine: undefined, endLine: 500 })],
+      diffLineIndex,
+    });
+    expect(result?.groundingChecked).toBe(true);
+    expect(result?.groundingReason).toBe("line-outside-diff");
+    expect(result?.severity).toBe(DIFF_GROUNDING_DOWNGRADE_TARGET);
+  });
+
+  it("grounds an endLine-only citation that does fall inside a hunk", () => {
+    const diffLineIndex = buildDiffGroundingIndex(SAMPLE_DIFF);
+    const [result] = enforceDiffGrounding({
+      findings: [makeFinding({ filePath: "src/foo.cpp", severity: "critical", startLine: undefined, endLine: 10 })],
+      diffLineIndex,
+    });
+    expect(result?.groundingReason).toBe("grounded");
+    expect(result?.severity).toBe("critical");
+  });
+
   it("fails open when the collected diff was truncated (a missing line proves nothing)", () => {
     const truncatedDiff = `${SAMPLE_DIFF}\n[Full diff truncated at 2097152 bytes]\n`;
     const [result] = enforceDiffGrounding({

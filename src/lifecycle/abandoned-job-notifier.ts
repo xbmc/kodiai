@@ -20,6 +20,9 @@ const REVIEW_FAMILY_KEY_PATTERN = /^([^/]+)\/([^#]+)#(\d+)$/;
 
 const DEFAULT_PER_NOTICE_TIMEOUT_MS = 8_000;
 
+/** Upper bound on PR comments a single force-exit may post. */
+const DEFAULT_MAX_NOTICES = 20;
+
 /** Phase assigned at enqueue time; a job still in it never began executing. */
 const QUEUED_PHASE = "queued";
 
@@ -66,6 +69,8 @@ export interface AbandonedJobNotifierDeps {
   getAppSlug: () => string;
   /** Per-notice timeout so a hung GitHub API call can't stall shutdown indefinitely. */
   perNoticeTimeoutMs?: number;
+  /** Max PR comments a single force-exit may post. Default: 20. */
+  maxNotices?: number;
 }
 
 export interface AbandonedJobNotifier {
@@ -83,7 +88,13 @@ export interface AbandonedJobNotifier {
  * abandoned by a shutdown force-exit, so a dropped review is never silent.
  */
 export function createAbandonedJobNotifier(deps: AbandonedJobNotifierDeps): AbandonedJobNotifier {
-  const { logger, getInstallationOctokit, getAppSlug, perNoticeTimeoutMs = DEFAULT_PER_NOTICE_TIMEOUT_MS } = deps;
+  const {
+    logger,
+    getInstallationOctokit,
+    getAppSlug,
+    perNoticeTimeoutMs = DEFAULT_PER_NOTICE_TIMEOUT_MS,
+    maxNotices = DEFAULT_MAX_NOTICES,
+  } = deps;
 
   async function notifyOne(job: JobSnapshot): Promise<void> {
     const parsed = parseReviewFamilyKey(job.key);
@@ -156,16 +167,32 @@ export function createAbandonedJobNotifier(deps: AbandonedJobNotifierDeps): Aban
       }
       const deduped = [...byPr.values()];
 
+      // A deploy during a busy period can abandon a long queue, and one comment
+      // per PR is still unbounded from GitHub's perspective. Cap the fan-out and
+      // spend it on jobs that actually started -- those represent work that was
+      // genuinely lost mid-flight, whereas a queued job never produced anything.
+      const ordered = [...deduped].sort((a, b) => {
+        const aQueued = a.phase === QUEUED_PHASE ? 1 : 0;
+        const bQueued = b.phase === QUEUED_PHASE ? 1 : 0;
+        return aQueued - bQueued;
+      });
+      const selected = ordered.slice(0, maxNotices);
+      const droppedForCap = ordered.length - selected.length;
+
       logger.warn(
         {
-          count: deduped.length,
+          count: selected.length,
           suppressedDuplicates: notifiable.length - deduped.length,
-          jobIds: deduped.map((job) => job.jobId),
+          droppedForCap,
+          maxNotices,
+          jobIds: selected.map((job) => job.jobId),
         },
-        "Notifying PRs of review jobs abandoned by shutdown force-exit",
+        droppedForCap > 0
+          ? "Notifying PRs of review jobs abandoned by shutdown force-exit (notice cap reached, some PRs not notified)"
+          : "Notifying PRs of review jobs abandoned by shutdown force-exit",
       );
 
-      await Promise.allSettled(deduped.map((job) => notifyOne(job)));
+      await Promise.allSettled(selected.map((job) => notifyOne(job)));
     },
   };
 }
