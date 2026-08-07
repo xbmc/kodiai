@@ -12,6 +12,7 @@ import { resolveReviewContinuationRevisionCounts } from "./review-continuation-r
 import type { ReviewDetailsPublicationRuntime } from "./review-details-publication-runtime.ts";
 import { discardCheckpointsFailOpen } from "./review-handler-utils.ts";
 import { publishReviewExecutionErrorFallback } from "./review-error-publication.ts";
+import { publishReviewNoFindingsNotice } from "./review-no-findings-publication.ts";
 import {
   publishRetryMergeContinuationResults,
   type RetryMergeContinuationPublicationStatus,
@@ -23,6 +24,7 @@ import {
 
 type PublishRetryMergeContinuationResults = typeof publishRetryMergeContinuationResults;
 type PublishReviewExecutionErrorFallback = typeof publishReviewExecutionErrorFallback;
+type PublishReviewNoFindingsNotice = typeof publishReviewNoFindingsNotice;
 
 /**
  * Every quiet-settlement exit below (retry produced nothing usable, missing base
@@ -216,6 +218,7 @@ export async function settleRetryContinuationResults(params: {
   persistContinuationFamilyState: Parameters<typeof publishRetryMergeContinuationResults>[0]["persistContinuationFamilyState"];
   publishRetryMergeContinuationResultsFn?: PublishRetryMergeContinuationResults;
   publishReviewExecutionErrorFallbackFn?: PublishReviewExecutionErrorFallback;
+  publishReviewNoFindingsNoticeFn?: PublishReviewNoFindingsNotice;
 }): Promise<RetryContinuationSettlementResult> {
   const postFallbackIfNothingPublished = async (settlementReason: string): Promise<boolean> => {
     if (!hasNothingBeenPublishedYet(params)) {
@@ -228,23 +231,47 @@ export async function settleRetryContinuationResults(params: {
       params.retryResult.stopReason === "max_turns" ||
       params.retryResult.failureSubtype === "error_max_turns";
 
-    // This publisher emits *error* comments. A retry that ran to completion and
-    // simply found nothing new is not an error, and labelling it one would be
-    // the same false-notice problem this module exists to remove, just
-    // inverted. There is no "completed, no findings" member of ErrorCategory
-    // and inventing one would put a non-error concept in the error taxonomy --
-    // so log the gap instead of narrating a failure that did not happen.
+    // A retry that ran to completion and simply found nothing new is a clean
+    // result, not a failure. It still needs to say so -- nothing else reached
+    // the PR -- but through the success path, since routing it through the
+    // error publisher below produced a false "internal_error" notice on
+    // healthy reviews.
     if (params.retryCompletedWithResults && !exhaustedTurnBudget) {
-      params.logger.warn(
-        {
-          deliveryId: params.deliveryId,
+      const publishNoFindings =
+        params.publishReviewNoFindingsNoticeFn ?? publishReviewNoFindingsNotice;
+      try {
+        const notice = await publishNoFindings({
+          octokit: await params.getOctokit(),
+          owner: params.owner,
+          repo: params.repo,
           prNumber: params.prNumber,
-          retryConclusion: params.retryResult.conclusion,
-          settlementReason,
-        },
-        "Retry completed with no additional findings and nothing had reached the PR -- no error comment posted (see review-retry-continuation-settlement.ts)",
-      );
-      return false;
+          botHandles: [params.getAppSlug(), "claude"],
+          afterRetry: true,
+          logger: params.logger,
+          canPublishVisibleOutput: (reason) =>
+            params.canPublishReviewWorkOutput(params.attemptId, reason, params.deliveryId),
+          setReviewWorkPhase: params.setPublishPhase,
+        });
+        const posted = notice.ok ? notice.value.published : false;
+        params.logger.info(
+          {
+            deliveryId: params.deliveryId,
+            prNumber: params.prNumber,
+            settlementReason,
+            published: posted,
+          },
+          "Retry completed with no additional findings and nothing had reached the PR -- posted a no-findings notice",
+        );
+        return posted;
+      } catch (err) {
+        // Same reasoning as the error path below: a failed notice must never
+        // skip settlement and strand the retry's checkpoints.
+        params.logger.error(
+          { err, deliveryId: params.deliveryId, prNumber: params.prNumber, settlementReason },
+          "No-findings notice threw; settling the retry anyway so checkpoints are not stranded",
+        );
+        return false;
+      }
     }
 
     const publishExecutionErrorFallback =

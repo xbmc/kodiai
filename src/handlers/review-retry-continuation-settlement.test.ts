@@ -167,11 +167,37 @@ describe("settleRetryContinuationResults", () => {
       },
     });
 
-    await settleRetryContinuationResults(params);
+    const noFindingsCalls: unknown[] = [];
+    params.publishReviewNoFindingsNoticeFn = async () => {
+      noFindingsCalls.push(true);
+      return { ok: true, value: { published: true, resolution: "no-findings-notice" } };
+    };
+
+    const result = await settleRetryContinuationResults(params);
 
     // The retry ran to completion and found nothing -- that is not a failure,
-    // so narrating an internal error would be a false notice.
+    // so narrating an internal error would be a false notice. It still has to
+    // say something, or a clean result looks identical to a dropped review.
     expect(fallbackCalls).toHaveLength(0);
+    expect(noFindingsCalls).toHaveLength(1);
+    expect(result.ok && result.value.published).toBe(true);
+  });
+
+  test("settles the retry even when the no-findings notice throws", async () => {
+    const params = makeParams({
+      retryCompletedWithResults: true,
+      partialCommentId: undefined,
+      retryResult: { conclusion: "success", isTimeout: false, published: false, stopReason: undefined, failureSubtype: undefined, errorMessage: undefined },
+      retryCheckpoint: checkpoint({ reviewOutputKey: "retry-key", filesReviewed: ["src/a.ts"], findingCount: 0 }),
+      publishReviewNoFindingsNoticeFn: async () => {
+        throw new Error("network down");
+      },
+    });
+
+    const result = await settleRetryContinuationResults(params);
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.published).toBe(false);
   });
 
   test("still posts a fallback when the same route follows a turn-budget exhaustion", async () => {

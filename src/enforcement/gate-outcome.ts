@@ -37,8 +37,17 @@ export type GateOutcome = {
 };
 
 export type GateAdjustedFinding = {
-  /** Append-only, in gate execution order. */
-  gateOutcomes?: GateOutcome[];
+  /**
+   * Append-only, in gate execution order -- always add via `withGateOutcome`.
+   *
+   * `severityBeforeGates` depends on this ordering and nothing else: the first
+   * outcome carrying a `from` belongs to the first gate that downgraded, and
+   * that gate's input severity is by definition the severity before any gate
+   * touched the finding. Note this holds whichever order the gates run in, so
+   * reordering the pipeline is safe; what would break it is building this array
+   * out of execution order, which `readonly` is here to discourage.
+   */
+  gateOutcomes?: readonly GateOutcome[];
 };
 
 /** Severities whose citation/reasoning is expensive enough to warrant a gate check. */
@@ -78,5 +87,7 @@ export function wasDowngradedByGate(finding: GateAdjustedFinding): boolean {
 export function severityBeforeGates(
   finding: GateAdjustedFinding & { severity: FindingSeverity },
 ): FindingSeverity {
+  // First recorded `from` == first gate that downgraded == pre-gate severity.
+  // See the ordering note on GateAdjustedFinding.gateOutcomes.
   return finding.gateOutcomes?.find((outcome) => outcome.from !== undefined)?.from ?? finding.severity;
 }
