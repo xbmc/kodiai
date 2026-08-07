@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type { CheckSuiteCompletedEvent } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import { createCIFailureHandler, upsertCIComment } from "./ci-failure.ts";
@@ -253,12 +253,6 @@ function extractPostedBody(harness: ReturnType<typeof createHarness>): string {
 }
 
 describe("createCIFailureHandler", () => {
-  let fixture: CheckSuiteCompletedEvent;
-
-  beforeEach(() => {
-    fixture = clonePayload();
-  });
-
   it("creates CI analysis comment and returns created Result status", async () => {
     const harness = createHarness();
 
@@ -740,7 +734,6 @@ describe("createCIFailureHandler", () => {
 
   it("fetches base commit check runs with bounded concurrency", async () => {
     const payload = clonePayload();
-    let activeFetches = 0;
     let maxActiveFetches = 0;
     const refs = [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

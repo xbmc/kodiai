@@ -11,7 +11,6 @@ import {
 } from "./formatter-suggestion-orchestration.ts";
 import type {
   FormatterCommandResult,
-  FormatterSuggestionPayload,
 } from "../execution/formatter-suggestions.ts";
 import type {
   FormatterSuggestionPublisherFailure,
@@ -81,19 +80,6 @@ function makeCommandResult(overrides: Partial<FormatterCommandResult> = {}): For
   };
 }
 
-function makeSuggestion(overrides: Partial<FormatterSuggestionPayload> = {}): FormatterSuggestionPayload {
-  return {
-    path: "src/example.ts",
-    line: 2,
-    side: "RIGHT",
-    suggestionBody: "```suggestion\nconst value = 1;\n```",
-    oldStart: 2,
-    oldEnd: 2,
-    newStart: 2,
-    hunkHeader: "@@ -1,3 +1,3 @@",
-    ...overrides,
-  };
-}
 
 function makePublisherSuccess(overrides: Partial<FormatterSuggestionPublisherSuccess> = {}): FormatterSuggestionPublisherSuccess {
   return {

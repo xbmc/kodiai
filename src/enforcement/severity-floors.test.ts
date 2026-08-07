@@ -148,7 +148,6 @@ describe("BUILTIN_SEVERITY_PATTERNS", () => {
 // ---------------------------------------------------------------------------
 describe("enforceSeverityFloors", () => {
   const defaultFilesByCategory = { test: [] as string[], source: [] as string[] };
-  const defaultFilesByLanguage = {};
 
   describe("C++ null deref elevation", () => {
     it("elevates C++ null deref from minor to critical in production file", () => {

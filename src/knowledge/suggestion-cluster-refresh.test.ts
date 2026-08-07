@@ -9,7 +9,6 @@ import type { Logger } from "pino";
 import {
   createClusterRefresh,
   type ClusterRefreshResult,
-  type ClusterRefreshRunOpts,
 } from "./suggestion-cluster-refresh.ts";
 import type {
   SuggestionClusterStore,

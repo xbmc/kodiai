@@ -82,11 +82,6 @@ describe("classifyClaimAgainstContext", () => {
       context,
       "strict",
     );
-    const resultLenient = classifyClaimAgainstContext(
-      "This changes the database timeout setting",
-      context,
-      "lenient",
-    );
     // strict should be more likely to flag as not-grounded (lower threshold = stricter)
     // With strict, fewer overlapping words needed to pass as grounded
     // Actually strict threshold 0.3 means 30% overlap needed, lenient 0.7 means 70% needed

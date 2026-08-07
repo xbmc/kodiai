@@ -1,7 +1,6 @@
 import {
   createCandidatePublicationBridgeRecord,
   projectCandidatePublicationReducerHandoffInput,
-  type CandidatePublicationBridgeCounts,
   type CandidatePublicationBridgeMalformedReasonCode,
   type CandidatePublicationBridgeReasonCategory,
   type CandidatePublicationBridgeRecord,

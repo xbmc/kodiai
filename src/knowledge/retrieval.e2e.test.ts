@@ -3,7 +3,6 @@ import type { Logger } from "pino";
 import { createRetriever } from "./retrieval.ts";
 import type { ReviewCommentStore, ReviewCommentSearchResult } from "./review-comment-types.ts";
 import type { WikiPageStore, WikiPageSearchResult } from "./wiki-types.ts";
-import type { LearningMemoryStore } from "./types.ts";
 
 function createNoopLogger(): Logger {
   const noop = () => undefined;

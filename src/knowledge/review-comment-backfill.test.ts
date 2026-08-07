@@ -5,7 +5,6 @@ import {
   syncSinglePR,
   groupCommentsIntoThreads,
   withRetry,
-  type BackfillOptions,
 } from "./review-comment-backfill.ts";
 import type { ReviewCommentChunk, ReviewCommentStore, SyncState } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
@@ -318,7 +317,7 @@ describe("backfillReviewComments", () => {
       ],
     });
 
-    const result = await backfillReviewComments({
+    await backfillReviewComments({
       octokit: octokit as any,
       store,
       embeddingProvider,

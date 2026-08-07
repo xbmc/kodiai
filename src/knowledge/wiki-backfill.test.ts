@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import { backfillWikiPages } from "./wiki-backfill.ts";
 import type { WikiPageStore, WikiSyncState, WikiPageChunk, WikiPageRecord, WikiPageSearchResult } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
@@ -181,7 +181,7 @@ describe("backfillWikiPages", () => {
       { pageid: 1, ns: 0, title: "Settings" },
     ]);
 
-    const result = await backfillWikiPages({
+    await backfillWikiPages({
       store,
       embeddingProvider: createMockEmbeddingProvider(),
       source: "test.wiki",

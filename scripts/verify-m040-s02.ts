@@ -26,11 +26,9 @@ import {
   applyGraphAwareSelection,
   computeFileRiskScores,
   DEFAULT_RISK_WEIGHTS,
-  type FileRiskScore,
 } from "../src/lib/file-risk-scorer.ts";
 import {
   queryBlastRadiusFromSnapshot,
-  type ReviewGraphBlastRadiusResult,
   type ReviewGraphQueryInput,
 } from "../src/review-graph/query.ts";
 import type {

@@ -1,7 +1,4 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import {
   createAddonCheckHandler,
   ADDON_CHECK_RUNNER_TIME_BUDGET_MS,
@@ -12,7 +9,7 @@ import type { EventRouter, WebhookEvent, EventHandler } from "../webhook/types.t
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { AppConfig } from "../config.ts";
-import type { WorkspaceManager, JobQueue, JobQueueRunMetadata, Workspace } from "../jobs/types.ts";
+import type { WorkspaceManager, JobQueue, Workspace } from "../jobs/types.ts";
 import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
 
 // ── Test helpers ──────────────────────────────────────────────────────────
@@ -212,20 +209,6 @@ function createMockWorkspaceManager(workspaceOverride?: Workspace): {
   return { manager, createSpy, workspace: effectiveWorkspace, cleanupCalled };
 }
 
-async function createAddonRuleWorkspace(files: Record<string, string>): Promise<Workspace> {
-  const dir = await mkdtemp(join(tmpdir(), "kodiai-addon-check-test-"));
-  for (const [relativePath, content] of Object.entries(files)) {
-    const absolutePath = join(dir, relativePath);
-    await mkdir(join(absolutePath, ".."), { recursive: true });
-    await writeFile(absolutePath, content);
-  }
-  return {
-    dir,
-    cleanup: async () => {
-      await rm(dir, { recursive: true, force: true });
-    },
-  };
-}
 
 function createMockJobQueue(): {
   queue: JobQueue;
@@ -1345,7 +1328,7 @@ describe("createAddonCheckHandler", () => {
 
   it("fork PR uses base branch + fetchAndCheckoutPullRequestHeadRef", async () => {
     const files = ["plugin.video.foo/addon.xml"];
-    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { app } = createMockGithubAppWithIssues(files, []);
     const { logger } = createMockLogger();
     const subprocess = makeCheckerSubprocess("");
     const { manager, createSpy } = createMockWorkspaceManager();
