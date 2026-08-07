@@ -124,7 +124,6 @@ function formatReasonLabel(reason: ReviewFirstPassPayload["boundedReason"]): str
 }
 
 function makeBaseReviewDetails(firstPass: ReviewFirstPassPayload) {
-  firstPass.coveredScope?.totalFiles ?? firstPass.remainingScope?.totalFiles ?? 0;
   const reviewedFiles = firstPass.coveredScope?.reviewedFiles ?? 0;
 
   return formatReviewDetailsSummary({

@@ -244,13 +244,6 @@ describe("createInlineReviewServer output idempotency", () => {
         },
       },
     };
-    createReviewOutputPublicationGate({
-      owner: "acme",
-      repo: "repo",
-      prNumber: 101,
-      reviewOutputKey,
-    });
-
     const firstServer = createInlineReviewServer({
       getOctokit: async () => octokit as never,
       owner: "acme",

@@ -314,8 +314,6 @@ export async function runFailOpenFixture(
  */
 export async function runAnnotatesFixture(): Promise<AnnotatesFixtureResult> {
   const changedPath = "xbmc/utils/StringUtils.cpp";
-  "xbmc/cores/Module1/File1.cpp";
-  "xbmc/cores/Module2/File2.cpp";
 
   const blastRadius = makeBlastRadius({
     changedFiles: [changedPath],

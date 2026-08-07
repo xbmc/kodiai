@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type { CheckSuiteCompletedEvent } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import { createCIFailureHandler, upsertCIComment } from "./ci-failure.ts";
@@ -253,10 +253,6 @@ function extractPostedBody(harness: ReturnType<typeof createHarness>): string {
 }
 
 describe("createCIFailureHandler", () => {
-
-  beforeEach(() => {
-  });
-
   it("creates CI analysis comment and returns created Result status", async () => {
     const harness = createHarness();
 

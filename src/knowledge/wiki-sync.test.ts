@@ -289,7 +289,6 @@ describe("createWikiSyncScheduler", () => {
     (store.getPageRevision as ReturnType<typeof mock>).mockImplementation(async () => 100);
     (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map([[1, 100]]));
 
-    '<div class="redirectMsg"><p>Redirect to <a href="/view/RealPage">RealPage</a></p></div>';
 
     const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {

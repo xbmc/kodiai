@@ -9871,16 +9871,6 @@ describe("createReviewHandler usageLimit and token wiring", () => {
 
     let detailsCommentBody: string | undefined;
 
-    buildReviewOutputKey({
-      installationId: 42,
-      owner: "acme",
-      repo: "repo",
-      prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
-      headSha: "abcdef1234567890",
-    });
-
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
         handlers.set(eventKey, handler);
@@ -17069,15 +17059,6 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       unexpectedPublicCommentCount: 0,
     };
 
-    buildReviewOutputKey({
-      installationId: 42,
-      owner: "acme",
-      repo: "repo",
-      prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
-      headSha: "abcdef1234567890",
-    });
     const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",
