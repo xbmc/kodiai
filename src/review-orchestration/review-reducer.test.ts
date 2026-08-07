@@ -73,8 +73,12 @@ describe("buildReviewReducerCounts", () => {
 
   test("counts grounding-gate downgrades as severity demotions", () => {
     expect(buildReviewReducerCounts([
-      baseFinding({ commentId: 1, groundingDowngraded: true, preGroundingSeverity: "critical" }),
-      baseFinding({ commentId: 2, semanticGroundingDowngraded: true, preSemanticGroundingSeverity: "major" }),
+      baseFinding({ commentId: 1, gateOutcomes: [
+        { gate: "diff-grounding", reason: "line-outside-diff", checked: true, verified: false, from: "critical", to: "medium" },
+      ] }),
+      baseFinding({ commentId: 2, gateOutcomes: [
+        { gate: "semantic-grounding", reason: "mismatch", checked: true, verified: false, from: "major", to: "medium" },
+      ] }),
       baseFinding({ commentId: 3, severityDemoted: true, preDemotionSeverity: "critical", demotionReason: "external-claim" }),
       baseFinding({ commentId: 4 }),
     ], [], { minConfidence: 50 })).toMatchObject({
@@ -266,7 +270,7 @@ describe("reduceReviewFindings", () => {
     });
 
     const finding = result.findings.find((f) => f.commentId === 1);
-    expect(finding?.groundingDowngraded).toBe(true);
+    expect(finding?.gateOutcomes?.some((o) => o.gate === "diff-grounding" && o.from === "critical")).toBe(true);
     expect(finding?.severity).toBe("medium");
     expect(finding?.suppressed).toBe(false);
     expect(result.visibleFindings.map((f) => f.commentId)).toEqual([1]);

@@ -6,6 +6,7 @@ import {
   type SemanticGroundingLLM,
 } from "./semantic-grounding.ts";
 import type { FindingSeverity } from "../knowledge/types.ts";
+import type { GateAdjustedFinding } from "./gate-outcome.ts";
 
 // A realistic unified diff hunk touching src/foo.cpp lines 10-13 (post-change
 // numbering), mirroring diff-grounding.test.ts's fixture so both gates agree
@@ -38,10 +39,28 @@ function makeFinding(overrides: {
     severity: overrides.severity,
     title: overrides.title ?? "Some finding",
     ...(overrides.reasoning !== undefined ? { reasoning: overrides.reasoning } : {}),
-    groundingChecked: overrides.groundingChecked ?? true,
-    groundingVerified: overrides.groundingVerified ?? true,
+    // This gate only runs on findings diff grounding already verified, so seed
+    // that upstream outcome the same way the real pipeline would.
+    gateOutcomes: [{
+      gate: "diff-grounding" as const,
+      reason: "grounded",
+      checked: overrides.groundingChecked ?? true,
+      verified: overrides.groundingVerified ?? true,
+    }],
     ...(overrides.startLine !== undefined ? { startLine: overrides.startLine } : {}),
     ...(overrides.endLine !== undefined ? { endLine: overrides.endLine } : {}),
+  };
+}
+
+/** Read this gate's recorded outcome off a result finding. */
+function outcome(result: GateAdjustedFinding | undefined) {
+  const o = result?.gateOutcomes?.find((entry) => entry.gate === "semantic-grounding");
+  return {
+    checked: o?.checked,
+    downgraded: o?.from !== undefined,
+    reason: o?.reason,
+    from: o?.from,
+    justification: o?.justification,
   };
 }
 
@@ -92,8 +111,8 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.severity).toBe("critical");
-    expect(result?.semanticGroundingChecked).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("disabled");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).reason).toBe("disabled");
     expect(calls).toHaveLength(0);
   });
 
@@ -107,8 +126,8 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.severity).toBe("critical");
-    expect(result?.semanticGroundingChecked).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("disabled");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).reason).toBe("disabled");
   });
 
   it("downgrades a critical finding whose reasoning the LLM says mismatches the actual code", async () => {
@@ -130,11 +149,11 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.severity).toBe(SEMANTIC_GROUNDING_DOWNGRADE_TARGET);
-    expect(result?.preSemanticGroundingSeverity).toBe("critical");
-    expect(result?.semanticGroundingChecked).toBe(true);
-    expect(result?.semanticGroundingDowngraded).toBe(true);
-    expect(result?.semanticGroundingReason).toBe("mismatch");
-    expect(result?.semanticGroundingJustification).toContain("closes the function correctly");
+    expect(outcome(result).from).toBe("critical");
+    expect(outcome(result).checked).toBe(true);
+    expect(outcome(result).downgraded).toBe(true);
+    expect(outcome(result).reason).toBe("mismatch");
+    expect(outcome(result).justification).toContain("closes the function correctly");
 
     // The prompt should carry both the claim and the actual cited source text.
     expect(calls).toHaveLength(1);
@@ -154,9 +173,9 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.severity).toBe("critical");
-    expect(result?.semanticGroundingChecked).toBe(true);
-    expect(result?.semanticGroundingDowngraded).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("matched");
+    expect(outcome(result).checked).toBe(true);
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("matched");
   });
 
   it("fails open (keeps original severity) on an UNCERTAIN verdict", async () => {
@@ -171,9 +190,9 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.severity).toBe("major");
-    expect(result?.semanticGroundingChecked).toBe(true);
-    expect(result?.semanticGroundingDowngraded).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("uncertain");
+    expect(outcome(result).checked).toBe(true);
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("uncertain");
   });
 
   it("fails open on an unparsable LLM response", async () => {
@@ -188,8 +207,8 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.severity).toBe("critical");
-    expect(result?.semanticGroundingDowngraded).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("uncertain");
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("uncertain");
   });
 
   it("fails open (never downgrades) when the LLM call throws", async () => {
@@ -209,8 +228,8 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.severity).toBe("critical");
-    expect(result?.semanticGroundingDowngraded).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("llm-error");
+    expect(outcome(result).downgraded).toBe(false);
+    expect(outcome(result).reason).toBe("llm-error");
   });
 
   it("never drops a finding -- downgraded findings remain in the output array", async () => {
@@ -249,8 +268,8 @@ describe("enforceSemanticGrounding", () => {
       options: { enabled: true },
     });
 
-    expect(result?.semanticGroundingChecked).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("not-applicable");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).reason).toBe("not-applicable");
     expect(calls).toHaveLength(0);
   });
 
@@ -267,8 +286,8 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.severity).toBe("minor");
-    expect(result?.semanticGroundingChecked).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("not-applicable");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).reason).toBe("not-applicable");
     expect(calls).toHaveLength(0);
   });
 
@@ -284,8 +303,8 @@ describe("enforceSemanticGrounding", () => {
       options: { enabled: true },
     });
 
-    expect(result?.semanticGroundingChecked).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("no-reasoning");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).reason).toBe("no-reasoning");
     expect(calls).toHaveLength(0);
   });
 
@@ -301,8 +320,8 @@ describe("enforceSemanticGrounding", () => {
       options: { enabled: true },
     });
 
-    expect(result?.semanticGroundingChecked).toBe(false);
-    expect(result?.semanticGroundingReason).toBe("source-unavailable");
+    expect(outcome(result).checked).toBe(false);
+    expect(outcome(result).reason).toBe("source-unavailable");
     expect(calls).toHaveLength(0);
   });
 
@@ -322,13 +341,13 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(calls).toHaveLength(2);
-    const checkedCount = results.filter((r) => r.semanticGroundingChecked).length;
-    const budgetExceededCount = results.filter((r) => r.semanticGroundingReason === "budget-exceeded").length;
+    const checkedCount = results.filter((r) => outcome(r).checked).length;
+    const budgetExceededCount = results.filter((r) => outcome(r).reason === "budget-exceeded").length;
     expect(checkedCount).toBe(2);
     expect(budgetExceededCount).toBe(3);
     // Budget-exceeded findings are never downgraded -- fail open.
     for (const result of results) {
-      if (result.semanticGroundingReason === "budget-exceeded") {
+      if (outcome(result).reason === "budget-exceeded") {
         expect(result.severity).toBe("critical");
       }
     }
@@ -395,7 +414,7 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(calls).toHaveLength(1);
-    expect(result?.semanticGroundingChecked).toBe(true);
+    expect(outcome(result).checked).toBe(true);
     expect(result?.severity).toBe(SEMANTIC_GROUNDING_DOWNGRADE_TARGET);
   });
 
@@ -413,7 +432,7 @@ describe("enforceSemanticGrounding", () => {
       options: { enabled: true },
     });
 
-    expect(result?.semanticGroundingReason).not.toBe("source-unavailable");
+    expect(outcome(result).reason).not.toBe("source-unavailable");
     expect(calls).toHaveLength(1);
     expect(calls[0]?.prompt).toContain("m_streaminfo");
     // The gap must be disclosed so absent code is not read as a contradiction.
@@ -467,8 +486,8 @@ describe("enforceSemanticGrounding", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.prompt).toContain("the-critical");
-    expect(results[2]?.semanticGroundingChecked).toBe(true);
-    expect(results[0]?.semanticGroundingReason).toBe("budget-exceeded");
+    expect(outcome(results[2]).checked).toBe(true);
+    expect(outcome(results[0]).reason).toBe("budget-exceeded");
   });
 
   it("caps an unbounded reasoning body so prompt cost stays bounded", async () => {

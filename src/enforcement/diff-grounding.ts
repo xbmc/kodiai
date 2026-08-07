@@ -1,5 +1,11 @@
 import type { FindingSeverity } from "../knowledge/types.ts";
 import { buildPrDiffCommentabilityIndex, type PrDiffCommentabilityIndex } from "../execution/formatter-suggestions.ts";
+import {
+  GATE_DOWNGRADE_TARGET,
+  GATE_ELIGIBLE_SEVERITIES,
+  withGateOutcome,
+  type GateAdjustedFinding,
+} from "./gate-outcome.ts";
 
 /**
  * Diff grounding: a cheap structural fact-check applied to high-severity
@@ -33,21 +39,12 @@ export type DiffGroundingReasonCode =
   | "line-outside-diff"
   | "grounded";
 
-export type DiffGroundingResult = {
-  groundingChecked: boolean;
-  groundingVerified: boolean;
-  groundingDowngraded: boolean;
-  groundingReason: DiffGroundingReasonCode;
-  preGroundingSeverity?: FindingSeverity;
-};
-
-/** Severities whose file:line citation is expensive enough to warrant a grounding check. */
-const GROUNDING_GATED_SEVERITIES: ReadonlySet<FindingSeverity> = new Set(["critical", "major"]);
+export type DiffGroundingResult = Required<GateAdjustedFinding>;
 
 /** Target severity when a citation cannot be located in the diff. */
-export const DIFF_GROUNDING_DOWNGRADE_TARGET: FindingSeverity = "medium";
+export const DIFF_GROUNDING_DOWNGRADE_TARGET = GATE_DOWNGRADE_TARGET;
 
-export type DiffGroundingFindingInput = {
+export type DiffGroundingFindingInput = GateAdjustedFinding & {
   filePath: string;
   severity: FindingSeverity;
   startLine?: number;
@@ -102,7 +99,7 @@ export function enforceDiffGrounding<T extends DiffGroundingFindingInput>(params
   const diffAvailable = diffLineIndex.size > 0;
 
   return findings.map((finding) => {
-    if (!GROUNDING_GATED_SEVERITIES.has(finding.severity)) {
+    if (!GATE_ELIGIBLE_SEVERITIES.has(finding.severity)) {
       return passThrough(finding, "not-applicable");
     }
 
@@ -149,42 +146,45 @@ export function enforceDiffGrounding<T extends DiffGroundingFindingInput>(params
       return downgrade(finding, "line-outside-diff");
     }
 
-    return {
-      ...finding,
-      groundingChecked: true,
-      groundingVerified: true,
-      groundingDowngraded: false,
-      groundingReason: "grounded",
-    };
+    return grounded(finding);
   });
 }
 
+/** Gate evaluated the citation and it holds. */
+function grounded<T extends DiffGroundingFindingInput>(finding: T): T & DiffGroundingResult {
+  return withGateOutcome(finding, {
+    gate: "diff-grounding",
+    reason: "grounded",
+    checked: true,
+    verified: true,
+  });
+}
+
+/** Gate could not evaluate the citation -- fail open, severity untouched. */
 function passThrough<T extends DiffGroundingFindingInput>(
   finding: T,
   reason: DiffGroundingReasonCode,
 ): T & DiffGroundingResult {
-  return {
-    ...finding,
-    groundingChecked: false,
-    groundingVerified: true,
-    groundingDowngraded: false,
-    groundingReason: reason,
-  };
+  return withGateOutcome(finding, {
+    gate: "diff-grounding",
+    reason,
+    checked: false,
+    verified: true,
+  });
 }
 
 function downgrade<T extends DiffGroundingFindingInput>(
   finding: T,
   reason: DiffGroundingReasonCode,
 ): T & DiffGroundingResult {
-  return {
-    ...finding,
-    severity: DIFF_GROUNDING_DOWNGRADE_TARGET,
-    preGroundingSeverity: finding.severity,
-    groundingChecked: true,
-    groundingVerified: false,
-    groundingDowngraded: true,
-    groundingReason: reason,
-  };
+  return withGateOutcome({ ...finding, severity: GATE_DOWNGRADE_TARGET }, {
+    gate: "diff-grounding",
+    reason,
+    checked: true,
+    verified: false,
+    from: finding.severity,
+    to: GATE_DOWNGRADE_TARGET,
+  });
 }
 
 function normalizeLine(value: unknown): number | undefined {

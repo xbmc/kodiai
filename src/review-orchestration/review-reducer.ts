@@ -20,6 +20,19 @@ import { splitDiffByFile } from "../lib/review-git-utils.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { validateGraphAmplifiedFindings as defaultValidateGraphAmplifiedFindings, type GraphValidationFinding, type GraphValidationResult, type GraphValidationVerdict, type ValidationLLM } from "../review-graph/validation.ts";
 import type { LanguageRulesConfig } from "../enforcement/types.ts";
+import {
+  severityBeforeGates,
+  wasDowngradedByGate,
+  type GateAdjustedFinding,
+  type GateOutcome,
+  type SeverityGate,
+} from "../enforcement/gate-outcome.ts";
+
+/** Log message per gate for the downgrade audit pass below. */
+const GATE_DOWNGRADE_LOG_MESSAGES: ReadonlyArray<readonly [SeverityGate, string]> = [
+  ["diff-grounding", "Diff grounding downgraded findings with unverifiable file:line citations"],
+  ["semantic-grounding", "Semantic grounding downgraded findings whose reasoning did not match the actual code"],
+];
 
 export type ReviewReducerStatus = "ready" | "degraded";
 export type RepoDoctrineReducerStatus = "disabled" | "skipped" | "degraded" | "applied";
@@ -67,6 +80,8 @@ export type ProcessedReviewFinding = {
   enforcementPatternId?: string;
   originalSeverity?: FindingSeverity | string;
   severityElevated?: boolean;
+  /** Per-gate fact-check outcomes recorded by the enforcement pipeline. */
+  gateOutcomes?: GateOutcome[];
   [key: string]: unknown;
 };
 
@@ -142,13 +157,7 @@ type EnforcedExtractedFinding = ProcessedReviewFinding & {
   severityElevated: boolean;
   toolingSuppressed: boolean;
   enforcementPatternId?: string;
-  groundingDowngraded?: boolean;
-  groundingReason?: string;
-  preGroundingSeverity?: FindingSeverity;
-  semanticGroundingDowngraded?: boolean;
-  semanticGroundingReason?: string;
-  preSemanticGroundingSeverity?: FindingSeverity;
-};
+} & GateAdjustedFinding;
 
 type ReviewGuardrailRunner = (opts: unknown) => Promise<unknown>;
 
@@ -255,7 +264,7 @@ export function buildReviewReducerCounts(
       lowConfidence += 1;
     }
 
-    if (finding.severityDemoted === true || finding.groundingDowngraded === true || finding.semanticGroundingDowngraded === true) {
+    if (finding.severityDemoted === true || wasDowngradedByGate(finding)) {
       severityDemoted += 1;
     }
 
@@ -357,35 +366,21 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       );
     }
 
-    const groundingDowngradedCount = enforcedFindings.filter((finding) => finding.groundingDowngraded === true).length;
-    if (groundingDowngradedCount > 0) {
-      audit.push({ action: "severity-demoted", source: "enforcement", count: groundingDowngradedCount });
-      input.logger.info(
-        {
-          ...input.baseLog,
-          groundingDowngradedCount,
-          groundingReasons: enforcedFindings
-            .filter((finding) => finding.groundingDowngraded === true)
-            .map((finding) => finding.groundingReason)
-            .slice(0, 20),
-        },
-        "Diff grounding downgraded findings with unverifiable file:line citations",
+    // One pass over every gate's downgrades. Adding a gate needs no change here.
+    for (const [gate, message] of GATE_DOWNGRADE_LOG_MESSAGES) {
+      const downgrades = enforcedFindings.flatMap((finding) =>
+        (finding.gateOutcomes ?? []).filter((outcome) => outcome.gate === gate && outcome.from !== undefined)
       );
-    }
-
-    const semanticGroundingDowngradedCount = enforcedFindings.filter((finding) => finding.semanticGroundingDowngraded === true).length;
-    if (semanticGroundingDowngradedCount > 0) {
-      audit.push({ action: "severity-demoted", source: "enforcement", count: semanticGroundingDowngradedCount });
+      if (downgrades.length === 0) continue;
+      audit.push({ action: "severity-demoted", source: "enforcement", count: downgrades.length });
       input.logger.info(
         {
           ...input.baseLog,
-          semanticGroundingDowngradedCount,
-          semanticGroundingReasons: enforcedFindings
-            .filter((finding) => finding.semanticGroundingDowngraded === true)
-            .map((finding) => finding.semanticGroundingReason)
-            .slice(0, 20),
+          gate,
+          downgradedCount: downgrades.length,
+          reasons: downgrades.map((outcome) => outcome.reason).slice(0, 20),
         },
-        "Semantic grounding downgraded findings whose reasoning did not match the actual code",
+        message,
       );
     }
 
@@ -487,18 +482,13 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
             suppressionFingerprints: input.priorFindingContext.suppressionFingerprints,
           })
         : false;
-      // The grounding passes promise "never drop, downgrade instead" -- but
-      // their downgrade target is `medium`, which is exactly what abbreviated-
-      // tier suppression drops. Without this exemption a grounding downgrade
-      // turns into a silent removal on large PRs, breaking that invariant.
-      // Judge both drop paths on the pre-grounding severity instead.
-      const groundingDowngraded = finding.groundingDowngraded === true
-        || finding.semanticGroundingDowngraded === true;
-      // Diff grounding runs before semantic grounding, so its
-      // `preGroundingSeverity` is the earliest (most trustworthy) severity.
-      const preGroundingEffectiveSeverity = groundingDowngraded
-        ? (finding.preGroundingSeverity ?? finding.preSemanticGroundingSeverity ?? finding.severity)
-        : finding.severity;
+      // The gates promise "never drop, downgrade instead" -- but their
+      // downgrade target is `medium`, which is exactly what abbreviated-tier
+      // suppression and the minConfidence floor drop. Judging both on the
+      // pre-gate severity keeps a downgrade a demotion rather than a deletion.
+      const preGroundingEffectiveSeverity = severityBeforeGates(
+        finding as typeof finding & { severity: FindingSeverity },
+      );
       const abbreviatedSuppressed = abbreviatedFileSet.has(finding.filePath)
         && (preGroundingEffectiveSeverity === "medium" || preGroundingEffectiveSeverity === "minor");
       const titleFp = fingerprintFindingTitle(finding.title);

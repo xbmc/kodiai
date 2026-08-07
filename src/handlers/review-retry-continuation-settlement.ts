@@ -52,6 +52,123 @@ function hasNothingBeenPublishedYet(params: {
     && !params.retryResult.published;
 }
 
+/**
+ * What to do with a finished retry. Separating the decision from its execution
+ * means the "nothing reached the PR yet" fallback is applied once, at the single
+ * point every non-publishing outcome passes through, rather than being repeated
+ * at each branch where it can be forgotten.
+ */
+type RetrySettlementPlan =
+  | {
+    kind: "quiet";
+    reason: string;
+    settlementReason?: string;
+    persistFamilyState: boolean;
+    discardCheckpoints: boolean;
+  }
+  | { kind: "no-canonical-update"; reason: string; logMessage: string }
+  | {
+    kind: "merge";
+    settlementReason: string;
+    mergeContext: Extract<ReturnType<typeof resolveReviewContinuationMergeContext>, { status: "publishable" }>;
+  };
+
+async function planRetrySettlement(
+  params: Parameters<typeof settleRetryContinuationResults>[0],
+): Promise<RetrySettlementPlan> {
+  if (!params.retryCompletedWithResults) {
+    return { kind: "quiet", reason: "no-retry-results", persistFamilyState: false, discardCheckpoints: false };
+  }
+
+  if (!params.baseCheckpoint) {
+    return {
+      kind: "no-canonical-update",
+      reason: "missing-base-checkpoint",
+      logMessage: "Retry settlement skipped because the base checkpoint was missing",
+    };
+  }
+
+  const settlementDecision = settleReviewContinuation({
+    reviewOutputKey: params.reviewOutputKey,
+    continuationReviewOutputKey: params.retryReviewOutputKey,
+    baseCheckpoint: params.baseCheckpoint,
+    continuationCheckpoint: params.retryCheckpoint,
+    continuationPublished: params.retryResult.published ?? false,
+  });
+
+  if (settlementDecision.decision !== "merge-continuation") {
+    return {
+      kind: "quiet",
+      reason: settlementDecision.reason,
+      settlementReason: settlementDecision.reason,
+      persistFamilyState: true,
+      discardCheckpoints: false,
+    };
+  }
+
+  const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({
+    repo: `${params.owner}/${params.repo}`,
+    prNumber: params.prNumber,
+    reviewOutputKey: params.reviewOutputKey,
+    logger: params.logger,
+    baseLog: params.baseLog,
+    getPriorReviewFindings: params.knowledgeStore?.getPriorReviewFindings,
+    extractFindings: async () => await extractFindingsFromReviewComments({
+      octokit: await params.getOctokit(),
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      reviewOutputKey: params.canonicalReviewOutputKey,
+      logger: params.logger,
+      baseLog: params.baseLog,
+    }),
+  });
+
+  if (
+    continuationRevisionCounts
+    && continuationRevisionCounts.new === 0
+    && continuationRevisionCounts.stillOpen === 0
+    && continuationRevisionCounts.resolved === 0
+  ) {
+    return {
+      kind: "quiet",
+      reason: "no-meaningful-delta",
+      settlementReason: "no-meaningful-delta",
+      persistFamilyState: true,
+      discardCheckpoints: true,
+    };
+  }
+
+  const mergeContext = resolveReviewContinuationMergeContext({
+    reviewBoundedness: params.reviewBoundedness,
+    mergedCheckpoint: settlementDecision.mergedCheckpoint,
+    retryCheckpoint: params.retryCheckpoint,
+    baseCheckpoint: params.baseCheckpoint,
+    firstPassOutcome: {
+      conclusion: params.firstPassOutcome.conclusion,
+      stopReason: params.firstPassOutcome.stopReason,
+      failureSubtype: params.firstPassOutcome.failureSubtype,
+      isTimeout: params.firstPassOutcome.isTimeout,
+      published: true,
+    },
+    timeoutFirstPassBoundedReason: params.timeoutFirstPassBoundedReason,
+    timeoutDurationSeconds: params.timeoutDurationSeconds,
+    retryFilesCount: params.retryFilesCount,
+    reviewOutputKey: params.canonicalReviewOutputKey,
+    continuationRevisionCounts,
+  });
+
+  if (mergeContext.status === "non-publishable") {
+    return {
+      kind: "no-canonical-update",
+      reason: mergeContext.reason,
+      logMessage: "Retry merge skipped because bounded first-pass state became non-publishable",
+    };
+  }
+
+  return { kind: "merge", settlementReason: settlementDecision.reason, mergeContext };
+}
+
 export type RetryContinuationSettlementStatus =
   | (RetryNoAdditionalResultsSettlementStatus & { published: boolean })
   | { status: "settled-without-canonical-update"; published: boolean; reason: string }
@@ -100,7 +217,7 @@ export async function settleRetryContinuationResults(params: {
   publishRetryMergeContinuationResultsFn?: PublishRetryMergeContinuationResults;
   publishReviewExecutionErrorFallbackFn?: PublishReviewExecutionErrorFallback;
 }): Promise<RetryContinuationSettlementResult> {
-  const postTurnLimitFallbackIfNothingPublished = async (logMessage: string): Promise<boolean> => {
+  const postTurnLimitFallbackIfNothingPublished = async (settlementReason: string): Promise<boolean> => {
     if (!hasNothingBeenPublishedYet(params)) {
       return false;
     }
@@ -139,209 +256,96 @@ export async function settleRetryContinuationResults(params: {
         deliveryId: params.deliveryId,
         prNumber: params.prNumber,
         retryConclusion: params.retryResult.conclusion,
+        settlementReason,
         published: postedTurnLimitFallback,
       },
-      logMessage,
+      "Retry settled without publishing and nothing had reached the PR yet -- posted turn-limit fallback so the review does not silently disappear",
     );
 
     return postedTurnLimitFallback;
   };
 
-  if (!params.retryCompletedWithResults) {
-    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
-      "Retry produced no additional results and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
-    );
+  const plan = await planRetrySettlement(params);
 
-    const quietSettlement = await settleRetryWithNoAdditionalResults({
-      logger: params.logger,
-      deliveryId: params.deliveryId,
-      prNumber: params.prNumber,
-      retryConclusion: params.retryResult.conclusion,
-    });
-    if (!quietSettlement.ok) {
-      return ok({
-        status: "quiet-settled",
-        published: postedTurnLimitFallback,
-        persistedContinuationState: false,
-        discardedCheckpoints: false,
-        reason: "no-retry-results",
-      });
-    }
-    return ok({ ...quietSettlement.value, published: postedTurnLimitFallback });
-  }
-
-  if (!params.baseCheckpoint) {
-    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
-      "Retry settlement skipped because the base checkpoint was missing and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
-    );
-    await params.settleRetryWithoutCanonicalUpdate({
-      attemptId: params.attemptId,
-      reviewOutputKey: params.retryReviewOutputKey,
-      deliveryId: params.deliveryId,
-      reason: "missing-base-checkpoint",
-      logMessage: "Retry settlement skipped because the base checkpoint was missing",
-    });
-    return ok({
-      status: "settled-without-canonical-update",
-      published: postedTurnLimitFallback,
-      reason: "missing-base-checkpoint",
-    });
-  }
-
-  const settlementDecision = settleReviewContinuation({
-    reviewOutputKey: params.reviewOutputKey,
-    continuationReviewOutputKey: params.retryReviewOutputKey,
-    baseCheckpoint: params.baseCheckpoint,
-    continuationCheckpoint: params.retryCheckpoint,
-    continuationPublished: params.retryResult.published ?? false,
-  });
-
-  if (settlementDecision.decision !== "merge-continuation") {
-    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
-      "Retry settlement resolved to a non-merge decision and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
-    );
-    const quietSettlement = await settleRetryWithNoAdditionalResults({
-      logger: params.logger,
-      deliveryId: params.deliveryId,
-      prNumber: params.prNumber,
-      retryConclusion: params.retryResult.conclusion,
-      settlementReason: settlementDecision.reason,
-      quietSettlement: {
-        attemptId: params.attemptId,
-        reviewOutputKey: params.retryReviewOutputKey,
-        persistContinuationFamilyState: params.persistContinuationFamilyState,
-      },
-    });
-    if (!quietSettlement.ok) {
-      return ok({
-        status: "quiet-settled",
-        published: postedTurnLimitFallback,
-        persistedContinuationState: false,
-        discardedCheckpoints: false,
-        reason: settlementDecision.reason,
-      });
-    }
-    return ok({ ...quietSettlement.value, published: postedTurnLimitFallback });
-  }
-
-  const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({
-    repo: `${params.owner}/${params.repo}`,
-    prNumber: params.prNumber,
-    reviewOutputKey: params.reviewOutputKey,
-    logger: params.logger,
-    baseLog: params.baseLog,
-    getPriorReviewFindings: params.knowledgeStore?.getPriorReviewFindings,
-    extractFindings: async () => await extractFindingsFromReviewComments({
-      octokit: await params.getOctokit(),
+  if (plan.kind === "merge") {
+    const publishRetryMerge =
+      params.publishRetryMergeContinuationResultsFn ?? publishRetryMergeContinuationResults;
+    return await publishRetryMerge({
+      getOctokit: params.getOctokit,
+      getAppSlug: params.getAppSlug,
       owner: params.owner,
       repo: params.repo,
       prNumber: params.prNumber,
-      reviewOutputKey: params.canonicalReviewOutputKey,
-      logger: params.logger,
-      baseLog: params.baseLog,
-    }),
-  });
-
-  if (
-    continuationRevisionCounts
-    && continuationRevisionCounts.new === 0
-    && continuationRevisionCounts.stillOpen === 0
-    && continuationRevisionCounts.resolved === 0
-  ) {
-    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
-      "Retry produced no meaningful delta and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
-    );
-    const quietSettlement = await settleRetryWithNoAdditionalResults({
-      logger: params.logger,
+      attemptId: params.attemptId,
       deliveryId: params.deliveryId,
-      prNumber: params.prNumber,
+      reviewOutputKey: params.reviewOutputKey,
+      canonicalReviewOutputKey: params.canonicalReviewOutputKey,
+      retryReviewOutputKey: params.retryReviewOutputKey,
       retryConclusion: params.retryResult.conclusion,
-      settlementReason: "no-meaningful-delta",
-      quietSettlement: {
-        attemptId: params.attemptId,
-        reviewOutputKey: params.retryReviewOutputKey,
-        persistContinuationFamilyState: params.persistContinuationFamilyState,
-      },
-      discardCheckpoints: () => discardCheckpointsFailOpen(params.knowledgeStore, params.logger, [
-        params.reviewOutputKey,
-        params.retryReviewOutputKey,
-      ]),
+      partialCommentId: params.partialCommentId,
+      settlementReason: plan.settlementReason,
+      mergeContext: plan.mergeContext,
+      knowledgeStore: params.knowledgeStore,
+      authorSearchEnrichmentDegraded: params.authorSearchEnrichmentDegraded,
+      reviewBoundedness: params.reviewBoundedness,
+      baseLog: params.baseLog,
+      logger: params.logger,
+      canPublishReviewWorkOutput: params.canPublishReviewWorkOutput,
+      setPublishPhase: params.setPublishPhase,
+      renderReviewDetailsBody: params.renderReviewDetailsBody,
+      settleRetryWithoutCanonicalUpdate: params.settleRetryWithoutCanonicalUpdate,
+      persistContinuationFamilyState: params.persistContinuationFamilyState,
     });
-    if (!quietSettlement.ok) {
-      return ok({
-        status: "quiet-settled",
-        published: postedTurnLimitFallback,
-        persistedContinuationState: false,
-        discardedCheckpoints: false,
-        reason: "no-meaningful-delta",
-      });
-    }
-    return ok({ ...quietSettlement.value, published: postedTurnLimitFallback });
   }
 
-  const mergeContext = resolveReviewContinuationMergeContext({
-    reviewBoundedness: params.reviewBoundedness,
-    mergedCheckpoint: settlementDecision.mergedCheckpoint,
-    retryCheckpoint: params.retryCheckpoint,
-    baseCheckpoint: params.baseCheckpoint,
-    firstPassOutcome: {
-      conclusion: params.firstPassOutcome.conclusion,
-      stopReason: params.firstPassOutcome.stopReason,
-      failureSubtype: params.firstPassOutcome.failureSubtype,
-      isTimeout: params.firstPassOutcome.isTimeout,
-      published: true,
-    },
-    timeoutFirstPassBoundedReason: params.timeoutFirstPassBoundedReason,
-    timeoutDurationSeconds: params.timeoutDurationSeconds,
-    retryFilesCount: params.retryFilesCount,
-    reviewOutputKey: params.canonicalReviewOutputKey,
-    continuationRevisionCounts,
-  });
+  // Every non-publishing outcome funnels through here, so the "did anything
+  // reach the PR?" check cannot be forgotten when a new settlement branch is
+  // added -- which is exactly how the original silent-drop bug happened.
+  const published = await postTurnLimitFallbackIfNothingPublished(plan.reason);
 
-  if (mergeContext.status === "non-publishable") {
-    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
-      "Retry merge became non-publishable and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
-    );
+  if (plan.kind === "no-canonical-update") {
     await params.settleRetryWithoutCanonicalUpdate({
       attemptId: params.attemptId,
       reviewOutputKey: params.retryReviewOutputKey,
       deliveryId: params.deliveryId,
-      reason: mergeContext.reason,
-      logMessage: "Retry merge skipped because bounded first-pass state became non-publishable",
+      reason: plan.reason,
+      logMessage: plan.logMessage,
     });
-    return ok({
-      status: "settled-without-canonical-update",
-      published: postedTurnLimitFallback,
-      reason: mergeContext.reason,
-    });
+    return ok({ status: "settled-without-canonical-update", published, reason: plan.reason });
   }
 
-  const publishRetryMerge =
-    params.publishRetryMergeContinuationResultsFn ?? publishRetryMergeContinuationResults;
-  return await publishRetryMerge({
-    getOctokit: params.getOctokit,
-    getAppSlug: params.getAppSlug,
-    owner: params.owner,
-    repo: params.repo,
-    prNumber: params.prNumber,
-    attemptId: params.attemptId,
-    deliveryId: params.deliveryId,
-    reviewOutputKey: params.reviewOutputKey,
-    canonicalReviewOutputKey: params.canonicalReviewOutputKey,
-    retryReviewOutputKey: params.retryReviewOutputKey,
-    retryConclusion: params.retryResult.conclusion,
-    partialCommentId: params.partialCommentId,
-    settlementReason: settlementDecision.reason,
-    mergeContext,
-    knowledgeStore: params.knowledgeStore,
-    authorSearchEnrichmentDegraded: params.authorSearchEnrichmentDegraded,
-    reviewBoundedness: params.reviewBoundedness,
-    baseLog: params.baseLog,
+  const quietSettlement = await settleRetryWithNoAdditionalResults({
     logger: params.logger,
-    canPublishReviewWorkOutput: params.canPublishReviewWorkOutput,
-    setPublishPhase: params.setPublishPhase,
-    renderReviewDetailsBody: params.renderReviewDetailsBody,
-    settleRetryWithoutCanonicalUpdate: params.settleRetryWithoutCanonicalUpdate,
-    persistContinuationFamilyState: params.persistContinuationFamilyState,
+    deliveryId: params.deliveryId,
+    prNumber: params.prNumber,
+    retryConclusion: params.retryResult.conclusion,
+    ...(plan.settlementReason ? { settlementReason: plan.settlementReason } : {}),
+    ...(plan.persistFamilyState
+      ? {
+        quietSettlement: {
+          attemptId: params.attemptId,
+          reviewOutputKey: params.retryReviewOutputKey,
+          persistContinuationFamilyState: params.persistContinuationFamilyState,
+        },
+      }
+      : {}),
+    ...(plan.discardCheckpoints
+      ? {
+        discardCheckpoints: () => discardCheckpointsFailOpen(params.knowledgeStore, params.logger, [
+          params.reviewOutputKey,
+          params.retryReviewOutputKey,
+        ]),
+      }
+      : {}),
   });
+  if (!quietSettlement.ok) {
+    return ok({
+      status: "quiet-settled",
+      published,
+      persistedContinuationState: false,
+      discardedCheckpoints: false,
+      reason: plan.reason,
+    });
+  }
+  return ok({ ...quietSettlement.value, published });
 }

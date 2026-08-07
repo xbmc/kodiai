@@ -1,6 +1,13 @@
 import type { FindingSeverity } from "../knowledge/types.ts";
 import { buildPrDiffLineTextIndex, type PrDiffLineTextIndex } from "../execution/formatter-suggestions.ts";
 import { resolveCitedLineRange } from "./diff-grounding.ts";
+import {
+  GATE_DOWNGRADE_TARGET,
+  GATE_ELIGIBLE_SEVERITIES,
+  gateOutcomeFor,
+  withGateOutcome,
+  type GateAdjustedFinding,
+} from "./gate-outcome.ts";
 import { mapWithConcurrency } from "../lib/concurrency.ts";
 
 /**
@@ -46,16 +53,7 @@ export type SemanticGroundingReasonCode =
   | "mismatch"
   | "matched";
 
-export type SemanticGroundingResult = {
-  semanticGroundingChecked: boolean;
-  semanticGroundingDowngraded: boolean;
-  semanticGroundingReason: SemanticGroundingReasonCode;
-  semanticGroundingJustification?: string;
-  preSemanticGroundingSeverity?: FindingSeverity;
-};
-
-/** Severities whose reasoning is expensive enough to warrant a semantic re-check. */
-const SEMANTIC_GATED_SEVERITIES: ReadonlySet<FindingSeverity> = new Set(["critical", "major"]);
+export type SemanticGroundingResult = Required<GateAdjustedFinding>;
 
 /** Higher wins when the per-review LLM budget cannot cover every eligible finding. */
 function semanticGroundingSeverityRank(severity: FindingSeverity): number {
@@ -63,7 +61,7 @@ function semanticGroundingSeverityRank(severity: FindingSeverity): number {
 }
 
 /** Target severity when the LLM finds the reasoning does not match the actual code. */
-export const SEMANTIC_GROUNDING_DOWNGRADE_TARGET: FindingSeverity = "medium";
+export const SEMANTIC_GROUNDING_DOWNGRADE_TARGET = GATE_DOWNGRADE_TARGET;
 
 /** Default cap on how many findings receive an LLM call per review. */
 const DEFAULT_MAX_FINDINGS_TO_CHECK = 5;
@@ -85,7 +83,7 @@ function truncateClaim(claim: string): string {
     : claim;
 }
 
-export type SemanticGroundingFindingInput = {
+export type SemanticGroundingFindingInput = GateAdjustedFinding & {
   filePath: string;
   title: string;
   severity: FindingSeverity;
@@ -125,11 +123,6 @@ export type SemanticGroundingOptions = {
 /** Build the source-line index from the same PR diff text collected for this review. */
 export function buildSemanticGroundingSourceIndex(diffText: string | null | undefined): PrDiffLineTextIndex {
   return buildPrDiffLineTextIndex(diffText ?? "");
-}
-
-function normalizeLine(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) return undefined;
-  return Math.floor(value);
 }
 
 function extractSourceSnippet(params: {
@@ -230,16 +223,17 @@ function parseVerdict(responseText: string): { verdict: "match" | "mismatch" | "
   return { verdict: "uncertain", justification };
 }
 
+/** Gate could not evaluate the finding -- fail open, severity untouched. */
 function passThrough<T extends SemanticGroundingFindingInput>(
   finding: T,
   reason: SemanticGroundingReasonCode,
 ): T & SemanticGroundingResult {
-  return {
-    ...finding,
-    semanticGroundingChecked: false,
-    semanticGroundingDowngraded: false,
-    semanticGroundingReason: reason,
-  };
+  return withGateOutcome(finding, {
+    gate: "semantic-grounding",
+    reason,
+    checked: false,
+    verified: true,
+  });
 }
 
 function downgrade<T extends SemanticGroundingFindingInput>(
@@ -247,29 +241,30 @@ function downgrade<T extends SemanticGroundingFindingInput>(
   reason: SemanticGroundingReasonCode,
   justification?: string,
 ): T & SemanticGroundingResult {
-  return {
-    ...finding,
-    severity: SEMANTIC_GROUNDING_DOWNGRADE_TARGET,
-    preSemanticGroundingSeverity: finding.severity,
-    semanticGroundingChecked: true,
-    semanticGroundingDowngraded: true,
-    semanticGroundingReason: reason,
-    ...(justification ? { semanticGroundingJustification: justification } : {}),
-  };
+  return withGateOutcome({ ...finding, severity: GATE_DOWNGRADE_TARGET }, {
+    gate: "semantic-grounding",
+    reason,
+    checked: true,
+    verified: false,
+    from: finding.severity,
+    to: GATE_DOWNGRADE_TARGET,
+    ...(justification ? { justification } : {}),
+  });
 }
 
+/** Gate evaluated the finding and it survives (matched, or too uncertain to act). */
 function keep<T extends SemanticGroundingFindingInput>(
   finding: T,
   reason: SemanticGroundingReasonCode,
   justification?: string,
 ): T & SemanticGroundingResult {
-  return {
-    ...finding,
-    semanticGroundingChecked: true,
-    semanticGroundingDowngraded: false,
-    semanticGroundingReason: reason,
-    ...(justification ? { semanticGroundingJustification: justification } : {}),
-  };
+  return withGateOutcome(finding, {
+    gate: "semantic-grounding",
+    reason,
+    checked: true,
+    verified: true,
+    ...(justification ? { justification } : {}),
+  });
 }
 
 /**
@@ -312,12 +307,13 @@ export async function enforceSemanticGrounding<T extends SemanticGroundingFindin
   for (let i = 0; i < findings.length; i += 1) {
     const finding = findings[i]!;
 
-    if (!SEMANTIC_GATED_SEVERITIES.has(finding.severity)) {
+    if (!GATE_ELIGIBLE_SEVERITIES.has(finding.severity)) {
       results[i] = passThrough(finding, "not-applicable");
       continue;
     }
 
-    if (finding.groundingChecked !== true || finding.groundingVerified !== true) {
+    const diffGrounding = gateOutcomeFor(finding, "diff-grounding");
+    if (diffGrounding?.checked !== true || diffGrounding.verified !== true) {
       // Never independently structurally grounded (or already downgraded by
       // diff-grounding.ts) -- semantic re-verification only makes sense on
       // top of a real citation.

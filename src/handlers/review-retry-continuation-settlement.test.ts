@@ -222,6 +222,50 @@ describe("settleRetryContinuationResults", () => {
     expect(fallbackCalls).toHaveLength(0);
   });
 
+  test("every non-publishing settlement route checks whether anything reached the PR", async () => {
+    // The fallback is applied once, at the single point all non-merge outcomes
+    // funnel through. This asserts that property across the distinct routes so
+    // a future settlement branch cannot silently skip the check -- the exact
+    // failure mode this module exists to prevent.
+    const routes: Array<{ name: string; overrides: Parameters<typeof makeParams>[0] }> = [
+      { name: "no-retry-results", overrides: { retryCompletedWithResults: false } },
+      { name: "missing-base-checkpoint", overrides: { retryCompletedWithResults: true, baseCheckpoint: null } },
+      {
+        name: "non-merge-decision",
+        overrides: {
+          retryCompletedWithResults: true,
+          retryCheckpoint: checkpoint({ reviewOutputKey: "retry-key", filesReviewed: ["src/a.ts"], findingCount: 0 }),
+        },
+      },
+    ];
+
+    for (const route of routes) {
+      const fallbackCalls: unknown[] = [];
+      const params = makeParams({
+        ...route.overrides,
+        partialCommentId: undefined,
+        hasPublishedInlines: false,
+        retryResult: {
+          conclusion: "failure",
+          isTimeout: false,
+          published: false,
+          stopReason: "max_turns",
+          failureSubtype: undefined,
+          errorMessage: undefined,
+        },
+        publishReviewExecutionErrorFallbackFn: async () => {
+          fallbackCalls.push(true);
+          return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+        },
+      });
+
+      const result = await settleRetryContinuationResults(params);
+
+      expect(fallbackCalls, `route ${route.name} must post a fallback`).toHaveLength(1);
+      expect(result.ok && result.value.published, `route ${route.name} must report published`).toBe(true);
+    }
+  });
+
   test("returns merge publication Result when continuation is publishable", async () => {
     const params = makeParams({
       retryCompletedWithResults: true,
