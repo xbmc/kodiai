@@ -152,11 +152,13 @@ export function createAbandonedJobNotifier(deps: AbandonedJobNotifierDeps): Aban
       // one PR. Collapse to one notice per resolved PR, preferring a job that
       // actually started so the wording reflects the furthest progress made.
       const byPr = new Map<string, JobSnapshot>();
+      const unresolvable: JobSnapshot[] = [];
       for (const job of notifiable) {
         const parsed = parseReviewFamilyKey(job.key);
         if (!parsed) {
-          // Unresolvable keys can't collide; keep them so notifyOne logs the skip.
-          byPr.set(`unresolved:${job.jobId}`, job);
+          // Cannot be notified, so must not consume the notice budget below --
+          // enough of them would otherwise crowd out every real PR.
+          unresolvable.push(job);
           continue;
         }
         const prKey = `${parsed.owner}/${parsed.repo}#${job.prNumber ?? parsed.prNumber}`;
@@ -166,6 +168,16 @@ export function createAbandonedJobNotifier(deps: AbandonedJobNotifierDeps): Aban
         }
       }
       const deduped = [...byPr.values()];
+
+      if (unresolvable.length > 0) {
+        logger.warn(
+          {
+            count: unresolvable.length,
+            jobs: unresolvable.slice(0, 20).map((job) => ({ jobId: job.jobId, jobType: job.jobType, key: job.key })),
+          },
+          "Abandoned-job notices skipped: job keys did not resolve to owner/repo/PR",
+        );
+      }
 
       // A deploy during a busy period can abandon a long queue, and one comment
       // per PR is still unbounded from GitHub's perspective. Cap the fan-out and

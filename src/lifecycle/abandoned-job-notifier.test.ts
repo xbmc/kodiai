@@ -220,6 +220,28 @@ describe("createAbandonedJobNotifier", () => {
     expect(logger._entries.some((e) => e.bindings.droppedForCap === 1)).toBe(true);
   });
 
+  test("unresolvable job keys do not consume the notice budget", async () => {
+    const { octokit, calls } = createOctokitHarness();
+    const notifier = createAbandonedJobNotifier({
+      logger: createTestLogger(),
+      getInstallationOctokit: async () => octokit,
+      getAppSlug: () => "kodiai",
+      maxNotices: 2,
+    });
+
+    await notifier.notify([
+      createJobSnapshot({ jobId: "1-1", key: "not-a-key-a" }),
+      createJobSnapshot({ jobId: "1-2", key: "not-a-key-b" }),
+      createJobSnapshot({ jobId: "1-3", key: "not-a-key-c" }),
+      createJobSnapshot({ jobId: "1-4", key: "acme/w#7", prNumber: 7 }),
+    ]);
+
+    // The real PR must still be notified despite three unnotifiable jobs
+    // ahead of it and a cap of two.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.issue_number).toBe(7);
+  });
+
   test("does nothing for an empty job list", async () => {
     const { octokit, calls } = createOctokitHarness();
     const getInstallationOctokit = mock(async () => octokit);

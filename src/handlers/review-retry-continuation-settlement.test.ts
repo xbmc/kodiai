@@ -149,7 +149,7 @@ describe("settleRetryContinuationResults", () => {
     expect(fallbackCalls).toHaveLength(0);
   });
 
-  test("posts a turn-limit fallback when retry completed with results but settles to a non-merge decision with nothing published", async () => {
+  test("does not post an error comment when a cleanly-completed retry simply found nothing new", async () => {
     const fallbackCalls: unknown[] = [];
     const params = makeParams({
       retryCompletedWithResults: true,
@@ -167,10 +167,52 @@ describe("settleRetryContinuationResults", () => {
       },
     });
 
+    await settleRetryContinuationResults(params);
+
+    // The retry ran to completion and found nothing -- that is not a failure,
+    // so narrating an internal error would be a false notice.
+    expect(fallbackCalls).toHaveLength(0);
+  });
+
+  test("still posts a fallback when the same route follows a turn-budget exhaustion", async () => {
+    const fallbackCalls: unknown[] = [];
+    const params = makeParams({
+      retryCompletedWithResults: true,
+      partialCommentId: undefined,
+      retryResult: { conclusion: "success", isTimeout: false, published: false, stopReason: undefined, failureSubtype: undefined, errorMessage: undefined },
+      firstPassOutcome: { conclusion: "failure", isTimeout: false, stopReason: "max_turns" },
+      retryCheckpoint: checkpoint({ reviewOutputKey: "retry-key", filesReviewed: ["src/a.ts"], findingCount: 0 }),
+      publishReviewExecutionErrorFallbackFn: async () => {
+        fallbackCalls.push(true);
+        return { ok: true, value: { published: true, resolution: "turn-limit-fallback", fallbackDelivery: "created" } };
+      },
+    });
+
     const result = await settleRetryContinuationResults(params);
 
     expect(fallbackCalls).toHaveLength(1);
     expect(result.ok && result.value.published).toBe(true);
+  });
+
+  test("settles the retry even when the fallback publication throws", async () => {
+    const params = makeParams({
+      retryCompletedWithResults: false,
+      partialCommentId: undefined,
+      retryResult: {
+        conclusion: "failure", isTimeout: false, published: false,
+        stopReason: "max_turns", failureSubtype: undefined, errorMessage: undefined,
+      },
+      publishReviewExecutionErrorFallbackFn: async () => {
+        throw new Error("token refresh failed");
+      },
+    });
+
+    // Must not reject: a thrown fallback previously skipped settlement and
+    // stranded the retry's checkpoints and continuation family state.
+    const result = await settleRetryContinuationResults(params);
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.published).toBe(false);
   });
 
   test("does not post a fallback when retry settles to a non-merge decision but inline findings were already published", async () => {

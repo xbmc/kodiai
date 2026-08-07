@@ -217,7 +217,7 @@ export async function settleRetryContinuationResults(params: {
   publishRetryMergeContinuationResultsFn?: PublishRetryMergeContinuationResults;
   publishReviewExecutionErrorFallbackFn?: PublishReviewExecutionErrorFallback;
 }): Promise<RetryContinuationSettlementResult> {
-  const postTurnLimitFallbackIfNothingPublished = async (settlementReason: string): Promise<boolean> => {
+  const postFallbackIfNothingPublished = async (settlementReason: string): Promise<boolean> => {
     if (!hasNothingBeenPublishedYet(params)) {
       return false;
     }
@@ -228,28 +228,61 @@ export async function settleRetryContinuationResults(params: {
       params.retryResult.stopReason === "max_turns" ||
       params.retryResult.failureSubtype === "error_max_turns";
 
+    // This publisher emits *error* comments. A retry that ran to completion and
+    // simply found nothing new is not an error, and labelling it one would be
+    // the same false-notice problem this module exists to remove, just
+    // inverted. There is no "completed, no findings" member of ErrorCategory
+    // and inventing one would put a non-error concept in the error taxonomy --
+    // so log the gap instead of narrating a failure that did not happen.
+    if (params.retryCompletedWithResults && !exhaustedTurnBudget) {
+      params.logger.warn(
+        {
+          deliveryId: params.deliveryId,
+          prNumber: params.prNumber,
+          retryConclusion: params.retryResult.conclusion,
+          settlementReason,
+        },
+        "Retry completed with no additional findings and nothing had reached the PR -- no error comment posted (see review-retry-continuation-settlement.ts)",
+      );
+      return false;
+    }
+
     const publishExecutionErrorFallback =
       params.publishReviewExecutionErrorFallbackFn ?? publishReviewExecutionErrorFallback;
-    const fallbackPublication = await publishExecutionErrorFallback({
-      octokit: await params.getOctokit(),
-      owner: params.owner,
-      repo: params.repo,
-      prNumber: params.prNumber,
-      exhaustedTurnBudget,
-      retryScheduled: false,
-      category: exhaustedTurnBudget ? "timeout" : "internal_error",
-      errorMessage: exhaustedTurnBudget
-        ? undefined
-        : (params.retryResult.errorMessage ?? "The retry review run did not produce a publishable result."),
-      totalTimeoutSeconds: params.timeoutDurationSeconds,
-      complexityInfo: "Retry review run also failed to produce publishable results.",
-      logger: params.logger,
-      canPublishVisibleOutput: (reason) =>
-        params.canPublishReviewWorkOutput(params.attemptId, reason, params.deliveryId),
-      setReviewWorkPhase: params.setPublishPhase,
-    });
 
-    const postedTurnLimitFallback = fallbackPublication.ok ? fallbackPublication.value.published : false;
+    // This is the only GitHub call on the quiet-settlement paths, which
+    // previously never touched the network. Letting it reject would skip the
+    // settlement below and strand the retry's checkpoints and continuation
+    // family state -- strictly worse than the silent drop this replaced.
+    let fallbackPublication: Awaited<ReturnType<PublishReviewExecutionErrorFallback>> | undefined;
+    try {
+      fallbackPublication = await publishExecutionErrorFallback({
+        octokit: await params.getOctokit(),
+        owner: params.owner,
+        repo: params.repo,
+        prNumber: params.prNumber,
+        exhaustedTurnBudget,
+        retryScheduled: false,
+        category: exhaustedTurnBudget ? "timeout" : "internal_error",
+        errorMessage: exhaustedTurnBudget
+          ? undefined
+          : (params.retryResult.errorMessage ?? "The retry review run did not produce a publishable result."),
+        totalTimeoutSeconds: params.timeoutDurationSeconds,
+        complexityInfo: "Retry review run also failed to produce publishable results.",
+        logger: params.logger,
+        canPublishVisibleOutput: (reason) =>
+          params.canPublishReviewWorkOutput(params.attemptId, reason, params.deliveryId),
+        setReviewWorkPhase: params.setPublishPhase,
+      });
+    } catch (err) {
+      params.logger.error(
+        { err, deliveryId: params.deliveryId, prNumber: params.prNumber, settlementReason },
+        "Turn-limit fallback publication threw; settling the retry anyway so checkpoints are not stranded",
+      );
+      return false;
+    }
+
+    const postedFallback = fallbackPublication.ok ? fallbackPublication.value.published : false;
 
     params.logger.info(
       {
@@ -257,12 +290,12 @@ export async function settleRetryContinuationResults(params: {
         prNumber: params.prNumber,
         retryConclusion: params.retryResult.conclusion,
         settlementReason,
-        published: postedTurnLimitFallback,
+        published: postedFallback,
       },
-      "Retry settled without publishing and nothing had reached the PR yet -- posted turn-limit fallback so the review does not silently disappear",
+      "Retry settled without publishing and nothing had reached the PR yet -- posted fallback so the review does not silently disappear",
     );
 
-    return postedTurnLimitFallback;
+    return postedFallback;
   };
 
   const plan = await planRetrySettlement(params);
@@ -301,7 +334,7 @@ export async function settleRetryContinuationResults(params: {
   // Every non-publishing outcome funnels through here, so the "did anything
   // reach the PR?" check cannot be forgotten when a new settlement branch is
   // added -- which is exactly how the original silent-drop bug happened.
-  const published = await postTurnLimitFallbackIfNothingPublished(plan.reason);
+  const published = await postFallbackIfNothingPublished(plan.reason);
 
   if (plan.kind === "no-canonical-update") {
     await params.settleRetryWithoutCanonicalUpdate({

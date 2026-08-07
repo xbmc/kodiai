@@ -153,15 +153,21 @@ function extractSourceSnippet(params: {
     lines.push(`${line}: ${text}`);
   }
   if (lines.length === 0) return undefined;
-  if (missingLines > 0) {
-    // Tell the grader the snippet is partial so absent code is never read as
-    // proof the claim is false -- the pass must only downgrade on a clear
-    // contradiction, and a gap is not one.
-    lines.push(`...[${missingLines} line(s) in the cited range are outside the collected diff]`);
-  }
 
-  const snippet = lines.join("\n");
-  return snippet.length > maxChars ? snippet.slice(0, maxChars) + "\n...[truncated]" : snippet;
+  // Bound the source text *before* appending the caveats, so a wide cited range
+  // can never truncate away the very notice that tells the grader the snippet is
+  // incomplete. Losing it would leave gaps looking like absent code -- the exact
+  // reading this pass must not treat as proof a claim is false.
+  const sourceText = lines.join("\n");
+  const truncated = sourceText.length > maxChars;
+  const parts = [truncated ? sourceText.slice(0, maxChars) : sourceText];
+  if (truncated) {
+    parts.push("...[truncated]");
+  }
+  if (missingLines > 0) {
+    parts.push(`...[${missingLines} line(s) in the cited range are outside the collected diff]`);
+  }
+  return parts.join("\n");
 }
 
 /**

@@ -512,6 +512,35 @@ describe("enforceSemanticGrounding", () => {
     expect(calls[0]?.prompt).not.toContain("TAIL MARKER");
   });
 
+  it("keeps the partial-snippet caveat even when the source text is truncated", async () => {
+    // A wide cited range whose present lines exceed the cap must not truncate
+    // away the notice that the snippet is incomplete -- without it the grader
+    // reads gaps as absent code and can call a genuine finding a mismatch.
+    const wideDiff = [
+      "diff --git a/src/wide.cpp b/src/wide.cpp",
+      "--- a/src/wide.cpp",
+      "+++ b/src/wide.cpp",
+      "@@ -1,0 +1,3 @@",
+      `+${"x".repeat(400)}`,
+      `+${"y".repeat(400)}`,
+      `+${"z".repeat(400)}`,
+    ].join("\n");
+    const calls: Array<{ prompt: string; system: string }> = [];
+    const llm = stubLLM("VERDICT: MATCH - fine", calls);
+
+    await enforceSemanticGrounding({
+      // Cite past the hunk so some lines are genuinely missing.
+      findings: [makeFinding({ filePath: "src/wide.cpp", severity: "critical", startLine: 1, endLine: 8 })],
+      sourceIndex: buildSemanticGroundingSourceIndex(wideDiff),
+      llm,
+      options: { enabled: true, sourceMaxChars: 200 },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.prompt).toContain("[truncated]");
+    expect(calls[0]?.prompt).toContain("outside the collected diff");
+  });
+
   it("tells the grader it is judging a summary when only a title is available", async () => {
     const sourceIndex = buildSemanticGroundingSourceIndex(SAMPLE_DIFF);
     const calls: Array<{ prompt: string; system: string }> = [];
