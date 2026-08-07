@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.51 (2026-08-07)
+
+Retry/publication robustness, silent-drop guards, and continued resource-hardening follow-ups.
+
+### Fixed
+
+- Retry-of-retry turn-budget exhaustion was silently dropped instead of publishing a real outcome when retries completed with no findings.
+- Review reducer no longer narrates failures that did not actually happen (was emitting "retry failed with N findings" when zero findings existed).
+- Profile severity/focus filters now gate inline publication only; the model still detects and records filtered findings via candidate-finding tool. Minimal profile's inline comment cap raised from 3 to 5.
+- Ground critical/major findings against the real diff before publishing to catch findings outside the changed scope.
+- Never swallow secret-detected blocks as expected policy; blocked-findings notice still posts even when a security issue was blocked.
+- Bounded-collection follow-ups from resource-hardening review (#205): normalize collection sizes, early-exit stalls.
+- Milestone verifiers now source telemetry lines from log projection (no longer render in visible Review Details block).
+- Generalize semantic-fanout turn-budget scaling beyond xbmc/xbmc edge case.
+- Bound every job-queue job with a hard timeout so stalled orchestration jobs cannot silently exhaust turn budget without notification.
+- Gate eligibility test now actually exercises the gate (was testing the mock).
+- Review details timeout publication no longer silently re-notifies affected PRs when a deploy force-exit abandons their jobs.
+- Silent job stalls now have zero heartbeat/progress visibility — fixed publish path for outcome/telemetry when retry completes.
+
+### Changed
+
+- Decompose config.ts and review-reducer.ts into separate schema and logic modules.
+- Collapse duplicated gate and settlement structure.
+
+### Chore
+
+- Enable `noUnusedLocals` TypeScript compiler option and clear all violations.
+
 ## Unreleased
 
 ### Changed — review quality overhaul
