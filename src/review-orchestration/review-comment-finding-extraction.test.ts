@@ -85,6 +85,9 @@ describe("extractFindingsFromReviewComments", () => {
       title: "Missing null check",
       severity: "major",
       category: "correctness",
+      // The prose body is carried so semantic grounding can fact-check the
+      // reviewer's reasoning rather than the one-line title.
+      reasoning: "Finding body.",
       startLine: 10,
       endLine: 12,
     }]);

@@ -52,11 +52,18 @@ export function buildReviewReducerInput(params: {
   const candidateReducerFindings = toReviewCandidateReducerDrafts(params.reviewCandidateFindingResult);
 
   return {
-    findings: [
+    // Findings arrive from three producers that name their prose differently:
+    // comments extracted from GitHub carry `reasoning`, while comment-slop
+    // detections and candidate drafts carry `body`. Semantic grounding
+    // fact-checks `reasoning`, so normalizing here -- the one point all three
+    // meet -- keeps the gate reading a single field instead of every producer
+    // having to remember the gate's vocabulary. Drafts are the findings the
+    // gate most wants to check, since they have not been published yet.
+    findings: withNormalizedReasoning([
       ...(params.extractedFindings as unknown as ProcessedReviewFinding[]),
       ...commentSlopFindings,
       ...candidateReducerFindings,
-    ],
+    ]),
     workspaceDir: params.workspaceDir,
     filesByCategory: params.filesByCategory ?? {},
     filesByLanguage: params.filesByLanguage ?? {},
@@ -86,4 +93,15 @@ export function buildReviewReducerInput(params: {
     semanticGroundingOptions: params.semanticGroundingOptions,
     repoDoctrine: params.repoDoctrine,
   };
+}
+
+/** Give every finding a `reasoning` field, falling back to a producer's `body`. */
+function withNormalizedReasoning(findings: ProcessedReviewFinding[]): ProcessedReviewFinding[] {
+  return findings.map((finding) => {
+    if (typeof finding.reasoning === "string" && finding.reasoning.trim().length > 0) {
+      return finding;
+    }
+    const body = typeof finding.body === "string" ? finding.body.trim() : "";
+    return body.length > 0 ? { ...finding, reasoning: body } : finding;
+  });
 }

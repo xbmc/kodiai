@@ -73,8 +73,12 @@ describe("buildReviewReducerCounts", () => {
 
   test("counts grounding-gate downgrades as severity demotions", () => {
     expect(buildReviewReducerCounts([
-      baseFinding({ commentId: 1, groundingDowngraded: true, preGroundingSeverity: "critical" }),
-      baseFinding({ commentId: 2, semanticGroundingDowngraded: true, preSemanticGroundingSeverity: "major" }),
+      baseFinding({ commentId: 1, gateOutcomes: [
+        { gate: "diff-grounding", reason: "line-outside-diff", checked: true, verified: false, from: "critical", to: "medium" },
+      ] }),
+      baseFinding({ commentId: 2, gateOutcomes: [
+        { gate: "semantic-grounding", reason: "mismatch", checked: true, verified: false, from: "major", to: "medium" },
+      ] }),
       baseFinding({ commentId: 3, severityDemoted: true, preDemotionSeverity: "critical", demotionReason: "external-claim" }),
       baseFinding({ commentId: 4 }),
     ], [], { minConfidence: 50 })).toMatchObject({
@@ -216,6 +220,120 @@ describe("reduceReviewFindings", () => {
     expect(result.prioritizationStats).toMatchObject({ maxComments: 2, selectedFindings: 2, omittedFindings: 1 });
     expect(result.counts).toMatchObject({ input: 5, kept: 2, suppressed: 1, rewritten: 1, lowConfidence: 1, deprioritized: 1 });
     expect(result.detailsSummary.text).toContain("Review reducer: ready");
+  });
+
+  test("a grounding-downgraded critical finding is not dropped by abbreviated-tier suppression", async () => {
+    // Diff grounding downgrades to `medium`, which is exactly what abbreviated-
+    // tier suppression drops -- so without the pre-grounding-severity exemption
+    // the module's "never drop, downgrade instead" invariant silently breaks.
+    const diffContent = [
+      "diff --git a/src/abbrev.ts b/src/abbrev.ts",
+      "--- a/src/abbrev.ts",
+      "+++ b/src/abbrev.ts",
+      "@@ -1,3 +1,3 @@",
+      " const a = 1;",
+      "+const b = 2;",
+      " const c = 3;",
+    ].join("\n");
+
+    const result = await reduceReviewFindings({
+      findings: [baseFinding({
+        commentId: 1,
+        filePath: "src/abbrev.ts",
+        severity: "critical",
+        category: "correctness",
+        startLine: 900,
+        endLine: 900,
+      })],
+      workspaceDir: ".",
+      filesByCategory: {},
+      filesByLanguage: {},
+      languageRules: undefined,
+      reviewSuppressions: [],
+      minConfidence: 50,
+      feedbackSuppression: { suppressedFingerprints: new Set(), suppressedPatternCount: 0, patterns: [] },
+      priorFindingContext: null,
+      diffContent,
+      prBody: null,
+      commitMessages: [],
+      tieredFiles: { isLargePR: true, abbreviated: [{ filePath: "src/abbrev.ts" }] },
+      graphBlastRadius: null,
+      graphValidationEnabled: false,
+      riskScores: [],
+      logger: testLogger(),
+      baseLog: { repo: "owner/repo", prNumber: 1 },
+      repo: "owner/repo",
+      clusterModelStore: null,
+      embeddingProvider: null,
+      guardrailAuditStore: undefined,
+      graphValidationLLM: null,
+    });
+
+    const finding = result.findings.find((f) => f.commentId === 1);
+    expect(finding?.gateOutcomes?.some((o) => o.gate === "diff-grounding" && o.from === "critical")).toBe(true);
+    expect(finding?.severity).toBe("medium");
+    expect(finding?.suppressed).toBe(false);
+    expect(result.visibleFindings.map((f) => f.commentId)).toEqual([1]);
+  });
+
+  test("carries a finding's reasoning through enforcement into the semantic grounding prompt", async () => {
+    const diffContent = [
+      "diff --git a/src/foo.ts b/src/foo.ts",
+      "--- a/src/foo.ts",
+      "+++ b/src/foo.ts",
+      "@@ -9,3 +9,4 @@",
+      " const before = 1;",
+      "+  m_streaminfo = true;",
+      " const after = 3;",
+    ].join("\n");
+
+    const prompts: string[] = [];
+
+    await reduceReviewFindings({
+      findings: [baseFinding({
+        commentId: 1,
+        filePath: "src/foo.ts",
+        severity: "critical",
+        category: "correctness",
+        startLine: 10,
+        endLine: 10,
+        title: "Race condition in job cleanup",
+        reasoning: "m_streaminfo is assigned without holding the section lock, so a concurrent reader sees a torn value.",
+      })],
+      workspaceDir: ".",
+      filesByCategory: {},
+      filesByLanguage: {},
+      languageRules: undefined,
+      reviewSuppressions: [],
+      minConfidence: 50,
+      feedbackSuppression: { suppressedFingerprints: new Set(), suppressedPatternCount: 0, patterns: [] },
+      priorFindingContext: null,
+      diffContent,
+      prBody: null,
+      commitMessages: [],
+      tieredFiles: { isLargePR: false, abbreviated: [] },
+      graphBlastRadius: null,
+      graphValidationEnabled: false,
+      riskScores: [],
+      logger: testLogger(),
+      baseLog: { repo: "owner/repo", prNumber: 1 },
+      repo: "owner/repo",
+      clusterModelStore: null,
+      embeddingProvider: null,
+      guardrailAuditStore: undefined,
+      graphValidationLLM: null,
+      semanticGroundingLLM: {
+        generate: async (prompt: string) => {
+          prompts.push(prompt);
+          return "VERDICT: MATCH - consistent";
+        },
+      },
+      semanticGroundingOptions: { enabled: true },
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("without holding the section lock");
+    expect(prompts[0]).not.toContain("one-line finding summary");
   });
 
   test("keeps graph validation metadata-only and fails open when graph validation throws", async () => {

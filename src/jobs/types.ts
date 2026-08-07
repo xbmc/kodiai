@@ -78,6 +78,14 @@ export interface JobQueue {
   getPendingCount(installationId: number): number;
   /** Active queued/running jobs for an installation, sorted by queuedAtMs. */
   getActiveJobs(installationId: number): JobSnapshot[];
+  /**
+   * Active queued/running jobs across every installation, sorted by queuedAtMs.
+   * Used by shutdown handling to identify work that is about to be abandoned
+   * by a force-exit, regardless of which installation it belongs to. Optional
+   * so existing test doubles that implement only per-installation lookups
+   * keep compiling; the real queue always provides it.
+   */
+  getAllActiveJobs?(): JobSnapshot[];
 }
 
 /** Workspace manager creates and cleans up ephemeral workspaces */

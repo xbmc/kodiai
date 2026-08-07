@@ -17,7 +17,7 @@ describe("deploy timeout alignment", () => {
   test("ACA job replica timeout exceeds the maximum repo execution timeout with safety buffer", async () => {
     const [deployScript, executionConfig] = await Promise.all([
       readFile("deploy.sh", "utf8"),
-      readFile("src/execution/config.ts", "utf8"),
+      readFile("src/execution/config-schema.ts", "utf8"),
     ]);
 
     const maxConfigTimeoutSeconds = extractNumber(
