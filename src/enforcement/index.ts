@@ -40,6 +40,7 @@ export {
 export {
   enforceDiffGrounding,
   buildDiffGroundingIndex,
+  isDiffTruncated,
   DIFF_GROUNDING_DOWNGRADE_TARGET,
 } from "./diff-grounding.ts";
 export type { DiffGroundingReasonCode, DiffGroundingResult } from "./diff-grounding.ts";
@@ -59,11 +60,13 @@ export type {
 
 import type { Logger } from "pino";
 import type { FindingSeverity } from "../knowledge/types.ts";
+import type { PrDiffCommentabilityIndex, PrDiffLineTextIndex } from "../execution/formatter-suggestions.ts";
+import { GATE_ELIGIBLE_SEVERITIES } from "./gate-outcome.ts";
 import type { LanguageRulesConfig, EnforcedFinding } from "./types.ts";
 import { detectRepoTooling } from "./tooling-detection.ts";
 import { suppressToolingFindings } from "./tooling-suppression.ts";
 import { enforceSeverityFloors } from "./severity-floors.ts";
-import { enforceDiffGrounding, buildDiffGroundingIndex, type DiffGroundingResult } from "./diff-grounding.ts";
+import { enforceDiffGrounding, buildDiffGroundingIndex, isDiffTruncated, type DiffGroundingResult } from "./diff-grounding.ts";
 import {
   enforceSemanticGrounding,
   buildSemanticGroundingSourceIndex,
@@ -147,8 +150,19 @@ export async function applyEnforcement(params: {
     // Step 4: Ground critical/major citations against the collected diff.
     // Runs last so a hallucinated line reference can pull an elevated
     // severity back down; it never re-elevates.
-    const diffLineIndex = buildDiffGroundingIndex(params.diffText);
+    // Parsing the diff is the expensive part of this gate, so skip it when no
+    // finding is gate-eligible -- and most reviews carry none. Safe because the
+    // skip predicate is the same one the gate applies per finding: with nothing
+    // eligible, every finding short-circuits on severity and the index is never
+    // read. The empty index is a placeholder, not a meaningful "no diff" signal.
+    const needsDiffGrounding = merged.some((finding) =>
+      GATE_ELIGIBLE_SEVERITIES.has(finding.severity as FindingSeverity)
+    );
+    const diffLineIndex: PrDiffCommentabilityIndex = needsDiffGrounding
+      ? buildDiffGroundingIndex(params.diffText)
+      : new Map();
     const grounded = enforceDiffGrounding({
+      diffTruncated: needsDiffGrounding && isDiffTruncated(params.diffText),
       findings: merged as (typeof merged[number] & { severity: FindingSeverity })[],
       diffLineIndex,
     });
@@ -159,7 +173,12 @@ export async function applyEnforcement(params: {
     // see semantic-grounding.ts for the cap). Runs last for the same reason
     // as step 4: it can only pull an already-elevated severity back down,
     // never re-elevate.
-    const sourceIndex = buildSemanticGroundingSourceIndex(params.diffText);
+    const semanticGroundingEnabled = (params.semanticGroundingOptions?.enabled ?? false) && !!params.semanticGroundingLLM;
+    // Same reasoning as the diff index above: when the pass is disabled every
+    // finding short-circuits before the index is read, so this is a placeholder.
+    const sourceIndex: PrDiffLineTextIndex = semanticGroundingEnabled
+      ? buildSemanticGroundingSourceIndex(params.diffText)
+      : new Map();
     const semanticallyGrounded = await enforceSemanticGrounding({
       findings: grounded as (typeof grounded[number] & { severity: FindingSeverity })[],
       sourceIndex,
@@ -180,13 +199,10 @@ export async function applyEnforcement(params: {
       originalSeverity: f.severity,
       severityElevated: false,
       toolingSuppressed: false,
-      groundingChecked: false,
-      groundingVerified: true,
-      groundingDowngraded: false,
-      groundingReason: "no-diff-available" as const,
-      semanticGroundingChecked: false,
-      semanticGroundingDowngraded: false,
-      semanticGroundingReason: "disabled" as const,
+      // No gate ran, so record no outcomes. Previously this claimed
+      // "no-diff-available", which sent anyone debugging a missing downgrade
+      // hunting a diff-collection bug that did not exist.
+      gateOutcomes: [],
     }));
   }
 }

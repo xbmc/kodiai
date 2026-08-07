@@ -1947,3 +1947,69 @@ test("ACA dispatch: timeout, failed, and local error paths include candidate met
     tmpDir = undefined;
   }
 });
+
+// ── Executor heartbeat (observability during silent stalls) ────────────────
+//
+// The real createExecutor() (not the createTestableExecutor harness above)
+// wraps its whole execute() body with a periodic "still running" heartbeat so
+// a stall on any unbounded internal call is visible in production logs
+// instead of producing total silence until the job-level hard timeout in
+// src/jobs/queue.ts fires. These tests exercise the real createExecutor with
+// fake timers to make the interval deterministic.
+
+test("executor heartbeat: logs periodically while execute() is in flight and clears on completion", async () => {
+  vi.useFakeTimers();
+  try {
+    const heartbeatLogs: Array<Record<string, unknown>> = [];
+    const logger: Logger = {
+      info: mock((fields: Record<string, unknown>, msg: string) => {
+        if (msg === "Executor still running, awaiting completion") {
+          heartbeatLogs.push(fields);
+        }
+      }),
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+      child: () => logger,
+      trace: () => {},
+      fatal: () => {},
+      level: "info",
+      silent: () => {},
+    } as unknown as Logger;
+
+    const executor = createExecutor({
+      githubApp: makeGithubApp(),
+      logger,
+      config: makeConfig(),
+      mcpJobRegistry: createMcpJobRegistry(),
+      heartbeatIntervalMs: 1_000,
+    });
+
+    // A workspace dir that doesn't exist: loadRepoConfig falls back to
+    // defaults (no .kodiai.yml), so execute() proceeds a few steps before
+    // failing fast (e.g. writing CLAUDE.md into a nonexistent directory).
+    // What matters for this test is that execute() stays pending across at
+    // least one heartbeat tick before it eventually settles.
+    const resultPromise = executor.execute(
+      makeContext("/nonexistent/kodiai-executor-heartbeat-test", {}),
+    );
+
+    // execute() has only run synchronously up to its first await
+    // (loadRepoConfig) at this point, so advancing exactly one interval
+    // fires the heartbeat while the stage is still "load-config".
+    vi.advanceTimersByTime(1_000);
+
+    expect(heartbeatLogs.length).toBeGreaterThanOrEqual(1);
+    expect(heartbeatLogs[0]).toMatchObject({ stage: "load-config" });
+    expect(typeof heartbeatLogs[0]?.elapsedMs).toBe("number");
+
+    await resultPromise;
+
+    // The heartbeat interval must be cleared once execute() settles,
+    // regardless of which return path was taken -- otherwise it would keep
+    // firing (and keep the process alive) forever after the job is done.
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});

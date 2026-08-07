@@ -363,6 +363,15 @@ export async function launchAcaJob(opts: {
 
 export const DEFAULT_ACA_JOB_POLL_INTERVAL_MS = 5_000;
 
+// Per-attempt poll logs are debug-level (see below) so they don't flood
+// production logs, which default to info level. That leaves the remote-runtime
+// wait -- typically the longest phase of a review job -- with zero visible
+// signal for as long as the job is legitimately still running. This heartbeat
+// promotes one line to info level periodically so operators watching a
+// long-running or stalled job can tell polling is still active and see the
+// last known raw execution status.
+const POLL_HEARTBEAT_INTERVAL_MS = 60_000;
+
 type PollStatus = "succeeded" | "failed" | "timed-out";
 
 interface AcaExecutionShowResult {
@@ -432,6 +441,7 @@ export async function pollUntilComplete(opts: {
 
   const startMs = Date.now();
   let attempt = 0;
+  let lastHeartbeatElapsedMs = 0;
 
   while (true) {
     const elapsed = Date.now() - startMs;
@@ -512,6 +522,20 @@ export async function pollUntilComplete(opts: {
       },
       "ACA Job poll attempt",
     );
+
+    if (elapsed - lastHeartbeatElapsedMs >= POLL_HEARTBEAT_INTERVAL_MS) {
+      lastHeartbeatElapsedMs = elapsed;
+      logger?.info(
+        {
+          attempt,
+          executionName,
+          jobName,
+          elapsedMs: elapsed,
+          status: parsedStatus.kind === "status" ? parsedStatus.rawStatus : parsedStatus.kind,
+        },
+        "ACA Job poll: still waiting for remote execution",
+      );
+    }
 
     if (parsedStatus.kind === "status") {
       if (parsedStatus.normalizedStatus === "succeeded") {

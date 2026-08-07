@@ -696,6 +696,33 @@ describe("pollUntilComplete", () => {
     expect(statusFetchCount).toBe(1);
   });
 
+  test("emits an info-level heartbeat once 60s of polling has elapsed, at most once per interval", async () => {
+    const { result, logger, sleepCalls, statusFetchCount } = await runPollScenario({
+      statusResponses: [
+        jsonResponse({ status: "Running" }),
+        jsonResponse({ status: "Running" }),
+        jsonResponse({ properties: { status: "Succeeded" } }),
+      ],
+      nowValues: [0, 0, 1_000, 1_000, 65_000, 65_000, 70_000, 70_000],
+      timeoutMs: 100_000,
+    });
+
+    expect(result).toEqual({ status: "succeeded", durationMs: 70_000 });
+    expect(sleepCalls).toEqual([5_000, 5_000]);
+    expect(statusFetchCount).toBe(3);
+
+    const infoCalls = (logger.info as ReturnType<typeof mock>).mock.calls.filter(
+      (call) => call[1] === "ACA Job poll: still waiting for remote execution",
+    );
+    expect(infoCalls).toHaveLength(1);
+    expect(infoCalls[0]?.[0]).toMatchObject({
+      executionName: "exec-123",
+      jobName: "caj-kodiai-agent",
+      elapsedMs: 65_000,
+    });
+    expect((infoCalls[0]?.[0] as { elapsedMs: number }).elapsedMs).toBeGreaterThanOrEqual(60_000);
+  });
+
   test("passes abort signals to managed identity and poll fetches", async () => {
     const originalFetch = globalThis.fetch;
     const originalNow = Date.now;
