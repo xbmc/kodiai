@@ -25,26 +25,28 @@ type PublishRetryMergeContinuationResults = typeof publishRetryMergeContinuation
 type PublishReviewExecutionErrorFallback = typeof publishReviewExecutionErrorFallback;
 
 /**
- * When a retry/continuation attempt itself fails to produce usable results (e.g. it
- * also exhausts its turn budget), the settlement below quietly discards it on the
- * assumption that the *original* first-pass review already published a partial
- * review to the PR. That assumption only holds when the original attempt actually
- * published something. If the original attempt deferred publication in favor of
- * this retry (the normal "let the retry publish the final result" flow) and the
- * retry then also fails to produce results, quiet-settling would leave the PR with
- * zero visible output even though two full review attempts ran. Detect that case
- * so we can fail open with a clear "ran out of steps" comment instead of silence.
+ * Every quiet-settlement exit below (retry produced nothing usable, missing base
+ * checkpoint, non-merge decision, no meaningful delta, non-publishable merge
+ * context) discards the retry on the assumption that the *original* first-pass
+ * review already put something visible on the PR. That assumption only holds
+ * when the original attempt actually published a partial comment or inline
+ * findings. If the original attempt deferred publication in favor of this retry
+ * (the normal "let the retry publish the final result" flow) and the retry then
+ * hits any of these quiet-settlement branches, quiet-settling would leave the PR
+ * with zero visible output even though a full review attempt ran. Detect that
+ * case so we can fail open with a clear "ran out of steps" comment instead of
+ * silence.
  */
-function shouldForceTurnLimitFallback(params: {
-  retryCompletedWithResults: boolean;
+function hasNothingBeenPublishedYet(params: {
   partialCommentId?: number;
+  hasPublishedInlines?: boolean;
 }): boolean {
-  return !params.retryCompletedWithResults && params.partialCommentId === undefined;
+  return params.partialCommentId === undefined && !params.hasPublishedInlines;
 }
 
 export type RetryContinuationSettlementStatus =
   | (RetryNoAdditionalResultsSettlementStatus & { published: boolean })
-  | { status: "settled-without-canonical-update"; published: false; reason: string }
+  | { status: "settled-without-canonical-update"; published: boolean; reason: string }
   | RetryMergeContinuationPublicationStatus;
 
 export type RetryContinuationSettlementResult =
@@ -67,6 +69,7 @@ export async function settleRetryContinuationResults(params: {
   baseCheckpoint: CheckpointRecord | null;
   retryCheckpoint: CheckpointRecord | null;
   partialCommentId?: number;
+  hasPublishedInlines?: boolean;
   retryFilesCount: number;
   timeoutDurationSeconds: number;
   timeoutFirstPassBoundedReason?: ReviewFirstPassBoundedReason | null;
@@ -89,48 +92,57 @@ export async function settleRetryContinuationResults(params: {
   publishRetryMergeContinuationResultsFn?: PublishRetryMergeContinuationResults;
   publishReviewExecutionErrorFallbackFn?: PublishReviewExecutionErrorFallback;
 }): Promise<RetryContinuationSettlementResult> {
-  if (!params.retryCompletedWithResults) {
-    let postedTurnLimitFallback = false;
-    if (shouldForceTurnLimitFallback(params)) {
-      const exhaustedTurnBudget =
-        params.firstPassOutcome.stopReason === "max_turns" ||
-        params.firstPassOutcome.failureSubtype === "error_max_turns" ||
-        params.retryResult.stopReason === "max_turns" ||
-        params.retryResult.failureSubtype === "error_max_turns";
-
-      const publishExecutionErrorFallback =
-        params.publishReviewExecutionErrorFallbackFn ?? publishReviewExecutionErrorFallback;
-      const fallbackPublication = await publishExecutionErrorFallback({
-        octokit: await params.getOctokit(),
-        owner: params.owner,
-        repo: params.repo,
-        prNumber: params.prNumber,
-        exhaustedTurnBudget,
-        retryScheduled: false,
-        category: exhaustedTurnBudget ? "timeout" : "internal_error",
-        errorMessage: exhaustedTurnBudget
-          ? undefined
-          : (params.retryResult.errorMessage ?? "The retry review run did not produce a publishable result."),
-        totalTimeoutSeconds: params.timeoutDurationSeconds,
-        complexityInfo: "Retry review run also failed to produce publishable results.",
-        logger: params.logger,
-        canPublishVisibleOutput: (reason) =>
-          params.canPublishReviewWorkOutput(params.attemptId, reason, params.deliveryId),
-        setReviewWorkPhase: params.setPublishPhase,
-      });
-
-      postedTurnLimitFallback = fallbackPublication.ok ? fallbackPublication.value.published : false;
-
-      params.logger.info(
-        {
-          deliveryId: params.deliveryId,
-          prNumber: params.prNumber,
-          retryConclusion: params.retryResult.conclusion,
-          published: postedTurnLimitFallback,
-        },
-        "Retry produced no additional results and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
-      );
+  const postTurnLimitFallbackIfNothingPublished = async (logMessage: string): Promise<boolean> => {
+    if (!hasNothingBeenPublishedYet(params)) {
+      return false;
     }
+
+    const exhaustedTurnBudget =
+      params.firstPassOutcome.stopReason === "max_turns" ||
+      params.firstPassOutcome.failureSubtype === "error_max_turns" ||
+      params.retryResult.stopReason === "max_turns" ||
+      params.retryResult.failureSubtype === "error_max_turns";
+
+    const publishExecutionErrorFallback =
+      params.publishReviewExecutionErrorFallbackFn ?? publishReviewExecutionErrorFallback;
+    const fallbackPublication = await publishExecutionErrorFallback({
+      octokit: await params.getOctokit(),
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      exhaustedTurnBudget,
+      retryScheduled: false,
+      category: exhaustedTurnBudget ? "timeout" : "internal_error",
+      errorMessage: exhaustedTurnBudget
+        ? undefined
+        : (params.retryResult.errorMessage ?? "The retry review run did not produce a publishable result."),
+      totalTimeoutSeconds: params.timeoutDurationSeconds,
+      complexityInfo: "Retry review run also failed to produce publishable results.",
+      logger: params.logger,
+      canPublishVisibleOutput: (reason) =>
+        params.canPublishReviewWorkOutput(params.attemptId, reason, params.deliveryId),
+      setReviewWorkPhase: params.setPublishPhase,
+    });
+
+    const postedTurnLimitFallback = fallbackPublication.ok ? fallbackPublication.value.published : false;
+
+    params.logger.info(
+      {
+        deliveryId: params.deliveryId,
+        prNumber: params.prNumber,
+        retryConclusion: params.retryResult.conclusion,
+        published: postedTurnLimitFallback,
+      },
+      logMessage,
+    );
+
+    return postedTurnLimitFallback;
+  };
+
+  if (!params.retryCompletedWithResults) {
+    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
+      "Retry produced no additional results and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
+    );
 
     const quietSettlement = await settleRetryWithNoAdditionalResults({
       logger: params.logger,
@@ -151,6 +163,9 @@ export async function settleRetryContinuationResults(params: {
   }
 
   if (!params.baseCheckpoint) {
+    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
+      "Retry settlement skipped because the base checkpoint was missing and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
+    );
     await params.settleRetryWithoutCanonicalUpdate({
       attemptId: params.attemptId,
       reviewOutputKey: params.retryReviewOutputKey,
@@ -160,7 +175,7 @@ export async function settleRetryContinuationResults(params: {
     });
     return ok({
       status: "settled-without-canonical-update",
-      published: false,
+      published: postedTurnLimitFallback,
       reason: "missing-base-checkpoint",
     });
   }
@@ -174,6 +189,9 @@ export async function settleRetryContinuationResults(params: {
   });
 
   if (settlementDecision.decision !== "merge-continuation") {
+    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
+      "Retry settlement resolved to a non-merge decision and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
+    );
     const quietSettlement = await settleRetryWithNoAdditionalResults({
       logger: params.logger,
       deliveryId: params.deliveryId,
@@ -189,13 +207,13 @@ export async function settleRetryContinuationResults(params: {
     if (!quietSettlement.ok) {
       return ok({
         status: "quiet-settled",
-        published: false,
+        published: postedTurnLimitFallback,
         persistedContinuationState: false,
         discardedCheckpoints: false,
         reason: settlementDecision.reason,
       });
     }
-    return ok({ ...quietSettlement.value, published: false });
+    return ok({ ...quietSettlement.value, published: postedTurnLimitFallback });
   }
 
   const continuationRevisionCounts = await resolveReviewContinuationRevisionCounts({
@@ -222,6 +240,9 @@ export async function settleRetryContinuationResults(params: {
     && continuationRevisionCounts.stillOpen === 0
     && continuationRevisionCounts.resolved === 0
   ) {
+    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
+      "Retry produced no meaningful delta and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
+    );
     const quietSettlement = await settleRetryWithNoAdditionalResults({
       logger: params.logger,
       deliveryId: params.deliveryId,
@@ -241,13 +262,13 @@ export async function settleRetryContinuationResults(params: {
     if (!quietSettlement.ok) {
       return ok({
         status: "quiet-settled",
-        published: false,
+        published: postedTurnLimitFallback,
         persistedContinuationState: false,
         discardedCheckpoints: false,
         reason: "no-meaningful-delta",
       });
     }
-    return ok({ ...quietSettlement.value, published: false });
+    return ok({ ...quietSettlement.value, published: postedTurnLimitFallback });
   }
 
   const mergeContext = resolveReviewContinuationMergeContext({
@@ -270,6 +291,9 @@ export async function settleRetryContinuationResults(params: {
   });
 
   if (mergeContext.status === "non-publishable") {
+    const postedTurnLimitFallback = await postTurnLimitFallbackIfNothingPublished(
+      "Retry merge became non-publishable and nothing was published yet -- posting turn-limit fallback so the review does not silently disappear",
+    );
     await params.settleRetryWithoutCanonicalUpdate({
       attemptId: params.attemptId,
       reviewOutputKey: params.retryReviewOutputKey,
@@ -279,7 +303,7 @@ export async function settleRetryContinuationResults(params: {
     });
     return ok({
       status: "settled-without-canonical-update",
-      published: false,
+      published: postedTurnLimitFallback,
       reason: mergeContext.reason,
     });
   }
