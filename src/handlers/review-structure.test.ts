@@ -1469,10 +1469,20 @@ describe("review handler structure", () => {
 
   test("keeps fail-open degraded Review Details fallback publication out of the monster handler", () => {
     const source = readFileSync(new URL("./review.ts", import.meta.url), "utf8");
-
+    // The handler must not inline the fallback...
     expect(source).not.toContain("await upsertDegradedReviewDetailsFallbackComment({");
-    expect(source).toContain("publishDegradedReviewDetailsFallbackFailOpen");
-    expect(source).toContain("./review-details-degraded-fallback.ts");
+
+    // ...and the helper must be reachable from the module that owns timeout
+    // Review Details publication. This previously asserted review.ts merely
+    // *mentioned* the symbol, which an unused import satisfied -- so the check
+    // passed while the handler never called it and the real delegation lived
+    // here all along.
+    const timeoutPublicationSource = readFileSync(
+      new URL("./review-details-timeout-publication.ts", import.meta.url),
+      "utf8",
+    );
+    expect(timeoutPublicationSource).toContain("publishDegradedReviewDetailsFallbackFailOpen");
+    expect(timeoutPublicationSource).toContain("./review-details-degraded-fallback.ts");
   });
 
   test("keeps timeout Review Details publication orchestration out of the monster handler", () => {

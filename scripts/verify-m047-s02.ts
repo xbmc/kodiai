@@ -16,7 +16,6 @@ import type { AuthorTier } from "../src/lib/author-classifier.ts";
 import {
   buildRetrievalVariants,
   type BuildRetrievalVariantsInput,
-  type MultiQueryVariant,
 } from "../src/knowledge/multi-query-retrieval.ts";
 import {
   buildRetrievalQuery,

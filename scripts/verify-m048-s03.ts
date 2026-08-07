@@ -389,32 +389,8 @@ function createBaseReport(params: {
   };
 }
 
-function buildDefaultSynchronizeConfigReport(workspaceDir: string): M048S03SynchronizeConfigReport {
-  return {
-    configPath: `${workspaceDir}/.kodiai.yml`,
-    configPresent: false,
-    effectiveOnSynchronize: false,
-    warnings: [],
-    passed: false,
-    issues: [],
-  };
-}
 
-function buildDefaultTimeoutSurfaceReport(): M048S03TimeoutSurfaceReport {
-  return {
-    passed: false,
-    fixtures: [],
-    issues: [],
-  };
-}
 
-function buildDefaultBoundedDisclosureReport(): M048S03BoundedDisclosureReport {
-  return {
-    passed: false,
-    fixtures: [],
-    issues: [],
-  };
-}
 
 export async function evaluateSynchronizeConfigPreflight(params: {
   workspaceDir: string;

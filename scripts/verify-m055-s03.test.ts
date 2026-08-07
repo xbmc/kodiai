@@ -49,12 +49,6 @@ const DOC_PATHS = [
   "docs/smoke/xbmc-xbmc-write-flow.md",
 ] as const;
 
-const REQUIRED_RUNBOOKS = [
-  "docs/runbooks/deploy-rollback.md",
-  "docs/runbooks/key-rotation.md",
-  "docs/runbooks/aca-job-debugging.md",
-  "docs/runbooks/nightly-sync-failures.md",
-] as const;
 
 const PASSING_INDEX = `# Documentation Index
 

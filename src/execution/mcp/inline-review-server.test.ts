@@ -244,7 +244,7 @@ describe("createInlineReviewServer output idempotency", () => {
         },
       },
     };
-    const publicationGate = createReviewOutputPublicationGate({
+    createReviewOutputPublicationGate({
       owner: "acme",
       repo: "repo",
       prNumber: 101,

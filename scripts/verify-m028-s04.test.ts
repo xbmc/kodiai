@@ -26,11 +26,6 @@ import type { PageSuggestionGroup } from "../src/knowledge/wiki-publisher-types.
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 /** Build a minimal sql stub that returns the given rows for all queries. */
-function makeSqlStub(rows: unknown[]): unknown {
-  return function sqlStub() {
-    return Promise.resolve(rows);
-  };
-}
 
 /** Build a sql stub with different responses per call index. */
 function makeSequentialSqlStub(responses: Array<unknown[] | Error>): unknown {

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DepBumpContext } from "./dep-bump-detector.ts";
 import { computeMergeConfidence } from "./merge-confidence.ts";
-import type { MergeConfidence, MergeConfidenceLevel } from "./merge-confidence.ts";
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 

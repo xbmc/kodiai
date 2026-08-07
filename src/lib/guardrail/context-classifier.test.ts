@@ -82,7 +82,7 @@ describe("classifyClaimAgainstContext", () => {
       context,
       "strict",
     );
-    const resultLenient = classifyClaimAgainstContext(
+    classifyClaimAgainstContext(
       "This changes the database timeout setting",
       context,
       "lenient",

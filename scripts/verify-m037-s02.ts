@@ -25,15 +25,12 @@ import type { EmbeddingProvider } from "../src/knowledge/types.ts";
 import {
   scoreFindings,
   scoreFindingEmbedding,
-  isModelEligibleForScoring,
   SUPPRESSION_THRESHOLD,
   BOOST_THRESHOLD,
   CONFIDENCE_BOOST_DELTA,
-  MIN_CENTROID_MEMBERS_FOR_SCORING,
   type ScoringFinding,
 } from "../src/knowledge/suggestion-cluster-scoring.ts";
 import {
-  applyClusterScoreAdjustment,
 } from "../src/feedback/confidence-adjuster.ts";
 import type { SuggestionClusterModel } from "../src/knowledge/suggestion-cluster-store.ts";
 

@@ -637,8 +637,6 @@ describe("createMentionHandler conversational review wiring", () => {
   test("issue mentions enrich prompt with issue code-pointer context", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
-    const { logger, infoCalls, errorCalls } = createMockLogger();
-
     let capturedPrompt = "";
 
     const eventRouter: EventRouter = {
@@ -1246,7 +1244,6 @@ describe("createMentionHandler conversational review wiring", () => {
 
     const issueReplies: string[] = [];
     let pullCreateCalls = 0;
-    let capturedWriteMode: boolean | undefined;
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -1320,7 +1317,6 @@ describe("createMentionHandler conversational review wiring", () => {
       } as unknown as GitHubApp,
       executor: {
         execute: async (ctx: { writeMode?: boolean }) => {
-          capturedWriteMode = ctx.writeMode;
           return {
             conclusion: "success",
             published: false,

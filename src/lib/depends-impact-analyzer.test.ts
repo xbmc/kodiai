@@ -4,12 +4,6 @@ import {
   parseCmakeFindModule,
   checkTransitiveDependencies,
 } from "./depends-impact-analyzer.ts";
-import type {
-  IncludeConsumer,
-  CmakeDependency,
-  TransitiveResult,
-  ImpactResult,
-} from "./depends-impact-analyzer.ts";
 
 // ─── Mock Helpers ────────────────────────────────────────────────────────────
 
@@ -36,17 +30,6 @@ function mockGrepRunner(output: string, exitCode = 0) {
   });
 }
 
-function mockGrepRunnerMulti(outputs: Map<string, { stdout: string; exitCode: number }>) {
-  return async (params: { workspaceDir: string; pattern: string; pathspec?: string }) => {
-    // Match on pattern substring for routing
-    for (const [key, value] of outputs) {
-      if (params.pattern.includes(key) || params.pathspec?.includes(key)) {
-        return value;
-      }
-    }
-    return { exitCode: 1, stdout: "" };
-  };
-}
 
 function timeoutGrepRunner() {
   return async () => {

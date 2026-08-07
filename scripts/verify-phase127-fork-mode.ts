@@ -16,7 +16,6 @@
  *   BOT_USER_LOGIN  - GitHub login for the bot user (e.g. "kodiai")
  */
 
-import { Octokit } from "@octokit/rest";
 import pino from "pino";
 import { createBotUserClient, type BotUserClient } from "../src/auth/bot-user.ts";
 import { createForkManager, type ForkManager } from "../src/jobs/fork-manager.ts";
@@ -237,7 +236,7 @@ async function testGracefulDegradation() {
 
   // Accessing octokit should throw, not crash
   try {
-    const _ = botClient.octokit;
+    botClient.octokit;
     fail("BotUserClient.octokit access", "should have thrown");
   } catch (e) {
     if (e instanceof Error && e.message.includes("not configured")) {

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { hybridSearchMerge, type HybridSearchResult } from "./hybrid-search.ts";
+import { hybridSearchMerge } from "./hybrid-search.ts";
 
 type TestItem = { id: string; text: string };
 

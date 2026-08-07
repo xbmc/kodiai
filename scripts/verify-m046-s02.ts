@@ -1,6 +1,5 @@
 import { loadFixtureManifest } from "../src/contributor/fixture-set.ts";
 import {
-  DEFAULT_XBMC_CALIBRATION_RETAINED_IDS,
   evaluateCalibrationSnapshot,
   type CalibrationRecommendationVerdict,
 } from "../src/contributor/calibration-evaluator.ts";

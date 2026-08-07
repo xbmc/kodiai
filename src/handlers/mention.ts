@@ -197,7 +197,6 @@ let canonicalReviewSurfaceKey: string | undefined;
         if (mentionRequestPreparation.action === "stop") return;
         const {
           acceptClaudeAlias,
-          acceptedHandles,
           userQuestion,
           formatterSuggestionRequest,
           mentionWriteRequestContext,
@@ -210,11 +209,9 @@ let canonicalReviewSurfaceKey: string | undefined;
           isPlanOnly,
           writeEnabled,
           writeKeyword,
-          retryCommand,
           triggerCommentUrl,
           writeBranchName,
           writeOutputKey,
-          writeSource,
         } = mentionWriteRequestContext;
         explicitReviewRequest = mentionWriteRequestContext.explicitReviewRequest;
 
