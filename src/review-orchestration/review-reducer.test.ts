@@ -272,6 +272,66 @@ describe("reduceReviewFindings", () => {
     expect(result.visibleFindings.map((f) => f.commentId)).toEqual([1]);
   });
 
+  test("carries a finding's reasoning through enforcement into the semantic grounding prompt", async () => {
+    const diffContent = [
+      "diff --git a/src/foo.ts b/src/foo.ts",
+      "--- a/src/foo.ts",
+      "+++ b/src/foo.ts",
+      "@@ -9,3 +9,4 @@",
+      " const before = 1;",
+      "+  m_streaminfo = true;",
+      " const after = 3;",
+    ].join("\n");
+
+    const prompts: string[] = [];
+
+    await reduceReviewFindings({
+      findings: [baseFinding({
+        commentId: 1,
+        filePath: "src/foo.ts",
+        severity: "critical",
+        category: "correctness",
+        startLine: 10,
+        endLine: 10,
+        title: "Race condition in job cleanup",
+        reasoning: "m_streaminfo is assigned without holding the section lock, so a concurrent reader sees a torn value.",
+      })],
+      workspaceDir: ".",
+      filesByCategory: {},
+      filesByLanguage: {},
+      languageRules: undefined,
+      reviewSuppressions: [],
+      minConfidence: 50,
+      feedbackSuppression: { suppressedFingerprints: new Set(), suppressedPatternCount: 0, patterns: [] },
+      priorFindingContext: null,
+      diffContent,
+      prBody: null,
+      commitMessages: [],
+      tieredFiles: { isLargePR: false, abbreviated: [] },
+      graphBlastRadius: null,
+      graphValidationEnabled: false,
+      riskScores: [],
+      logger: testLogger(),
+      baseLog: { repo: "owner/repo", prNumber: 1 },
+      repo: "owner/repo",
+      clusterModelStore: null,
+      embeddingProvider: null,
+      guardrailAuditStore: undefined,
+      graphValidationLLM: null,
+      semanticGroundingLLM: {
+        generate: async (prompt: string) => {
+          prompts.push(prompt);
+          return "VERDICT: MATCH - consistent";
+        },
+      },
+      semanticGroundingOptions: { enabled: true },
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("without holding the section lock");
+    expect(prompts[0]).not.toContain("one-line finding summary");
+  });
+
   test("keeps graph validation metadata-only and fails open when graph validation throws", async () => {
     const findings = [
       baseFinding({ commentId: 1, filePath: "src/direct.ts" }),

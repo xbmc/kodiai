@@ -29,6 +29,7 @@ function makeFinding(overrides: {
   startLine?: number;
   endLine?: number;
   title?: string;
+  reasoning?: string;
   groundingChecked?: boolean;
   groundingVerified?: boolean;
 }) {
@@ -36,6 +37,7 @@ function makeFinding(overrides: {
     filePath: overrides.filePath,
     severity: overrides.severity,
     title: overrides.title ?? "Some finding",
+    ...(overrides.reasoning !== undefined ? { reasoning: overrides.reasoning } : {}),
     groundingChecked: overrides.groundingChecked ?? true,
     groundingVerified: overrides.groundingVerified ?? true,
     ...(overrides.startLine !== undefined ? { startLine: overrides.startLine } : {}),
@@ -353,5 +355,77 @@ describe("enforceSemanticGrounding", () => {
     });
 
     expect(result?.category).toBe("correctness");
+  });
+
+  it("fact-checks the finding's reasoning, not its one-line title, when reasoning is present", async () => {
+    const sourceIndex = buildSemanticGroundingSourceIndex(SAMPLE_DIFF);
+    const calls: Array<{ prompt: string; system: string }> = [];
+    const llm = stubLLM("VERDICT: MATCH - fine", calls);
+
+    await enforceSemanticGrounding({
+      findings: [makeFinding({
+        filePath: "src/foo.cpp",
+        severity: "critical",
+        startLine: 10,
+        endLine: 11,
+        title: "Race condition in job cleanup",
+        reasoning: "m_streaminfo is assigned without holding the section lock, so a concurrent reader can observe a torn value.",
+      })],
+      sourceIndex,
+      llm,
+      options: { enabled: true },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.prompt).toContain("without holding the section lock");
+    // The summary-only hedge must be absent when real reasoning was supplied.
+    expect(calls[0]?.prompt).not.toContain("one-line finding summary");
+  });
+
+  it("caps an unbounded reasoning body so prompt cost stays bounded", async () => {
+    const sourceIndex = buildSemanticGroundingSourceIndex(SAMPLE_DIFF);
+    const calls: Array<{ prompt: string; system: string }> = [];
+    const llm = stubLLM("VERDICT: MATCH - fine", calls);
+
+    await enforceSemanticGrounding({
+      findings: [makeFinding({
+        filePath: "src/foo.cpp",
+        severity: "critical",
+        startLine: 10,
+        endLine: 11,
+        reasoning: `LEAD CLAIM. ${"padding ".repeat(2000)}TAIL MARKER`,
+      })],
+      sourceIndex,
+      llm,
+      options: { enabled: true },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.prompt).toContain("LEAD CLAIM.");
+    expect(calls[0]?.prompt).toContain("[truncated]");
+    expect(calls[0]?.prompt).not.toContain("TAIL MARKER");
+  });
+
+  it("tells the grader it is judging a summary when only a title is available", async () => {
+    const sourceIndex = buildSemanticGroundingSourceIndex(SAMPLE_DIFF);
+    const calls: Array<{ prompt: string; system: string }> = [];
+    const llm = stubLLM("VERDICT: MATCH - fine", calls);
+
+    await enforceSemanticGrounding({
+      findings: [makeFinding({
+        filePath: "src/foo.cpp",
+        severity: "critical",
+        startLine: 10,
+        endLine: 11,
+        title: "Race condition in job cleanup",
+      })],
+      sourceIndex,
+      llm,
+      options: { enabled: true },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.prompt).toContain("one-line finding summary");
+    expect(calls[0]?.prompt).toContain("merely terse");
   });
 });

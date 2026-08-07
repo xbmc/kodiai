@@ -16,6 +16,12 @@ export type ExtractedFinding = {
   title: string;
   severity: FindingSeverity;
   category: FindingCategory;
+  /**
+   * The comment's prose body. Carried so enforcement/semantic-grounding.ts can
+   * fact-check the reviewer's actual reasoning instead of a one-line title.
+   * Omitted when the comment was a bare title.
+   */
+  reasoning?: string;
   startLine?: number;
   endLine?: number;
 };
@@ -85,6 +91,7 @@ export async function extractFindingsFromReviewComments(params: {
         title: parsed.title,
         severity: parsed.severity,
         category: parsed.category,
+        reasoning: parsed.reasoning.length > 0 ? parsed.reasoning : undefined,
         startLine: typeof comment.start_line === "number" ? comment.start_line : undefined,
         endLine: typeof comment.line === "number" ? comment.line : undefined,
       });

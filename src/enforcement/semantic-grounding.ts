@@ -65,16 +65,32 @@ const DEFAULT_MAX_FINDINGS_TO_CHECK = 5;
 /** Max characters of cited source text sent to the LLM per finding. */
 const DEFAULT_SOURCE_MAX_CHARS = 2000;
 
+/**
+ * Max characters of finding reasoning sent to the LLM per finding. Reasoning
+ * comes from a full inline comment body, which is unbounded; the lead prose
+ * carries the falsifiable claim, so truncating the tail bounds prompt cost
+ * without losing what is being fact-checked.
+ */
+const CLAIM_MAX_CHARS = 2000;
+
+function truncateClaim(claim: string): string {
+  return claim.length > CLAIM_MAX_CHARS
+    ? `${claim.slice(0, CLAIM_MAX_CHARS)}\n...[truncated]`
+    : claim;
+}
+
 export type SemanticGroundingFindingInput = {
   filePath: string;
   title: string;
   severity: FindingSeverity;
   /**
    * The finding's prose reasoning about what the code does -- the thing this
-   * pass actually fact-checks. Optional because the inline-comment extractor
-   * currently recovers only a title; when it is absent the pass tells the
-   * grader it is judging a one-line summary so a terse title is not mistaken
-   * for a false claim. See the `titleOnly` handling in the prompt builder.
+   * pass actually fact-checks. Populated from the inline comment body by
+   * parseInlineCommentMetadata. Optional because some reducer inputs are
+   * synthesized rather than extracted (comment-slop detections, review
+   * candidate drafts) and carry only a title; when it is absent the pass tells
+   * the grader it is judging a one-line summary so a terse title is not
+   * mistaken for a false claim. See `titleOnly` in the prompt builder.
    */
   reasoning?: string;
   startLine?: number;
@@ -278,7 +294,9 @@ export async function enforceSemanticGrounding<T extends SemanticGroundingFindin
     // Prefer the finding's full reasoning; fall back to the title, flagging it
     // so the prompt can tell the grader it is judging a summary.
     const reasoning = (finding.reasoning ?? "").trim();
-    const claim = reasoning.length > 0 ? reasoning : (finding.title ?? "").trim();
+    const claim = reasoning.length > 0
+      ? truncateClaim(reasoning)
+      : (finding.title ?? "").trim();
     const titleOnly = reasoning.length === 0;
     if (claim.length === 0) {
       results[i] = passThrough(finding, "no-reasoning");
