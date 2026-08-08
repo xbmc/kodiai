@@ -831,6 +831,8 @@ export function createExecutor(deps: {
           if (context.reviewOutputKey && context.knowledgeStore) {
             const timeoutCheckpoint: CheckpointRecord = {
               reviewOutputKey: context.reviewOutputKey,
+              repo: `${context.owner}/${context.repo}`,
+              prNumber: context.prNumber,
               filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
               filesInspected: resumeCheckpoint?.filesInspected ?? [],
               findingCount: (resumeCheckpoint?.findingCount ?? 0),
@@ -906,6 +908,8 @@ export function createExecutor(deps: {
           if (context.reviewOutputKey && context.knowledgeStore) {
             const failureCheckpoint: CheckpointRecord = {
               reviewOutputKey: context.reviewOutputKey,
+              repo: `${context.owner}/${context.repo}`,
+              prNumber: context.prNumber,
               filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
               filesInspected: resumeCheckpoint?.filesInspected ?? [],
               findingCount: (resumeCheckpoint?.findingCount ?? 0),
@@ -960,6 +964,8 @@ export function createExecutor(deps: {
         if (context.reviewOutputKey && context.knowledgeStore) {
           const updatedCheckpoint: CheckpointRecord = {
             reviewOutputKey: context.reviewOutputKey,
+            repo: `${context.owner}/${context.repo}`,
+            prNumber: context.prNumber,
             filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
             filesInspected: resumeCheckpoint?.filesInspected ?? [],
             findingCount: (resumeCheckpoint?.findingCount ?? 0) + (jobResult.numTurns ?? 0),
@@ -1015,6 +1021,8 @@ export function createExecutor(deps: {
         if (context.reviewOutputKey && context.knowledgeStore) {
           const errorCheckpoint: CheckpointRecord = {
             reviewOutputKey: context.reviewOutputKey,
+            repo: `${context.owner}/${context.repo}`,
+            prNumber: context.prNumber,
             filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
             filesInspected: resumeCheckpoint?.filesInspected ?? [],
             findingCount: (resumeCheckpoint?.findingCount ?? 0),
