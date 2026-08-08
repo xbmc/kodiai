@@ -37,6 +37,9 @@ const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
 const DEFAULT_MAX_CHANGED_FILES = 200;
 const MAX_LANGUAGE_GUIDANCE_ENTRIES = 5;
+const DELTA_ANALYSIS_THRESHOLD = Number(process.env.DELTA_ANALYSIS_THRESHOLD ?? "500");
+const DELTA_ANALYSIS_FILE_THRESHOLD = 20;
+const DELTA_CONTEXT_WINDOW = 50;
 export const SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE = "Analysis is partial due to API limits.";
 
 // ---------------------------------------------------------------------------
@@ -1729,6 +1732,37 @@ export function buildSmallDiffScopeSection(): string {
   ].join("\n");
 }
 
+function buildDeltaModeAnalysisSection(params: {
+  totalFiles: number;
+  totalLinesChanged: number;
+  useFallback: boolean;
+}): string {
+  const lines: string[] = [
+    "## Delta Mode Analysis",
+    "",
+  ];
+
+  if (params.useFallback) {
+    lines.push(
+      "Delta mode info is incomplete. Falling back to full analysis.",
+      "Review all changes thoroughly without the delta optimization.",
+      "",
+    );
+  } else {
+    lines.push(
+      "This review uses delta mode: only changed files and their immediate context are analyzed.",
+      `This PR has ${params.totalFiles} file(s) changed and ${params.totalLinesChanged} total lines modified.`,
+      `Context window: ±${DELTA_CONTEXT_WINDOW} lines around each change.`,
+      "",
+      "Focus on the diff hunks provided. For changes at file boundaries or requiring broader context,",
+      "use Read/Grep/Glob to examine surrounding code.",
+      "",
+    );
+  }
+
+  return lines.join("\n");
+}
+
 export type RetryPromptCheckpointSummary = {
   reviewOutputKey: string;
   filesReviewed: readonly string[];
@@ -2111,6 +2145,12 @@ export function buildReviewPromptDetails(context: {
   repoDoctrine?: ReviewPromptRepoDoctrine | null;
   gitDiffInstructionsAvailable?: boolean;
   diffContent?: string;
+  deltaMode?: {
+    enabled: boolean;
+    totalFiles: number;
+    totalLinesChanged: number;
+    useFallback?: boolean;
+  };
 }): PromptBuildResult {
   const sectionBlocks: Array<{ sectionName: string; text: string; budgetChars: number; budgetOutcome?: PromptBudgetOutcome }> = [];
   const scaleNotes: string[] = [];
@@ -2255,7 +2295,17 @@ export function buildReviewPromptDetails(context: {
   }
 
   const sizeContextLines: string[] = [];
+  if (context.deltaMode?.enabled) {
+    sizeContextLines.push(
+      buildDeltaModeAnalysisSection({
+        totalFiles: context.deltaMode.totalFiles,
+        totalLinesChanged: context.deltaMode.totalLinesChanged,
+        useFallback: context.deltaMode.useFallback ?? false,
+      }),
+    );
+  }
   if (context.largePRContext) {
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
     sizeContextLines.push(buildLargePRTriageSection(context.largePRContext));
   }
   if (context.incrementalContext) {

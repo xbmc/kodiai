@@ -10,6 +10,7 @@ import {
   largePRSchema,
   mentionSchema,
   modelsSchema,
+  repoBudgetSchema,
   repoConfigSchema,
   repoDoctrineSchema,
   reviewSchema,
@@ -31,6 +32,25 @@ export interface ConfigWarning {
 export interface LoadConfigResult {
   config: RepoConfig;
   warnings: ConfigWarning[];
+}
+
+const DEFAULT_REPO_BUDGETS: Record<string, number> = {
+  "xbmc/xbmc": 300,
+  "xbmc/xbmc-addons": 300,
+  "xbmc/kodiai": 900,
+};
+
+function resolveRepoBudgetSeconds(owner: string, repo: string): number {
+  const envKey = `REPO_BUDGET_${owner.toUpperCase()}_${repo.toUpperCase()}`;
+  const envValue = process.env[envKey];
+  if (envValue) {
+    const parsed = parseInt(envValue, 10);
+    if (!isNaN(parsed) && parsed >= 30 && parsed <= 3600) {
+      return parsed;
+    }
+  }
+  const repoKey = `${owner}/${repo}`;
+  return DEFAULT_REPO_BUDGETS[repoKey] ?? 1860; // ACA default fallback
 }
 
 function isConfigRecord(value: unknown): value is Record<string, unknown> {
@@ -122,12 +142,21 @@ function sanitizeParsedDoctrine(parsed: unknown): {
 
 export async function loadRepoConfig(
   workspaceDir: string,
+  owner?: string,
+  repo?: string,
 ): Promise<LoadConfigResult> {
   const configPath = `${workspaceDir}/.kodiai.yml`;
   const file = Bun.file(configPath);
 
+  const defaultRepoBudgetSeconds = owner && repo ? resolveRepoBudgetSeconds(owner, repo) : 1860;
+
   if (!(await file.exists())) {
-    return { config: repoConfigSchema.parse({}), warnings: [] };
+    return {
+      config: repoConfigSchema.parse({
+        repoBudget: { targetRemoteRuntimeSeconds: defaultRepoBudgetSeconds },
+      }),
+      warnings: [],
+    };
   }
 
   const raw = await readTextFileBounded(configPath, MAX_REPO_CONFIG_BYTES);
@@ -451,6 +480,25 @@ export async function loadRepoConfig(
     });
   }
 
+  // repoBudget
+  const repoBudgetResult = repoBudgetSchema.safeParse(obj.repoBudget);
+  let repoBudget: z.infer<typeof repoBudgetSchema>;
+  if (repoBudgetResult.success) {
+    repoBudget = repoBudgetResult.data;
+  } else {
+    repoBudget = {
+      targetRemoteRuntimeSeconds: defaultRepoBudgetSeconds,
+    };
+    if (repoBudgetResult.error.issues.length > 0) {
+      warnings.push({
+        section: "repoBudget",
+        issues: repoBudgetResult.error.issues.map(
+          (i) => `${i.path.join(".")}: ${i.message}`,
+        ),
+      });
+    }
+  }
+
   const config: RepoConfig = {
     model,
     maxTurns,
@@ -459,6 +507,7 @@ export async function loadRepoConfig(
     models,
     defaultModel,
     defaultFallbackModel,
+    repoBudget,
     review,
     write,
     mention,

@@ -18,6 +18,52 @@ export {
   parseSeverityCountsFromBody,
   toConfidenceBand,
 } from "./review-finding-metadata.ts";
+
+/**
+ * Extract changed regions from diff hunks with surrounding context.
+ * Returns file paths and line ranges for areas that changed.
+ *
+ * @param diffContent - Raw git diff output
+ * @param contextLines - Lines of context to include before/after changes (default 50)
+ * @returns Array of {file, startLine, endLine} for changed regions
+ */
+export function extractDeltaRegions(
+  diffContent: string,
+  contextLines: number = 50,
+): Array<{ file: string; startLine: number; endLine: number }> {
+  if (!diffContent) return [];
+
+  const regions: Array<{ file: string; startLine: number; endLine: number }> = [];
+  const hunkRegex = /^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/gm;
+  let currentFile = "";
+  let fileStartLine = -1;
+
+  for (const line of diffContent.split("\n")) {
+    if (line.startsWith("diff --git a/")) {
+      const match = line.match(/diff --git a\/(.+) b\/(.+)$/);
+      if (match) {
+        currentFile = match[2]!;
+      }
+    } else if (line.startsWith("@@")) {
+      const match = line.match(hunkRegex);
+      if (match) {
+        const newLineStart = parseInt(match[2]!, 10);
+        fileStartLine = Math.max(1, newLineStart - contextLines);
+        const endLine = newLineStart + contextLines;
+
+        if (currentFile) {
+          regions.push({
+            file: currentFile,
+            startLine: fileStartLine,
+            endLine,
+          });
+        }
+      }
+    }
+  }
+
+  return regions;
+}
 export {
   SEARCH_RATE_LIMIT_BACKOFF_MAX_MS,
   SEARCH_RATE_LIMIT_DISCLOSURE_LINE,
