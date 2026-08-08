@@ -828,6 +828,9 @@ export function createExecutor(deps: {
           });
 
           // Save checkpoint on timeout for potential resume
+          // NOTE: filesReviewed/filesInspected are only populated from resumeCheckpoint.
+          // On first-run timeout, these will be empty. TODO: populate from executor output or
+          // extract from partial comment posted before timeout to enable smarter resume.
           if (context.reviewOutputKey && context.knowledgeStore) {
             const timeoutCheckpoint: CheckpointRecord = {
               reviewOutputKey: context.reviewOutputKey,
