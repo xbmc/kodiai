@@ -949,6 +949,9 @@ export function createExecutor(deps: {
 
         // succeeded — read result from workspace
         const rawResult = await readJobResult(workspaceDir);
+        if (typeof rawResult !== "object" || !rawResult) {
+          throw new Error("Invalid job result: expected object");
+        }
         const jobResult = rawResult as ExecutionResult & {
           executorPhaseTimings?: unknown;
         };
@@ -971,7 +974,7 @@ export function createExecutor(deps: {
             prNumber: context.prNumber,
             filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
             filesInspected: resumeCheckpoint?.filesInspected ?? [],
-            findingCount: (resumeCheckpoint?.findingCount ?? 0) + (jobResult.numTurns ?? 0),
+            findingCount: (resumeCheckpoint?.findingCount ?? 0) + (jobResult.findingCount ?? 0),
             summaryDraft: resumeCheckpoint?.summaryDraft ?? "",
             totalFiles: resumeCheckpoint?.totalFiles ?? 0,
             createdAt: new Date().toISOString(),

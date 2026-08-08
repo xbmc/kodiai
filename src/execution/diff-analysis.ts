@@ -278,7 +278,7 @@ const CONTENT_RISK_SIGNALS: Array<{ pattern: RegExp; signal: string }> = [
     signal: "Addresses concurrency or race condition issues",
   },
   {
-    pattern: /(?:cache|GetURL|GetDynURL|SetDynPath|GetPath|SetPath|m_.*cache|m_.*path|m_url)/i,
+    pattern: /\b(?:GetDynURL|SetDynPath|m_\w*cache|m_\w*path|m_url)\b/i,
     signal: "Modifies cached or lazy-initialized member state",
   },
 ];

@@ -789,7 +789,7 @@ export function buildDiffAnalysisSection(analysis: DiffAnalysis, options?: { sup
     }
 
     const hasConcurrencySignal = analysis.riskSignals.some((signal) =>
-      /concurrency|race|synchronization|lazy.*init|cache/i.test(signal),
+      /(?:concurrency|race|synchronization|lazy.*init)/i.test(signal),
     );
 
     if (hasConcurrencySignal) {
