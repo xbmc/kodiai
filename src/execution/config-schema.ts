@@ -645,6 +645,12 @@ export const modelsSchema = z
   .record(z.string(), z.string())
   .default({});
 
+export const repoBudgetSchema = z
+  .object({
+    targetRemoteRuntimeSeconds: z.number().min(30).max(3600).default(600),
+  })
+  .default({ targetRemoteRuntimeSeconds: 600 });
+
 export const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-5"),
   maxTurns: z.number().min(1).max(100).default(40),
@@ -656,6 +662,8 @@ export const repoConfigSchema = z.object({
   defaultModel: z.string().optional(),
   /** Default fallback model for when primary model fails. */
   defaultFallbackModel: z.string().optional(),
+  /** Per-repo execution timeout budget. Overrides timeoutSeconds for ACA runtime. */
+  repoBudget: repoBudgetSchema,
   /**
    * Write-mode gates mention-driven code modifications (branch/commit/push).
    * This is deny-by-default. Enabling this does not affect review-only behavior.
