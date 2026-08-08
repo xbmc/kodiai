@@ -21,7 +21,8 @@ const RUNNING_PHASE = "running";
 // (see src/routes/health.ts's /internal/drain-status). This does not cancel
 // the stalled work (JS has no such mechanism); it abandons waiting on it so
 // the queue and the request tracker can move on.
-const DEFAULT_JOB_HARD_TIMEOUT_MS = 20 * 60 * 1000;
+// Must be longer than ACA_JOB_REPLICA_TIMEOUT (1860s) to allow full job completion.
+const DEFAULT_JOB_HARD_TIMEOUT_MS = 33 * 60 * 1000; // 33 minutes (1980s)
 
 type InstallationQueueScopes = Map<string, PQueue>;
 type InstallationActiveJobs = Map<string, JobSnapshot>;
