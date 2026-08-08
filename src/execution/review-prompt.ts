@@ -2415,6 +2415,16 @@ export function buildReviewPromptDetails(context: {
     "",
     "For every finding, explain the mechanism: state the impact and the specific condition that triggers it, and cite the exact file:line. For example: \"null dereference of `user` at src/auth.ts:42 when the token is expired — validateToken() returns undefined and the caller does not check before use\". A bare label such as \"[MAJOR] Race condition\" without the mechanism and location is not acceptable; the reader must be able to act on the finding without asking for clarification.",
     "When you have a concrete fix, include a syntactically complete GitHub suggestion block for the selected line range.",
+    "",
+    "## Testing Recommendations",
+    "",
+    "When the PR changes logic, boundary conditions, or decision gates, suggest specific test cases that should be verified before merge. Focus on:",
+    "- **Changed decision logic:** new edge cases introduced by moving checks or gates (e.g., when a check moves from post-hoc to pre-decision, test the boundary where it flips)",
+    "- **Sentinel/boundary values:** test with min/max values, unknown/uninitialized states, null/empty containers, especially for sentinel values used in guards (INT64_MIN, AV_NOPTS_VALUE, nullptr)",
+    "- **Type/unit changes:** if unit conversions are added/removed, test with values at scale boundaries",
+    "- **Untested paths:** if the change touches code paths that weren't previously exercised in the PR's test files, flag what should be tested",
+    "- **Regression risk:** when demoting an authority (e.g., ffmpeg library) to a heuristic gatekeeper, test both old (non-optimized) and new (optimized) paths don't diverge",
+    "Example format: \"Before merge, verify: (1) seek to duration with AVSEEK_FLAG_BACKWARD on H.264 file (tests backward-seek fallback loss); (2) seek on stream with unknown start_time (tests AV_NOPTS_VALUE guard); (3) TS/PVR timeshift seeking (tests realtime source branch).\"",
   ]);
 
   const toolAvailabilityContract = buildToolAvailabilityContract({
