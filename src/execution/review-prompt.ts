@@ -787,6 +787,23 @@ export function buildDiffAnalysisSection(analysis: DiffAnalysis, options?: { sup
     for (const riskSignal of analysis.riskSignals) {
       lines.push(`- ${riskSignal}`);
     }
+
+    const hasConcurrencySignal = analysis.riskSignals.some((signal) =>
+      /concurrency|race|synchronization|lazy.*init|cache/i.test(signal),
+    );
+
+    if (hasConcurrencySignal) {
+      lines.push(
+        "",
+        "⚠️ CONCURRENCY SIGNAL DETECTED: This PR touches concurrency-sensitive code.",
+        "DO NOT approve based on surface-level analysis. MUST deep-dive into:",
+        "1. Is this a root-cause fix (addresses synchronization directly) or symptom patch (works around the race)?",
+        "2. What other code paths could trigger the same race condition?",
+        "3. Could the race recur if cache is invalidated, state is modified, or synchronization is added/removed later?",
+        "4. Are assumptions about single-threadedness or execution order documented and enforced?",
+        "5. Verify with cross-file analysis: search for callers, cache invalidation points, and concurrent access patterns.",
+      );
+    }
   }
 
   return lines.join("\n");
@@ -2161,14 +2178,14 @@ export function buildReviewPromptDetails(context: {
   // prompt-cached; trimming review context costs far more in missed findings
   // than the extra input tokens cost in dollars).
   const REVIEW_SECTION_BUDGETS = {
-    prContext: 2_800,
-    smallDiffScope: 1_600,
-    changeContext: 6_000,
-    sizeContext: 3_200,
-    graphContext: 6_000,
-    knowledgeContext: 8_000,
-    diffContext: 32_000,
-    instructions: 24_000,
+    prContext: 2_400,
+    smallDiffScope: 1_200,
+    changeContext: 5_000,
+    sizeContext: 2_400,
+    graphContext: 4_000,
+    knowledgeContext: 5_000,
+    diffContext: 24_000,
+    instructions: 18_000,
   } as const;
 
   const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {
