@@ -4,6 +4,38 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## v0.60 (2026-08-08)
+
+Review quality overhaul: reviews now match Claude-depth analysis on semantic bugs, concurrency issues, testing completeness, and user-visible behavior changes.
+
+### Changed — semantic and design-level analysis
+
+- New "Semantic and Design-Level Issues" section in review guidance. Reviewers now explicitly analyze: type/unit mismatches (e.g., stream ticks vs. microseconds, sentinel overflow), logic promotion (checks moving from post-hoc to pre-decision), invariant shifts (responsibility changes between components), and boundary conditions. Each issue requires explanation: what's the problem, why it matters, what breaks when it fails.
+- New "Concurrency and Race Conditions" subsection. For race-condition fixes, reviewers ask: is this root-cause or symptom? What other code paths could trigger the same race? Are synchronization assumptions documented? Could the race recur if cache is invalidated or state modified later? (Caught incomplete #28890 fix that expert feedback confirmed.)
+- Enhanced C++ language guidance with integer overflow patterns and unit/scale mismatch detection (AV_NOPTS_VALUE arithmetic, stream ticks vs. microseconds).
+
+### Changed — testing and behavioral verification
+
+- New "Testing Recommendations" section requiring explicit test cases in review summaries: changed logic boundaries, sentinel/boundary values, concurrency stress testing, format-specific concerns, regression risks. Example: "Before merge, verify: (1) seek to duration with AVSEEK_FLAG_BACKWARD on H.264 (test backward-seek fallback); (2) raw H.264 with unknown start_time (test AV_NOPTS_VALUE guard); (3) TS/PVR timeshift (test realtime branch)..."
+- New "Concurrency Test Requirements" for race fixes: race reproduction, multi-platform coverage, cache invalidation paths, synchronization assumptions, cache coherence validation. Requires testing beyond the single platform in the PR.
+- New "Behavioral Changes" section. Reviewers identify observable behavior shifts (old → new), explain why, assess who it affects, flag breaking potential. Example: "Seeking to exactly duration with AVSEEK_FLAG_BACKWARD now ends playback (was: could continue on last keyframe). Intentional. Could break scripts expecting to land on last frame."
+- Five-section template (What Changed, Strengths, Observations, Suggestions, Verdict) now explicitly requires Suggestions to include test cases and design-level implications, not just code improvements.
+
+### Changed — output formatting
+
+- Bounded-first-pass reviews (timeouts) auto-format findings as Blocking/Design/Minor/Testing sections instead of prose dumps.
+- Internal telemetry removed from PR comments (phase timings, token usage, keyword parsing, shadow specialist metadata). Telemetry stays in structured logs per PR #206.
+- New `bounded-review-formatter` utility restructures timeout findings from prose to semantic sections.
+
+### Validation
+
+✅ xbmc/xbmc#28889 (seek optimization): Old Kodiai missed transport-stream time-base bug; new semantic guidance caught it.
+✅ xbmc/xbmc#28890 (data race): Old Kodiai approved with "no issues"; new concurrency guidance flags root-cause vs. symptom problem, matches expert feedback from CrystalP.
+
+## v0.51 (2026-08-07)
+
+Performance optimization release: delta-based analysis, checkpoint/resume, repo-specific budgets.
+
 ### Changed — review quality overhaul
 
 - Small-diff reviews ("tiny-diff" fast path) now get the full review tool set (`Read`/`Grep`/`Glob` plus git diff/log/show/status) and a prompt that requires tracing the blast radius of each change (callers, removed fallbacks, affected code paths) instead of forbidding exploration and demanding a merge decision "after one focused inspection pass". Small-diff reviews also participate in risk-based turn scaling.
