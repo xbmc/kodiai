@@ -2413,6 +2413,8 @@ export function buildReviewPromptDetails(context: {
     "",
     "- **Boundary conditions:** identify values that would break the new logic. When `duration` is unknown (INT64_MIN), what happens? When `start_time` is uninitialized? When two values have incompatible scales? For each, explain the failure scenario and impact.",
     "",
+    "- **Concurrency and race conditions:** when a fix addresses a data race or thread-safety issue, ask: Is this a root-cause fix or a symptom patch? What other code paths could trigger the same race? Are assumptions about single-threadedness documented? Could the race still happen if cache is invalidated later, state is modified, or new synchronization is added/removed? Example: \"Lazy-init in const getter (GetDynURL) is architecturally unsafe; this PR patches the symptom by forcing early init, but if SetDynPath() is called later (MMS does this), the cache becomes stale again and the race could recur. Is this handled?\"",
+    "",
     "Example: \"Transport streams use stream-tick time base for seek_pts (line 1279) but duration stays in AV_TIME_BASE microseconds (line 1302), mixing incompatible units. This breaks the beyondEof comparison for TS content.\"",
     "",
     "## How to report issues",
@@ -2433,6 +2435,16 @@ export function buildReviewPromptDetails(context: {
     "- **Format-specific concerns:** when changes affect multiple file formats or stream types, test each one (e.g., H.264, ADTS, .sup, TS/PVR, live sources, growing files)",
     "",
     "Format: Include in your Suggestions section. Example: \"Before merge, verify: (1) seek to duration with AVSEEK_FLAG_BACKWARD on H.264 MP4 (test backward-seek fallback loss); (2) seek on stream with unknown start_time/raw H.264 (test AV_NOPTS_VALUE guard); (3) TS/PVR timeshift seeking (test realtime source branch); (4) seek on growing/recording files (test IsRealtime() duration growth).\"",
+    "",
+    "## Concurrency Test Requirements",
+    "",
+    "For race conditions and thread-safety fixes, INCLUDE TEST RECOMMENDATIONS in Suggestions:",
+    "- **Race reproduction**: How can the original race be reproduced? What stress test would trigger it reliably? (e.g., 'concurrent playback starts with rapid seeks', 'tight loop of GetURL/GetDynURL calls from different threads')",
+    "- **Platforms/configurations**: Race condition testing must cover: all platforms mentioned in the PR (if multi-platform fix), non-tested platforms (ask: could the race happen there?), PVR/live/streaming scenarios, cache invalidation paths (SetDynPath, SetPath, etc.)",
+    "- **Synchronization assumptions**: If the fix relies on 'single-threaded at this point' or 'only reads from here', verify by code inspection: are there other code paths that could mutate or initialize concurrently?",
+    "- **Cache coherence**: For cache-based fixes, test: what happens if cache is invalidated after initialization? Does the fix still hold? Are there SetDynPath/SetPath calls that bypass the fix?",
+    "",
+    "Example: \"Before merge, verify race is fixed: (1) Stress-test concurrent playback starts on Android/Linux/Windows (original crash only on Android); (2) Verify MMS special case doesn't call SetDynPath after Create() (would re-open race); (3) Grep for other GetURL/GetDynURL calls in Process() to confirm they're reads-only, not writes; (4) Test PVR playback start and disc playback start (not covered in PR testing).\"",
   ]);
 
   const toolAvailabilityContract = buildToolAvailabilityContract({
