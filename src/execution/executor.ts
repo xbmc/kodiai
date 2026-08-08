@@ -828,10 +828,14 @@ export function createExecutor(deps: {
           });
 
           // Save checkpoint on timeout for potential resume
-          if (resumeCheckpoint && context.reviewOutputKey && context.knowledgeStore) {
+          if (context.reviewOutputKey && context.knowledgeStore) {
             const timeoutCheckpoint: CheckpointRecord = {
-              ...resumeCheckpoint,
-              findingCount: (resumeCheckpoint.findingCount ?? 0),
+              reviewOutputKey: context.reviewOutputKey,
+              filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
+              filesInspected: resumeCheckpoint?.filesInspected ?? [],
+              findingCount: (resumeCheckpoint?.findingCount ?? 0),
+              summaryDraft: resumeCheckpoint?.summaryDraft ?? "",
+              totalFiles: resumeCheckpoint?.totalFiles ?? 0,
               createdAt: new Date().toISOString(),
             };
             await saveCheckpoint(timeoutCheckpoint, context.knowledgeStore, logger);
@@ -899,10 +903,14 @@ export function createExecutor(deps: {
           }
 
           // Save checkpoint on failure for potential resume
-          if (resumeCheckpoint && context.reviewOutputKey && context.knowledgeStore) {
+          if (context.reviewOutputKey && context.knowledgeStore) {
             const failureCheckpoint: CheckpointRecord = {
-              ...resumeCheckpoint,
-              findingCount: (resumeCheckpoint.findingCount ?? 0),
+              reviewOutputKey: context.reviewOutputKey,
+              filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
+              filesInspected: resumeCheckpoint?.filesInspected ?? [],
+              findingCount: (resumeCheckpoint?.findingCount ?? 0),
+              summaryDraft: resumeCheckpoint?.summaryDraft ?? "",
+              totalFiles: resumeCheckpoint?.totalFiles ?? 0,
               createdAt: new Date().toISOString(),
             };
             await saveCheckpoint(failureCheckpoint, context.knowledgeStore, logger);
@@ -949,10 +957,14 @@ export function createExecutor(deps: {
         });
 
         // Save checkpoint for potential resume on timeout/interruption
-        if (resumeCheckpoint && context.reviewOutputKey && context.knowledgeStore) {
+        if (context.reviewOutputKey && context.knowledgeStore) {
           const updatedCheckpoint: CheckpointRecord = {
-            ...resumeCheckpoint,
-            findingCount: (resumeCheckpoint.findingCount ?? 0) + (jobResult.numTurns ?? 0),
+            reviewOutputKey: context.reviewOutputKey,
+            filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
+            filesInspected: resumeCheckpoint?.filesInspected ?? [],
+            findingCount: (resumeCheckpoint?.findingCount ?? 0) + (jobResult.numTurns ?? 0),
+            summaryDraft: resumeCheckpoint?.summaryDraft ?? "",
+            totalFiles: resumeCheckpoint?.totalFiles ?? 0,
             createdAt: new Date().toISOString(),
           };
           await saveCheckpoint(updatedCheckpoint, context.knowledgeStore, logger);
@@ -1000,10 +1012,14 @@ export function createExecutor(deps: {
         });
 
         // Save checkpoint on unexpected error for potential resume
-        if (resumeCheckpoint && context.reviewOutputKey && context.knowledgeStore) {
+        if (context.reviewOutputKey && context.knowledgeStore) {
           const errorCheckpoint: CheckpointRecord = {
-            ...resumeCheckpoint,
-            findingCount: (resumeCheckpoint.findingCount ?? 0),
+            reviewOutputKey: context.reviewOutputKey,
+            filesReviewed: resumeCheckpoint?.filesReviewed ?? [],
+            filesInspected: resumeCheckpoint?.filesInspected ?? [],
+            findingCount: (resumeCheckpoint?.findingCount ?? 0),
+            summaryDraft: resumeCheckpoint?.summaryDraft ?? "",
+            totalFiles: resumeCheckpoint?.totalFiles ?? 0,
             createdAt: new Date().toISOString(),
           };
           await saveCheckpoint(errorCheckpoint, context.knowledgeStore, logger);
