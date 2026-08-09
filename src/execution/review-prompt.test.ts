@@ -3561,3 +3561,28 @@ describe("buildKnowledgeContextLines", () => {
     expect(lines[0]).not.toBe("");
   });
 });
+
+test("standard instruction set fits within its budget so high-retention sections are never sliced off", () => {
+  // renderReviewInstructionSections responds to overflow by shedding
+  // low/medium-retention sections and then hard-slicing whatever is left. The
+  // slice cuts from the end, where the high-retention sections live, so an
+  // over-budget instruction set silently drops the verdict logic, the
+  // Impact/Preference severity template, and the delta re-review template while
+  // the prompt still claims to follow them. That failure is invisible in
+  // production -- nothing errors, reviews just come back structurally wrong.
+  //
+  // Assert the plain no-context review fits, so any future guidance addition
+  // that would overflow fails here instead of silently degrading real reviews.
+  const result = buildReviewPromptDetails(baseContext());
+  const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
+
+  expect(instructions).toBeDefined();
+  expect(instructions!.budgetStatus).toBe("included");
+  expect(instructions!.trimmedChars).toBe(0);
+  // `truncated` is only set when a slice happened, so absent is the pass state.
+  expect(instructions!.truncated ?? false).toBe(false);
+
+  // The sections most at risk from an end-of-text slice must actually be present.
+  expect(result.text).toContain('A "blocker" is any finding with severity CRITICAL or MAJOR under ### Impact');
+  expect(result.text).toContain("Finding Language Guidelines");
+});

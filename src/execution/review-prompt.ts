@@ -2185,7 +2185,17 @@ export function buildReviewPromptDetails(context: {
     graphContext: 4_000,
     knowledgeContext: 5_000,
     diffContext: 24_000,
-    instructions: 18_000,
+    // The full standard instruction set measures ~23.3k chars. At 18k it
+    // overflowed by ~5.3k, and renderReviewInstructionSections responds to
+    // overflow by shedding low/medium-retention sections and then HARD-SLICING
+    // the remainder -- which cuts from the end, where the high-retention
+    // sections live (summary-standard-mode, after-review-*, severity-filter).
+    // Reviews silently lost the verdict logic, the Impact/Preference severity
+    // template, and the delta re-review template while still claiming to follow
+    // them. Sized with headroom so ordinary guidance edits do not silently
+    // truncate published review structure; the fit is enforced by
+    // "standard instruction set fits within its budget" in review-prompt.test.ts.
+    instructions: 28_000,
   } as const;
 
   const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {
