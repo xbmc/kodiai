@@ -113,14 +113,28 @@ fi
 # event loop that also serves the internal MCP callback server hit by agent jobs.
 # Under-provisioning starves the loop during review-time CPU bursts, which makes
 # in-flight MCP calls sit idle until the ACA ingress 240s stream_idle_timeout
-# resets them (504). The 1.75 vCPU / 3.5Gi default is based on observed
-# 30-day utilization while preserving headroom above memory peaks.
-# NOTE: ACA requires valid cpu/memory pairings (e.g. 1.0/2Gi, 1.75/3.5Gi). Keep
+# resets them (504), so keep real headroom above peak — but size against
+# measured peaks, not guesses. Measured over 30 days (2026-07-10..2026-08-09):
+# CPU avg 0.0076 vCPU, peak 0.274; memory avg 192MB, peak 229MB. The previous
+# 1.75/3.5Gi default was ~15x peak and cost ~$71/mo on ACA's per-allocated-
+# vCPU/GiB billing; 0.75/1.5Gi keeps ~2.7x headroom over peak CPU and ~6.5x
+# over peak memory for ~$30/mo. Re-check the metrics above before shrinking
+# further — 0.5/1Gi would leave under 2x CPU headroom.
+#
+# Ephemeral disk is the non-obvious coupling: ACA sizes it off vCPU, not memory
+# (<=1 vCPU -> 4 GiB, >1 vCPU -> 8 GiB), so 1.75 -> 0.75 also halved this
+# replica's disk to 4 GiB. That is deliberate and measured, not overlooked:
+# src/jobs/workspace.ts clones each review workspace with --depth=50 into
+# tmpdir, and a depth-50 clone of xbmc/xbmc (the largest repo reviewed) is
+# 218 MB, so 4 GiB holds ~18 concurrent workspaces against stale-reaping at
+# 1 hour and a few reviews per hour. If review concurrency or repo size grows
+# materially, go to 1.25/2.5Gi to get back to 8 GiB rather than shrinking CPU.
+# NOTE: ACA requires valid cpu/memory pairings (e.g. 0.75/1.5Gi, 1.0/2Gi). Keep
 # ACA_MAX_REPLICAS=1 unless the MCP token registry is moved to shared durable
 # storage — agent MCP callbacks must reach a replica that can validate and
 # reconstruct the job token's server factories.
-ACA_CPU=${ACA_CPU:-1.75}
-ACA_MEMORY=${ACA_MEMORY:-3.5Gi}
+ACA_CPU=${ACA_CPU:-0.75}
+ACA_MEMORY=${ACA_MEMORY:-1.5Gi}
 if ! [[ "$ACA_CPU" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
   echo "ERROR: ACA_CPU must be a number (cores), e.g. 2.0." >&2
   exit 1
