@@ -15,7 +15,7 @@
  * - conservative thresholds: just-below-threshold scores do NOT trigger
  */
 
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import {
   scoreFindings,
   scoreFindingEmbedding,

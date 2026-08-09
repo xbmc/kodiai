@@ -1,5 +1,5 @@
 import pino from "pino";
-import { createDbClient, type Sql } from "../src/db/client.ts";
+import { createDbClient } from "../src/db/client.ts";
 import { createGitHubApp } from "../src/auth/github-app.ts";
 import {
   buildAutomaticLaneLogEvidence,

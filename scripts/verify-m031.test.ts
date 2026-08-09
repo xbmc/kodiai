@@ -9,7 +9,7 @@ import {
   runPromptHasSecurity,
   runClaudeMdHasSecurity,
 } from "./verify-m031.ts";
-import type { Check, EvaluationReport } from "./verify-m031.ts";
+import type { EvaluationReport } from "./verify-m031.ts";
 
 // ── M031-ENV-ALLOWLIST ────────────────────────────────────────────────────
 

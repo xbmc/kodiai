@@ -7,16 +7,10 @@ import {
   fetchDependsChangelog,
   verifyHash,
   detectPatchChanges,
-  parsePackageListDiff,
   KODI_LIB_REPO_MAP,
 } from "./depends-bump-enrichment.ts";
 import type {
   VersionFileDiff,
-  VersionFileData,
-  HashVerificationResult,
-  DependsChangelogContext,
-  PatchChange,
-  PackageListEntry,
 } from "./depends-bump-enrichment.ts";
 
 // ─── Mock Helpers ────────────────────────────────────────────────────────────
@@ -758,7 +752,7 @@ describe("KODI_LIB_REPO_MAP", () => {
   });
 
   test("maps have valid owner/repo structure", () => {
-    for (const [name, coords] of Object.entries(KODI_LIB_REPO_MAP)) {
+    for (const coords of Object.values(KODI_LIB_REPO_MAP)) {
       expect(coords.owner).toBeTruthy();
       expect(coords.repo).toBeTruthy();
     }

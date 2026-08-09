@@ -1,6 +1,5 @@
-import { describe, expect, it, mock, beforeEach } from "bun:test";
-import { backfillIssues, backfillIssueComments, getIssueSyncState, updateIssueSyncState } from "./issue-backfill.ts";
-import type { IssueBackfillOptions } from "./issue-backfill.ts";
+import { describe, expect, it, mock } from "bun:test";
+import { backfillIssues, backfillIssueComments } from "./issue-backfill.ts";
 import type { EmbeddingProvider } from "./types.ts";
 
 // ── Mock factories ──────────────────────────────────────────────────────────

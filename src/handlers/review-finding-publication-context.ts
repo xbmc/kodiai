@@ -1,5 +1,4 @@
 import type {
-  ProcessedReviewFinding,
   ReviewReducerResult,
 } from "../review-orchestration/review-reducer.ts";
 import type { ReviewCandidatePublishedFindingResult } from "../review-orchestration/review-candidate-publication-adapter.ts";

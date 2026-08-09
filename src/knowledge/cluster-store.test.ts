@@ -1,6 +1,6 @@
 import { describe, it, expect, mock } from "bun:test";
 import { createClusterStore } from "./cluster-store.ts";
-import type { ClusterRunState, ReviewCluster } from "./cluster-types.ts";
+import type { ClusterRunState } from "./cluster-types.ts";
 
 // ── Mock SQL ─────────────────────────────────────────────────────────
 
@@ -91,7 +91,6 @@ describe("createClusterStore", () => {
 
   describe("getActiveClusters", () => {
     it("returns parsed cluster records", async () => {
-      const { sql } = createMockSql({});
       // Override to return cluster rows
       const mockSql = (strings: TemplateStringsArray, ...values: unknown[]) => {
         return Promise.resolve([{

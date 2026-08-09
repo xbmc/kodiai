@@ -2,25 +2,14 @@ import type { WebhookEvent } from "../webhook/types.ts";
 import type { Workspace } from "../jobs/types.ts";
 import type { IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import type { DeltaClassification } from "../lib/delta-classifier.ts";
-import { formatErrorComment } from "../lib/errors.ts";
-import { formatTimeoutErrorDetail, recordReviewExecutorPhaseTimings } from "../review-orchestration/review-phase-timing.ts";
+import { recordReviewExecutorPhaseTimings } from "../review-orchestration/review-phase-timing.ts";
 export { formatTimeoutErrorDetail } from "../review-orchestration/review-phase-timing.ts";
-import {
-  type CanonicalReviewSurface,
-  type CanonicalSurfaceKind,
-  upsertCanonicalReviewSurface,
-} from "../review-orchestration/review-canonical-surface.ts";
-import { type ExtractedFinding } from "../review-orchestration/review-comment-finding-extraction.ts";
 export { resolveAuthorTierFromSources } from "../review-orchestration/review-author-tier.ts";
 import { buildReviewPromptFingerprint } from "../review-orchestration/review-prompt-fingerprint.ts";
 export { buildReviewPromptFingerprint, type ReviewPromptBuildContext, type ReviewPromptFingerprintResult } from "../review-orchestration/review-prompt-fingerprint.ts";
 import { REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
 export { collectDiffContext, REVIEW_WORKSPACE_FETCH_DEPTH } from "../review-orchestration/review-diff-collection.ts";
 import { buildRepoDoctrineLogFields } from "../review-orchestration/review-plan-doctrine-log.ts";
-import { toProductionLogBudgetReasoning } from "../review-audit/production-log-projection.ts";
-import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
-import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
-import { type ShadowSpecialistReviewDetailsProjection } from "../specialists/shadow-specialist-review-details.ts";
 import {
   buildReviewDetailsPublicationRuntimeAdapters,
   createReviewDetailsPublicationRuntime,
@@ -55,7 +44,6 @@ import { resolveReviewDetailsRuntimeContext } from "./review-details-runtime-con
 import { resolveReviewExecutionOutcomeContext } from "./review-execution-outcome.ts";
 import { handleReviewHandlerFailureRecovery } from "./review-handler-failure-recovery.ts";
 import { finalizeReviewPhaseSummary } from "./review-phase-summary-finalization.ts";
-import { publishDegradedReviewDetailsFallbackFailOpen } from "./review-details-degraded-fallback.ts";
 import { publishFirstPassReviewDetails, resolveFirstPassReviewDetailsPublicationBody } from "./review-details-first-pass-publication.ts";
 import {
   buildReviewFallbackPublicationAdapters,
@@ -403,7 +391,6 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
         if (fileSelectionContext.action === "skip") return;
         const {
           changedFiles,
-          shadowSpecialistResult,
           shadowSpecialistReviewDetailsProjection,
           candidateVerificationContext,
           reviewFiles,
@@ -505,18 +492,13 @@ export function createReviewHandler(deps: ReviewHandlerDependencies): void {
           resolvedFocusAreas,
           resolvedIgnoredAreas,
           profileSelection,
-          requestedProfileSelection,
           languageComplexity,
           timeoutEstimate,
           appliedTimeoutBudget,
-          diffAnalysisLinesChanged,
-          prApiLinesChanged,
-          reviewRoutingLinesChanged,
           reviewRouting,
           reviewMaxTurnsOverride,
           checkpointEnabled,
           reviewBoundedness,
-          reviewPlan,
           reviewPlanDetailsSummary,
           reviewPlanConfigSnapshot,
         } = planningContext;

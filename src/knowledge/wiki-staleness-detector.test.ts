@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach, vi } from "bun:test";
+import { describe, it, expect, mock, vi } from "bun:test";
 import { createWikiStalenessDetector } from "./wiki-staleness-detector.ts";
 import { DOMAIN_STOPWORDS, heuristicScore } from "./wiki-evidence-scoring.ts";
 import type { WikiStalenessDetectorOptions } from "./wiki-staleness-types.ts";

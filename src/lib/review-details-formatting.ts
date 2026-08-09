@@ -267,16 +267,13 @@ function formatCoreReviewDetailsSection(params: ReviewDetailsSummaryParams & {
   lineCountSource: ReviewDetailsLineCountSource;
   includeOperationalDiagnostics: boolean;
 }): string[] {
+  // Hide internal diagnostics (shadow specialist, completion timestamps) from PR comments
   return [
     ...formatPrimaryReviewDetailLines(params),
     ...formatTimeoutProgressSection(params),
     formatLineCountLine(params),
     ...formatProfileSection(params),
     `- Contributor experience: ${params.contributorExperience.text}`,
-    ...(params.includeOperationalDiagnostics && params.shadowSpecialistReviewDetails?.reviewDetailsLine
-      ? [`- ${params.shadowSpecialistReviewDetails.reviewDetailsLine}`]
-      : []),
-    `- Review completed: ${params.completedAt ?? new Date().toISOString()}`,
   ];
 }
 
@@ -399,20 +396,17 @@ function formatKeywordParsingSection(keywordParsing?: ParsedPRIntent): string[] 
 export function formatReviewDetailsSummary(params: ReviewDetailsSummaryParams): string {
   const lineCountSource = params.lineCountSource ?? "local-diff";
   const includeOperationalDiagnostics = params.includeOperationalDiagnostics ?? true;
+
+  // Telemetry for structured logs, not PR comments (per review-quality-overhaul)
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
     "",
     ...(includeOperationalDiagnostics ? formatPublicationDiagnosticsSection(params) : []),
     ...formatCoreReviewDetailsSection({ ...params, lineCountSource, includeOperationalDiagnostics }),
-    ...formatPhaseTimingSection(params.phaseTimingSummary),
-    ...formatUsageLimitSection(params.usageLimit),
-    ...formatTokenUsageSection(params.tokenUsage),
-    ...formatLargePrTriageSection(params.largePRTriage),
-    ...formatFeedbackSuppressionSection(params.feedbackSuppressionCount),
-    ...formatPrioritizationSection(params.prioritization),
-    ...formatStructuralImpactSection(params.structuralImpact),
-    ...formatKeywordParsingSection(params.keywordParsing),
+    // Omit: phase timings, usage/token metrics, large PR triage details, feedback suppression count,
+    // prioritization details, structural impact technical stats, keyword parsing internals.
+    // These are implementation details; findings are in the main comment.
     "",
     "</details>",
     "",

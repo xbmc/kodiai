@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { loadRepoConfig, type ConfigWarning } from "./config.ts";
+import { loadRepoConfig } from "./config.ts";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

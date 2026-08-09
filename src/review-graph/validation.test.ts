@@ -4,7 +4,7 @@
  * Tests for graph-amplified finding validation and trivial-change bypass.
  */
 
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import type { Logger } from "pino";
 import {
   validateGraphAmplifiedFindings,

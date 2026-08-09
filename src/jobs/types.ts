@@ -62,6 +62,8 @@ export interface JobQueueContext {
   action?: string;
   jobType?: string;
   prNumber?: number;
+  /** Checkpointed state from prior execution attempt (for resume flows) */
+  checkpointState?: unknown;
 }
 
 /** Job queue with per-installation concurrency control */

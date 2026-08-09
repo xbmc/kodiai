@@ -2,12 +2,10 @@ import { describe, expect, test, mock } from "bun:test";
 import { runGuardrailPipeline } from "./pipeline.ts";
 import type {
   SurfaceAdapter,
-  GroundingContext,
   GuardrailConfig,
   AuditRecord,
-  ClaimClassification,
 } from "./types.ts";
-import type { LlmClassifier, LlmClassifierClaim } from "./llm-classifier.ts";
+import type { LlmClassifier } from "./llm-classifier.ts";
 
 // ---------------------------------------------------------------------------
 // Mock adapter operating on string arrays
@@ -240,9 +238,7 @@ describe("runGuardrailPipeline", () => {
       "This was released in March 2024", // external-knowledge pattern
     ];
 
-    let llmCalledWith: LlmClassifierClaim[] = [];
     const mockLlmClassifier: LlmClassifier = mock(async (claims) => {
-      llmCalledWith = claims;
       return claims.map((c: any) => ({
         text: c.text,
         label: "external-knowledge" as const,
@@ -258,7 +254,7 @@ describe("runGuardrailPipeline", () => {
       },
     };
 
-    const result = await runGuardrailPipeline({
+    await runGuardrailPipeline({
       adapter,
       input: [],
       output,

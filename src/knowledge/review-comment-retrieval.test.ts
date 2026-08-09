@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { searchReviewComments, type ReviewCommentMatch } from "./review-comment-retrieval.ts";
+import { searchReviewComments } from "./review-comment-retrieval.ts";
 import type { EmbeddingProvider, EmbeddingResult } from "./types.ts";
 import type { ReviewCommentStore, ReviewCommentSearchResult } from "./review-comment-types.ts";
 

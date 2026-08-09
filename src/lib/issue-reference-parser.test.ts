@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseIssueReferences, type IssueReference } from "./issue-reference-parser.ts";
+import { parseIssueReferences } from "./issue-reference-parser.ts";
 
 describe("parseIssueReferences", () => {
   describe("basic closing keywords", () => {

@@ -28,7 +28,6 @@ import {
   type EmbeddingAuditEnvelope,
 } from "../src/knowledge/embedding-audit.ts";
 import {
-  buildEmbeddingRepairPlan,
   runEmbeddingRepair,
   type EmbeddingRepairReport,
   type RepairCandidateRow,

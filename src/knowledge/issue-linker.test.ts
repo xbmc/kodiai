@@ -1,5 +1,5 @@
 import { describe, expect, test, mock } from "bun:test";
-import { linkPRToIssues, type LinkResult } from "./issue-linker.ts";
+import { linkPRToIssues } from "./issue-linker.ts";
 import type { IssueStore, IssueRecord, IssueSearchRecord, IssueSearchResult } from "./issue-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import type { Logger } from "pino";

@@ -289,10 +289,6 @@ function compactId(value: string | null | undefined): string | null {
   return trimmed.slice(0, 256);
 }
 
-function validExactKey(value: string | null | undefined): boolean {
-  const trimmed = compactId(value);
-  return trimmed !== null && parseReviewOutputKey(trimmed) !== null;
-}
 
 function boundedText(value: unknown, maxLength = 180): string | null {
   if (typeof value !== "string") return null;

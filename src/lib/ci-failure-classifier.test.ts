@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   classifyFailures,
-  type CheckResult,
-  type ClassifiedFailure,
   type FlakinessStat,
 } from "./ci-failure-classifier";
 

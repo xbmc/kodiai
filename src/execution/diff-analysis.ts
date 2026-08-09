@@ -269,6 +269,18 @@ const CONTENT_RISK_SIGNALS: Array<{ pattern: RegExp; signal: string }> = [
     pattern: /(?:crypto|encrypt|decrypt|hash|sign|verify|bcrypt|argon)/i,
     signal: "Touches cryptographic code",
   },
+  {
+    pattern: /(?:mutex|lock|unlock|RWMutex|Semaphore|barrier|condition_variable|atomic|volatile|thread_local|#pragma|__sync_|InterlockedCompareExchange)/i,
+    signal: "Modifies synchronization or concurrency mechanisms",
+  },
+  {
+    pattern: /(?:race|concurrent|thread.*safe|data.*race|check.*then.*act|TOCTOU|double.*check|lazy.*init)/i,
+    signal: "Addresses concurrency or race condition issues",
+  },
+  {
+    pattern: /\b(?:GetDynURL|SetDynPath|m_\w*cache|m_\w*path|m_url)\b/i,
+    signal: "Modifies cached or lazy-initialized member state",
+  },
 ];
 
 export type PerFileStats = Map<string, { added: number; removed: number }>;

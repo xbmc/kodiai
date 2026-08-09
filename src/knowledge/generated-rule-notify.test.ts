@@ -1,10 +1,9 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock } from "bun:test";
 import {
   notifyLifecycleRun,
   notifyActivation,
   notifyRetirement,
   type LifecycleEvent,
-  type LifecycleNotifyResult,
 } from "./generated-rule-notify.ts";
 import type { GeneratedRuleRecord } from "./generated-rule-store.ts";
 import type { ActivationPolicyResult } from "./generated-rule-activation.ts";

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import { createIssueLabelServer } from "./issue-label-server.ts";
 import { getToolHandler } from "./test-helpers.ts";
 

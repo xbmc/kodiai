@@ -568,7 +568,6 @@ describe("pollUntilComplete", () => {
     pollIntervalMs?: number;
   }) {
     const originalFetch = globalThis.fetch;
-    const originalSleep = Bun.sleep;
     const originalNow = Date.now;
     const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
     const originalIdentityHeader = process.env["IDENTITY_HEADER"];

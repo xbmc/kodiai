@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { createRetriever, type RetrieveOptions, type RetrieveResult } from "./retrieval.ts";
+import { createRetriever, type RetrieveOptions } from "./retrieval.ts";
 import type { EmbeddingProvider, EmbeddingResult, RetrievalResult, RetrievalWithProvenance, RerankProvider } from "./types.ts";
 import type { IsolationLayer } from "./isolation.ts";
 import type { ReviewCommentStore, ReviewCommentSearchResult } from "./review-comment-types.ts";

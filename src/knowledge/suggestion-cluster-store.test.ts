@@ -6,11 +6,10 @@
  * coverage is ever needed.
  */
 
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import {
   createSuggestionClusterStore,
   CLUSTER_MODEL_TTL_MS,
-  type SuggestionClusterModel,
   type SuggestionClusterModelPayload,
 } from "./suggestion-cluster-store.ts";
 

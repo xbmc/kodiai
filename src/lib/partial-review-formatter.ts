@@ -4,6 +4,10 @@ import {
   type TimeoutBudgetDetails,
 } from "./review-details-formatting.ts";
 import { buildReviewOutputMarker } from "../review-orchestration/review-idempotency.ts";
+import {
+  parseAndStructureBoundedFindings,
+  formatBoundedFindingsAsStructuredComment,
+} from "./bounded-review-formatter.ts";
 
 export type ContinuationRevisionCounts = {
   new: number;
@@ -113,7 +117,24 @@ export function formatPartialReviewComment(params: PartialReviewParams): string 
   }
 
   lines.push("");
-  lines.push(summaryDraft);
+
+  // Attempt to structure findings if they contain severity markers
+  if (summaryDraft && (summaryDraft.includes("[CRITICAL]") || summaryDraft.includes("[MAJOR]"))) {
+    try {
+      const structured = parseAndStructureBoundedFindings(summaryDraft);
+      const structuredOutput = formatBoundedFindingsAsStructuredComment(structured);
+      if (structuredOutput) {
+        lines.push(structuredOutput);
+      } else {
+        lines.push(summaryDraft);
+      }
+    } catch {
+      // Fallback to raw summary if parsing fails
+      lines.push(summaryDraft);
+    }
+  } else {
+    lines.push(summaryDraft);
+  }
 
   if (params.reviewOutputKey) {
     lines.push("");

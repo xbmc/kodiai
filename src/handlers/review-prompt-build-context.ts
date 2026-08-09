@@ -19,6 +19,9 @@ type RetryCheckpointForPrompt = {
   summaryDraft?: string;
 } | null;
 
+const DELTA_ANALYSIS_THRESHOLD = Number(process.env.DELTA_ANALYSIS_THRESHOLD ?? "500");
+const DELTA_ANALYSIS_FILE_THRESHOLD = 20;
+
 export function buildInitialReviewPromptContext(params: {
   owner: string;
   repo: string;
@@ -67,6 +70,17 @@ export function buildInitialReviewPromptContext(params: {
   repoDoctrine: ReviewPromptBuildContext["repoDoctrine"];
   taskType: string;
 }): ReviewPromptBuildContext {
+  const totalLinesChanged = params.diffAnalysis.metrics.totalLinesAdded + params.diffAnalysis.metrics.totalLinesRemoved;
+  const isDeltaModeEligible = (
+    params.diffAnalysis.metrics.totalFiles > DELTA_ANALYSIS_FILE_THRESHOLD ||
+    totalLinesChanged > DELTA_ANALYSIS_THRESHOLD
+  );
+  const deltaMode = isDeltaModeEligible ? {
+    enabled: true,
+    totalFiles: params.diffAnalysis.metrics.totalFiles,
+    totalLinesChanged,
+    useFallback: false,
+  } : undefined;
   return {
     owner: params.owner,
     repo: params.repo,
@@ -141,6 +155,7 @@ export function buildInitialReviewPromptContext(params: {
     reviewBoundedness: params.reviewBoundedness,
     repoDoctrine: params.repoDoctrine,
     smallDiffReview: params.taskType === TASK_TYPES.REVIEW_SMALL_DIFF,
+    deltaMode,
   };
 }
 

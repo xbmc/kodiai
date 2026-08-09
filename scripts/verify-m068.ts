@@ -876,7 +876,6 @@ export function evaluateM068RuntimeLogEvidence(params: {
   }
 
   const matchedRows = params.rows.filter((row) => rowMatchesCorrelation(row, params.reviewOutputKey, params.deliveryId));
-  const text = matchedRows.map(rowText).join("\n").toLowerCase();
   const candidatePublicationRows = matchedRows.filter((row) => {
     const gate = rowFieldText(row, "gate");
     const rowHaystack = rowText(row).toLowerCase();

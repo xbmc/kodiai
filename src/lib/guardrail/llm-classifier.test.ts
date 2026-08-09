@@ -1,6 +1,6 @@
 import { describe, expect, test, mock } from "bun:test";
-import { createLlmClassifier, type LlmClassifier } from "./llm-classifier.ts";
-import type { GroundingContext, ClaimClassification } from "./types.ts";
+import { createLlmClassifier } from "./llm-classifier.ts";
+import type { GroundingContext } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers

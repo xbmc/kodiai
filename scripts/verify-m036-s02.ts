@@ -3,13 +3,11 @@ import {
   applyActivationPolicy,
   shouldAutoActivate,
   DEFAULT_ACTIVATION_THRESHOLD,
-  type ApplyActivationPolicyOptions,
   type ActivationPolicyResult,
 } from "../src/knowledge/generated-rule-activation.ts";
 import {
   getActiveRulesForPrompt,
   formatActiveRulesSection,
-  type GetActiveRulesOptions,
   type GetActiveRulesResult,
 } from "../src/knowledge/active-rules.ts";
 import type { GeneratedRuleStore, GeneratedRuleRecord } from "../src/knowledge/generated-rule-store.ts";

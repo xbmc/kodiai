@@ -17,7 +17,6 @@ import {
 } from "../src/review-audit/log-analytics.ts";
 import {
   buildPhaseTimingEvidence,
-  REVIEW_PHASE_TIMING_LOG_MESSAGE,
   type PhaseTimingEvidenceResult,
 } from "../src/review-audit/phase-timing-evidence.ts";
 import {

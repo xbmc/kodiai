@@ -9,7 +9,6 @@ import {
   isAmbiguous,
   buildClassificationPrompt,
   type ClaimClassification,
-  type ClaimLabel,
   type DiffContext,
   type ClassifierInput,
   type FindingForClassification,

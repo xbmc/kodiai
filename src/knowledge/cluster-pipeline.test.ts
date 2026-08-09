@@ -1,11 +1,11 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import {
   runClusterPipeline,
   cosineSimilarity,
   DEFAULT_MAX_CLUSTERING_ROWS,
   DEFAULT_MAX_EMBEDDING_ROWS,
 } from "./cluster-pipeline.ts";
-import type { ClusterStore, ReviewCluster, ClusterAssignment, ClusterRunState } from "./cluster-types.ts";
+import type { ClusterStore, ReviewCluster } from "./cluster-types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

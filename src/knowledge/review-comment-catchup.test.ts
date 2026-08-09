@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { catchUpReviewComments, type CatchUpSyncOptions, type CatchUpSyncResult } from "./review-comment-catchup.ts";
+import { catchUpReviewComments } from "./review-comment-catchup.ts";
 import type { ReviewCommentChunk, ReviewCommentRecord, ReviewCommentStore, SyncState } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import type { Logger } from "pino";

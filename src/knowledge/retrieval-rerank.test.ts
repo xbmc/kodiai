@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { rerankByLanguage, DEFAULT_RERANK_CONFIG, type RerankConfig, type RerankedResult } from "./retrieval-rerank.ts";
+import { rerankByLanguage, DEFAULT_RERANK_CONFIG, type RerankConfig } from "./retrieval-rerank.ts";
 import type { RetrievalResult, LearningMemoryRecord } from "./types.ts";
 
 function makeRecord(overrides: Partial<LearningMemoryRecord> = {}): LearningMemoryRecord {

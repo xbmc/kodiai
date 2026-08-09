@@ -993,51 +993,6 @@ function buildPrIssueCommentMentionEvent(params: {
   };
 }
 
-function buildReviewCommentMentionEvent(params: {
-  prNumber: number;
-  baseRef: string;
-  headRef: string;
-  headRepoOwner: string;
-  headRepoName: string;
-  commentBody: string;
-  commentAuthor?: string;
-  commentId?: number;
-  inReplyToId?: number;
-}): WebhookEvent {
-  return {
-    id: "delivery-review-comment-mention",
-    name: "pull_request_review_comment",
-    installationId: 42,
-    payload: {
-      action: "created",
-      repository: {
-        name: "repo",
-        owner: { login: "acme" },
-      },
-      pull_request: {
-        number: params.prNumber,
-        head: {
-          ref: params.headRef,
-          repo: {
-            name: params.headRepoName,
-            owner: { login: params.headRepoOwner },
-          },
-        },
-        base: { ref: params.baseRef },
-      },
-      comment: {
-        id: params.commentId ?? 555,
-        body: params.commentBody,
-        user: { login: params.commentAuthor ?? "alice" },
-        created_at: "2025-01-15T12:00:00Z",
-        diff_hunk: "@@ -1,1 +1,1\n- old\n+ new",
-        path: "README.md",
-        line: 1,
-        in_reply_to_id: params.inReplyToId,
-      },
-    },
-  };
-}
 
 describe("resolveAuthorTierFromSources", () => {
   test("prefers contributor profile tier ahead of cache and fallback", () => {
@@ -9916,16 +9871,6 @@ describe("createReviewHandler usageLimit and token wiring", () => {
 
     let detailsCommentBody: string | undefined;
 
-    const reviewOutputKey = buildReviewOutputKey({
-      installationId: 42,
-      owner: "acme",
-      repo: "repo",
-      prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
-      headSha: "abcdef1234567890",
-    });
-
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
         handlers.set(eventKey, handler);
@@ -12886,7 +12831,7 @@ describe("createReviewHandler timeout resilience", () => {
   test("retry merge updates the same canonical comment with merged Review Details in a single upsert", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
-    const { logger, entries } = createCaptureLogger();
+    const { logger } = createCaptureLogger();
 
     const checkpointState = new Map<string, {
       partialCommentId?: number;
@@ -16882,23 +16827,6 @@ describe("createReviewHandler ReviewPlan wiring", () => {
     return `${reviewOutputKey}:candidate:${fingerprint}`;
   }
 
-  function formattedCandidateInlineBody(params: {
-    severity: string;
-    category: string;
-    title: string;
-    body: string;
-  }): string {
-    return [
-      "```yaml",
-      `severity: ${params.severity}`,
-      `category: ${params.category}`,
-      "```",
-      "",
-      `**${params.title}**`,
-      "",
-      params.body,
-    ].join("\n");
-  }
 
   function formattedCandidateFixSuggestionBody(params: {
     severity: string;
@@ -17131,15 +17059,6 @@ describe("createReviewHandler ReviewPlan wiring", () => {
       unexpectedPublicCommentCount: 0,
     };
 
-    const reviewOutputKey = buildReviewOutputKey({
-      installationId: 42,
-      owner: "acme",
-      repo: "repo",
-      prNumber: 101,
-      action: "review_requested",
-      deliveryId: "delivery-123",
-      headSha: "abcdef1234567890",
-    });
     const canonicalReviewSurfaceKey = buildCanonicalReviewSurfaceKey({
       installationId: 42,
       owner: "acme",

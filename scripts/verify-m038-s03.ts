@@ -23,7 +23,6 @@ import {
 } from "../src/structural-impact/cache.ts";
 import { summarizeStructuralImpactDegradation } from "../src/structural-impact/degradation.ts";
 import type { GraphAdapter, CorpusAdapter, GraphBlastRadiusResult, CorpusCodeMatch } from "../src/structural-impact/adapters.ts";
-import type { StructuralImpactPayload } from "../src/structural-impact/types.ts";
 import { err, ok } from "../src/lib/result.ts";
 import { sleep } from "../src/lib/with-timeout.ts";
 
@@ -141,17 +140,6 @@ function makeErrorCorpusAdapter(msg = "corpus adapter unavailable"): CorpusAdapt
   return { searchCanonicalCode: () => Promise.resolve(err(new Error(msg))) };
 }
 
-function makeSlowAdapter<T>(result: T, delayMs: number): { call: () => Promise<T>; callCount: number } {
-  let callCount = 0;
-  return {
-    get callCount() { return callCount; },
-    call: async () => {
-      callCount++;
-      await sleep(delayMs);
-      return result;
-    },
-  };
-}
 
 function collectSignals(): { signals: StructuralImpactSignal[]; onSignal: (s: StructuralImpactSignal) => void } {
   const signals: StructuralImpactSignal[] = [];

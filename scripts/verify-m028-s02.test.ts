@@ -22,11 +22,6 @@ import {
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 /** Build a minimal sql stub that returns the given rows for all queries. */
-function makeSqlStub(rows: unknown[]): unknown {
-  return function sqlStub() {
-    return Promise.resolve(rows);
-  };
-}
 
 /** Build a sql stub that throws on every query. */
 function makeThrowingSqlStub(message = "connection refused"): unknown {

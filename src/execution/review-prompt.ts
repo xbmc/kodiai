@@ -37,6 +37,9 @@ const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
 const DEFAULT_MAX_CHANGED_FILES = 200;
 const MAX_LANGUAGE_GUIDANCE_ENTRIES = 5;
+const DELTA_ANALYSIS_THRESHOLD = Number(process.env.DELTA_ANALYSIS_THRESHOLD ?? "500");
+const DELTA_ANALYSIS_FILE_THRESHOLD = 20;
+const DELTA_CONTEXT_WINDOW = 50;
 export const SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE = "Analysis is partial due to API limits.";
 
 // ---------------------------------------------------------------------------
@@ -69,6 +72,8 @@ export const LANGUAGE_GUIDANCE: Record<string, string[]> = {
     "Raw pointer ownership without RAII or smart pointers (`unique_ptr`/`shared_ptr`).",
     "Missing virtual destructor on base classes with virtual methods -- causes undefined behavior on delete.",
     "Buffer overflow risk in array/pointer arithmetic -- prefer bounds-checked containers.",
+    "Integer overflow/underflow in arithmetic with sentinel values (INT64_MIN, INT_MAX): when a value can be INT64_MIN, adding it to another int64_t can overflow or produce unexpected results. Always guard against sentinel values before arithmetic.",
+    "Unit/scale mismatches when comparing different time bases (stream ticks vs microseconds, AV_TIME_BASE units) or coordinate systems -- verify both values are in the same scale before comparison.",
     "Kodi naming conventions (not enforced by clang-format/CI, so still worth flagging): classes need a `C` prefix (`CFoo`), interfaces need an `I` prefix (`IFoo`), non-static member variables need `m_`, static members need `ms_`, globals need `g_`.",
   ],
   C: [
@@ -781,6 +786,23 @@ export function buildDiffAnalysisSection(analysis: DiffAnalysis, options?: { sup
     lines.push("", "Pay special attention to these areas:");
     for (const riskSignal of analysis.riskSignals) {
       lines.push(`- ${riskSignal}`);
+    }
+
+    const hasConcurrencySignal = analysis.riskSignals.some((signal) =>
+      /(?:concurrency|race|synchronization|lazy.*init)/i.test(signal),
+    );
+
+    if (hasConcurrencySignal) {
+      lines.push(
+        "",
+        "⚠️ CONCURRENCY SIGNAL DETECTED: This PR touches concurrency-sensitive code.",
+        "DO NOT approve based on surface-level analysis. MUST deep-dive into:",
+        "1. Is this a root-cause fix (addresses synchronization directly) or symptom patch (works around the race)?",
+        "2. What other code paths could trigger the same race condition?",
+        "3. Could the race recur if cache is invalidated, state is modified, or synchronization is added/removed later?",
+        "4. Are assumptions about single-threadedness or execution order documented and enforced?",
+        "5. Verify with cross-file analysis: search for callers, cache invalidation points, and concurrent access patterns.",
+      );
     }
   }
 
@@ -1729,6 +1751,37 @@ export function buildSmallDiffScopeSection(): string {
   ].join("\n");
 }
 
+function buildDeltaModeAnalysisSection(params: {
+  totalFiles: number;
+  totalLinesChanged: number;
+  useFallback: boolean;
+}): string {
+  const lines: string[] = [
+    "## Delta Mode Analysis",
+    "",
+  ];
+
+  if (params.useFallback) {
+    lines.push(
+      "Delta mode info is incomplete. Falling back to full analysis.",
+      "Review all changes thoroughly without the delta optimization.",
+      "",
+    );
+  } else {
+    lines.push(
+      "This review uses delta mode: only changed files and their immediate context are analyzed.",
+      `This PR has ${params.totalFiles} file(s) changed and ${params.totalLinesChanged} total lines modified.`,
+      `Context window: ±${DELTA_CONTEXT_WINDOW} lines around each change.`,
+      "",
+      "Focus on the diff hunks provided. For changes at file boundaries or requiring broader context,",
+      "use Read/Grep/Glob to examine surrounding code.",
+      "",
+    );
+  }
+
+  return lines.join("\n");
+}
+
 export type RetryPromptCheckpointSummary = {
   reviewOutputKey: string;
   filesReviewed: readonly string[];
@@ -2111,6 +2164,12 @@ export function buildReviewPromptDetails(context: {
   repoDoctrine?: ReviewPromptRepoDoctrine | null;
   gitDiffInstructionsAvailable?: boolean;
   diffContent?: string;
+  deltaMode?: {
+    enabled: boolean;
+    totalFiles: number;
+    totalLinesChanged: number;
+    useFallback?: boolean;
+  };
 }): PromptBuildResult {
   const sectionBlocks: Array<{ sectionName: string; text: string; budgetChars: number; budgetOutcome?: PromptBudgetOutcome }> = [];
   const scaleNotes: string[] = [];
@@ -2119,14 +2178,14 @@ export function buildReviewPromptDetails(context: {
   // prompt-cached; trimming review context costs far more in missed findings
   // than the extra input tokens cost in dollars).
   const REVIEW_SECTION_BUDGETS = {
-    prContext: 2_800,
-    smallDiffScope: 1_600,
-    changeContext: 6_000,
-    sizeContext: 3_200,
-    graphContext: 6_000,
-    knowledgeContext: 8_000,
-    diffContext: 32_000,
-    instructions: 24_000,
+    prContext: 2_400,
+    smallDiffScope: 1_200,
+    changeContext: 5_000,
+    sizeContext: 2_400,
+    graphContext: 4_000,
+    knowledgeContext: 5_000,
+    diffContext: 24_000,
+    instructions: 18_000,
   } as const;
 
   const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {
@@ -2255,7 +2314,17 @@ export function buildReviewPromptDetails(context: {
   }
 
   const sizeContextLines: string[] = [];
+  if (context.deltaMode?.enabled) {
+    sizeContextLines.push(
+      buildDeltaModeAnalysisSection({
+        totalFiles: context.deltaMode.totalFiles,
+        totalLinesChanged: context.deltaMode.totalLinesChanged,
+        useFallback: context.deltaMode.useFallback ?? false,
+      }),
+    );
+  }
   if (context.largePRContext) {
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
     sizeContextLines.push(buildLargePRTriageSection(context.largePRContext));
   }
   if (context.incrementalContext) {
@@ -2349,12 +2418,98 @@ export function buildReviewPromptDetails(context: {
     "- Concurrency and thread-safety issues (data races, check-then-act, shared mutable state)",
     "- Incorrect or missing error handling",
     "",
+    "## Semantic and Design-Level Issues",
+    "",
+    "Pay special attention to value semantics, unit mismatches, and design-level changes. When you identify one, EXPLAIN THE IMPLICATION:",
+    "",
+    "- **Type/unit mismatches:** comparing values with different scales (e.g., ticks vs microseconds, signed vs unsigned overflow risks). When arithmetic involves min/max sentinel values (AV_NOPTS_VALUE, INT64_MIN, nullptr), verify the guards are correct and applied in the right places. Explain: what is being compared, why the units matter, what breaks when they mismatch.",
+    "",
+    "- **Logic promotion:** when code moves a check from post-hoc (explaining a failure after it happens) to pre-decision (gating whether to attempt an operation), this is a DESIGN-LEVEL CHANGE that requires different correctness reasoning. The check must be correct in isolation; old edge cases become new risks. Explain: what used to happen, what happens now, what breaks in the new path, why the design assumption is or isn't justified.",
+    "",
+    "- **Invariant shifts:** when a change moves responsibility between components (e.g., from ffmpeg library to caller, from runtime to compile-time validation), verify the new party can actually enforce the invariant and side effects are handled correctly. Explain: what invariant moved, who enforces it now, what could break if enforcement fails.",
+    "",
+    "- **Boundary conditions:** identify values that would break the new logic. When `duration` is unknown (INT64_MIN), what happens? When `start_time` is uninitialized? When two values have incompatible scales? For each, explain the failure scenario and impact.",
+    "",
+    "- **Concurrency and race conditions:** when a fix addresses a data race or thread-safety issue, ask: Is this a root-cause fix or a symptom patch? What other code paths could trigger the same race? Are assumptions about single-threadedness documented? Could the race still happen if cache is invalidated later, state is modified, or new synchronization is added/removed? Example: \"Lazy-init in const getter (GetDynURL) is architecturally unsafe; this PR patches the symptom by forcing early init, but if SetDynPath() is called later (MMS does this), the cache becomes stale again and the race could recur. Is this handled?\"",
+    "",
+    "Example: \"Transport streams use stream-tick time base for seek_pts (line 1279) but duration stays in AV_TIME_BASE microseconds (line 1302), mixing incompatible units. This breaks the beyondEof comparison for TS content.\"",
+    "",
+    "## Behavioral Changes",
+    "",
+    "When a PR changes observable behavior (not just internal correctness), IDENTIFY AND EXPLAIN in Observations or Suggestions:",
+    "- **What changed**: old behavior → new behavior (be specific about edge cases, boundary conditions, timing)",
+    "- **Why**: reason for the change (intentional fix, side effect, or unintended consequence?)",
+    "- **Who it affects**: users, scripts, workflows, integrations, or all of the above",
+    "- **Breaking potential**: could this break existing code/workflows that relied on old behavior?",
+    "Examples: 'Seeking to exactly duration with AVSEEK_FLAG_BACKWARD previously landed on last keyframe (kept playing); now treats as past-EOF and ends playback. Intentional: matches post-failure behavior. Could break scripts that seek-to-end expecting to stay on last frame.' Or: 'Error handling changed: streams with unknown timing no longer auto-close after unrelated seek failures; now fall through to IsEOF(). Fixes: closes input prematurely on unrelated failures. Impact: error paths behave more predictably.'",
+    "",
     "## How to report issues",
     "",
     issueReportingInstruction,
     "",
     "For every finding, explain the mechanism: state the impact and the specific condition that triggers it, and cite the exact file:line. For example: \"null dereference of `user` at src/auth.ts:42 when the token is expired — validateToken() returns undefined and the caller does not check before use\". A bare label such as \"[MAJOR] Race condition\" without the mechanism and location is not acceptable; the reader must be able to act on the finding without asking for clarification.",
     "When you have a concrete fix, include a syntactically complete GitHub suggestion block for the selected line range.",
+    "",
+    "## Root-Cause vs Symptom Fix",
+    "",
+    "When the PR addresses a bug, determine: Is this a root-cause fix (addresses the underlying architectural issue) or a symptom patch (works around the problem)?",
+    "- **Root-cause:** Fixes the fundamental issue. Example: adding synchronization to unsafe shared state.",
+    "- **Symptom patch:** Avoids triggering the bug without fixing it. Example: forcing initialization order to avoid lazy-init race.",
+    "",
+    "If this is a symptom patch, SUGGEST THE EXACT ROOT-CAUSE FIX with implementation pattern. For race conditions on lazy-initialized shared state, recommend: \"Double-Checked Locking Pattern: Add std::atomic<bool> flag + std::mutex. In getter, check atomic (fast read-only path most of the time), acquire lock only on init path. This makes concurrent access safe by design, not by initialization order.\" Provide code sketch if possible.",
+    "",
+    "For race conditions specifically, ask: \"Could this race recur through a different code path? Are there cache invalidation, mutation, or concurrent-access points that bypass this fix? Have you verified with grep that these don't happen?\"",
+    "",
+    "## Behavioral Change Analysis",
+    "",
+    "When a PR changes behavior (even internal behavior), identify and explain:",
+    "- **What changed**: old behavior → new behavior (specific about timing, execution order, state)",
+    "- **Observable impact**: what users/systems will see differently",
+    "- **Implicit assumptions**: does new behavior rely on assumptions that might not hold?",
+    "- **Recurrence risk**: could this same bug happen again through a different path?",
+    "",
+    "Example: \"This moves cache initialization from lazy (first getter call) to eager (before thread spawn). Assumes nothing mutates the item post-spawn. But SetDynPath() can be called later (MMS case), invalidating the cache and re-opening the race on that path.\"",
+    "",
+    "## Cross-File Verification",
+    "",
+    "For fixes that depend on properties of OTHER code (e.g., 'this function is only called from X', 'SetDynPath is never called here'), VERIFY with grep/code inspection. Report SPECIFIC file:line citations:",
+    "- **Search scope**: all files, all functions, all error paths, all platforms",
+    "- **Exact citations**: format as 'file:line (function_name): brief_context'. Do NOT cite just the grep match — include what the code is doing.",
+    "- **Counter-question**: \"Could this be called from error recovery? Signal handlers? Future code? Conditional compilation? Platform-specific code?\"",
+    "- **Enumerate platforms**: if the fix assumes single-platform or specific configurations, verify on: Android, Linux, Windows, macOS, PVR/live sources, disc playback, HTTP/HTTPS/MMS.",
+    "",
+    "Example: \"This assumes SetDynPath() is never called after Create(). Grep scope: src/filesystem/*.cpp, src/cores/*.cpp, src/video/*.cpp. Results: (1) xbmc/cores/VideoPlayer/DVDDemuxFFmpeg.cpp:1234 (FillInMimeType): MMS protocol case calls SetDynPath() during playback — INVALIDATES cache, re-opens race. (2) xbmc/filesystem/HTTPFile.cpp:567 (CheckConnection): error recovery calls SetDynPath() — also invalidates. (3) PVR edge case: DVRLiveStreamReader.cpp:890 (IsRealtime) can trigger re-init. Recommendation: this fix only works if these paths are never hit during playback-start; verify or extend to handle cache invalidation.\"",
+    "",
+    "## Testing Recommendations",
+    "",
+    "When the PR changes logic, boundary conditions, or decision gates, INCLUDE TEST SUGGESTIONS IN YOUR SUMMARY (usually under Suggestions or in a separate Testing subsection). Focus on:",
+    "- **Changed decision logic:** new edge cases introduced by moving checks or gates (e.g., when a check moves from post-hoc to pre-decision, test the boundary where it flips)",
+    "- **Sentinel/boundary values:** test with min/max values, unknown/uninitialized states, null/empty containers, especially for sentinel values used in guards (INT64_MIN, AV_NOPTS_VALUE, nullptr)",
+    "- **Type/unit changes:** if unit conversions are added/removed, test with values at scale boundaries",
+    "- **Untested paths:** if the change touches code paths that weren't previously exercised in the PR's test files, flag what should be tested",
+    "- **Regression risk:** when demoting an authority (e.g., ffmpeg library) to a heuristic gatekeeper, test both old (non-optimized) and new (optimized) paths don't diverge",
+    "- **Format-specific concerns:** when changes affect multiple file formats or stream types, test each one (e.g., H.264, ADTS, .sup, TS/PVR, live sources, growing files)",
+    "",
+    "Format: Include in your Suggestions section. Example: \"Before merge, verify: (1) seek to duration with AVSEEK_FLAG_BACKWARD on H.264 MP4 (test backward-seek fallback loss); (2) seek on stream with unknown start_time/raw H.264 (test AV_NOPTS_VALUE guard); (3) TS/PVR timeshift seeking (test realtime source branch); (4) seek on growing/recording files (test IsRealtime() duration growth).\"",
+    "",
+    "## Concurrency Test Requirements",
+    "",
+    "For race conditions and thread-safety fixes, INCLUDE SPECIFIC TEST SCENARIOS in Suggestions:",
+    "- **Race reproduction**: Give exact reproduction steps. (e.g., 'Concurrent playback starts: spawn 10 threads each calling OpenFile(item) with rapid seeks; measure crash rate on 100 iterations per platform')",
+    "- **Platform enumeration**: Test on ALL platforms where the race could occur (not just where it was observed):",
+    "  * Android (where it was observed) + Linux + Windows + macOS",
+    "  * Network sources (HTTP/HTTPS/MMS) + disc/local + PVR/live",
+    "  * H.264 + HEVC + other codecs (if applicable)",
+    "  * Single-threaded + concurrent playback scenarios",
+    "- **Cache invalidation paths**: If fix relies on cache staying valid, test:",
+    "  * What happens if SetDynPath/SetPath called mid-playback?",
+    "  * Error recovery paths that might invalidate cache?",
+    "  * Resume/seek operations that retrigger initialization?",
+    "- **Synchronization assumptions**: Verify by grep + code inspection:",
+    "  * \"Only reads from here\" — check: are there writes anywhere in Process() or concurrent threads?",
+    "  * \"Single-threaded at this point\" — check: does any error path spawn threads early?",
+    "",
+    "Example: \"Before merge, verify race is fixed: (1) Stress-test: 10 concurrent OpenFile(item) calls with rapid seeks; run 100 iterations on Android/Linux/Windows; measure crash rate (target: 0%). (2) Platform coverage: HTTP source on all platforms, MMS source (triggers SetDynPath), disc source, PVR livesource. (3) Cache invalidation: after playback-start, call SetDynPath() from separate thread — does it re-open race? (4) Code inspection: grep for SetDynPath/SetPath in DVDDemuxFFmpeg.cpp, FileCache.cpp, and PVR modules — all findings must occur before thread-start or be safe post-start.\"",
   ]);
 
   const toolAvailabilityContract = buildToolAvailabilityContract({
@@ -2402,6 +2557,11 @@ export function buildReviewPromptDetails(context: {
     "- For each finding, include severity and category metadata, and state your uncertainty in the body when a claim is not fully verified.",
     '- NO positive feedback, NO "looks good"',
     "- In standard mode, use the five-section template (What Changed, Strengths, Observations, Suggestions, Verdict) for the summary comment",
+    "  - **What Changed:** 1-2 sentences explaining the PR's intent and approach",
+    "  - **Strengths:** positive observations (correct guards, safe assumptions, good error handling)",
+    "  - **Observations:** findings grouped by severity (Impact for blockers, Preference for optional items)",
+    "  - **Suggestions:** actionable recommendations AND test cases needed before merge (separate subsection if testing is significant)",
+    "  - **Verdict:** one of :red_circle: (blockers), :yellow_circle: (optional), or :green_circle: (none)",
     "- ONLY post a summary comment when you have actionable inline issues to report",
     "- Use inline comments for ALL code-specific issues",
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",

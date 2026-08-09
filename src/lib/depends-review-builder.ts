@@ -403,7 +403,6 @@ export function buildDependsReviewComment(data: DependsReviewData): string {
 
     for (const chunk of data.retrievalContext) {
       const authorLogin = chunk.metadata?.authorLogin as string | undefined;
-      const prNumber = chunk.metadata?.prNumber as number | undefined;
       const date = chunk.createdAt
         ? new Date(chunk.createdAt).toISOString().slice(0, 10)
         : null;

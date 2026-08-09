@@ -99,12 +99,6 @@ async function loadPrivateKey(): Promise<string> {
   return atob(keyEnv);
 }
 
-type PRFileDetail = {
-  filename: string;
-  patch: string | undefined;
-  additions: number;
-  deletions: number;
-};
 
 // ── Main ────────────────────────────────────────────────────────────────────
 

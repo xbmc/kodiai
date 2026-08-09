@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, afterEach, vi } from "bun:test";
+import { describe, test, expect, mock, vi } from "bun:test";
 import { createWikiSyncScheduler } from "./wiki-sync.ts";
 import type { WikiPageStore, WikiSyncState } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
@@ -118,7 +118,6 @@ function buildMultiChunkWikiHtml(): string {
 describe("createWikiSyncScheduler", () => {
   test("syncNow fetches recent changes and updates pages", async () => {
     const store = createMockStore();
-    let callIndex = 0;
 
     const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
@@ -290,7 +289,6 @@ describe("createWikiSyncScheduler", () => {
     (store.getPageRevision as ReturnType<typeof mock>).mockImplementation(async () => 100);
     (store.getPageRevisions as ReturnType<typeof mock>).mockImplementation(async () => new Map([[1, 100]]));
 
-    const redirectHtml = '<div class="redirectMsg"><p>Redirect to <a href="/view/RealPage">RealPage</a></p></div>';
 
     const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {

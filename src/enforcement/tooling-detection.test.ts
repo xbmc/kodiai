@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { detectRepoTooling, FORMATTER_CONFIGS, LINTER_CONFIGS } from "./tooling-detection.ts";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 

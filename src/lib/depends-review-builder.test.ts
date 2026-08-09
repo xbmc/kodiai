@@ -4,7 +4,6 @@ import {
   buildDependsReviewComment,
   buildDependsInlineComments,
   type DependsReviewData,
-  type InlineComment,
 } from "./depends-review-builder.ts";
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
