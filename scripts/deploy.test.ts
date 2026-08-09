@@ -83,8 +83,8 @@ describe("deploy.sh", () => {
   });
 
   test("defaults the orchestrator to measured cost-conscious Container Apps resources", () => {
-    expect(deployScript).toContain("ACA_CPU=${ACA_CPU:-1.75}");
-    expect(deployScript).toContain("ACA_MEMORY=${ACA_MEMORY:-3.5Gi}");
+    expect(deployScript).toContain("ACA_CPU=${ACA_CPU:-0.75}");
+    expect(deployScript).toContain("ACA_MEMORY=${ACA_MEMORY:-1.5Gi}");
   });
 
   test("waits for the running revision to drain in-flight jobs before triggering a revision swap", () => {
