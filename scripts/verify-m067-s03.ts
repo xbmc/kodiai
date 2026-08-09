@@ -133,29 +133,18 @@ function representativeFindings(): ProcessedReviewFinding[] {
     {
       commentId: 2,
       filePath: "src/indirect.ts",
-      title: "The code mutates persisted state before validating. Some external API always fails in v1.2.3.",
+      // No hand-set claimClassification: nothing in production sets that field on
+      // reducer input, so pre-populating it proves a path real reviews cannot reach.
+      // This title is verified to classify as "mixed" by classifyClaims itself -- the
+      // first sentence is diff-grounded (and long enough to survive
+      // MIN_WORDS_AFTER_REWRITE on its own), the CVE sentence is external-knowledge.
+      title: "The code mutates persisted state before validating the request payload and can save invalid user input to storage. This is vulnerable to CVE-2021-1234.",
       severity: "major",
       category: "correctness",
       startLine: 20,
       endLine: 21,
       suppressed: false,
       confidence: 90,
-      claimClassification: {
-        summaryLabel: "mixed",
-        claims: [
-          {
-            text: "The code mutates persisted state before validating the request payload and can save invalid user input to storage",
-            label: "diff-grounded",
-            confidence: 0.95,
-          },
-          {
-            text: "Some external API always fails in v1.2.3",
-            label: "external-knowledge",
-            evidence: "version-specific claim",
-            confidence: 0.9,
-          },
-        ],
-      },
     },
     {
       commentId: 3,
@@ -248,7 +237,18 @@ async function buildReducerResult(reducerFn: typeof reduceReviewFindings): Promi
     prioritizationWeights: { severity: 1, fileRisk: 0, category: 0, recurrence: 0 },
     feedbackSuppression: { suppressedFingerprints: new Set(), suppressedPatternCount: 0, patterns: [] },
     priorFindingContext: null,
-    diffContent: "",
+    // Real diff for the classified finding's filePath, matching production, where
+    // classification is always derived from fileDiffs.
+    diffContent: [
+      "diff --git a/src/indirect.ts b/src/indirect.ts",
+      "--- a/src/indirect.ts",
+      "+++ b/src/indirect.ts",
+      "@@ -18,3 +18,4 @@",
+      " function save(payload) {",
+      "+  persistedState.mutate(payload);",
+      "   write(payload);",
+      " }",
+    ].join("\n"),
     prBody: null,
     commitMessages: [],
     tieredFiles: { isLargePR: false, abbreviated: [] },

@@ -163,16 +163,26 @@ describe("reduceReviewFindings", () => {
       baseFinding({ commentId: 1, title: "Suppress this legacy issue", severity: "major", category: "correctness" }),
       baseFinding({
         commentId: 2,
-        title: "The code mutates persisted state. Some external API always fails in v1.2.3.",
+        // Deliberately NOT hand-setting claimClassification: nothing in production
+        // ever sets that field on reducer input (the only writers are
+        // claim-classifier.ts's own output and the reducer reading its map back),
+        // so a fixture that pre-populates it exercises a path real reviews cannot
+        // reach. The rewrite below must come from classifyClaims deriving "mixed"
+        // from this title against the diff, exactly as it does in production.
+        // Verified against classifyClaims: this title yields summaryLabel "mixed"
+        // ("The code mutates persisted state." -> diff-grounded, the CVE sentence ->
+        // external-knowledge), which is what drives the rewrite asserted below. The
+        // previous title ("...always fails in v1.2.3.") classified as
+        // primarily-diff-grounded in BOTH claims, so the rewrite it asserted could
+        // only ever come from the hand-set fixture, never from real classification.
+        // The diff-grounded sentence must survive MIN_WORDS_AFTER_REWRITE (10) on its
+        // own, since filterExternalClaims rebuilds the comment from the non-external
+        // claims only. The old fixture hid this: its claims[0].text carried this longer
+        // sentence while its title carried a 5-word version, so the rewritten output
+        // never matched the finding's actual title.
+        title: "The code mutates persisted state and skips required validation before writing to disk. This is vulnerable to CVE-2021-1234.",
         severity: "major",
         category: "correctness",
-        claimClassification: {
-          summaryLabel: "mixed",
-          claims: [
-            { text: "The code mutates persisted state and skips required validation before writing to disk", label: "diff-grounded", confidence: 0.95 },
-            { text: "Some external API always fails in v1.2.3", label: "external-knowledge", evidence: "version-specific claim", confidence: 0.9 },
-          ],
-        },
       }),
       baseFinding({ commentId: 3, title: "Low confidence style nit", severity: "minor", category: "style" }),
       baseFinding({ commentId: 4, title: "High risk security issue", severity: "critical", category: "security", filePath: "src/risky.ts" }),
@@ -190,7 +200,19 @@ describe("reduceReviewFindings", () => {
       prioritizationWeights: { severity: 1, fileRisk: 0, category: 0, recurrence: 0 },
       feedbackSuppression: { suppressedFingerprints: new Set(), suppressedPatternCount: 0, patterns: [] },
       priorFindingContext: null,
-      diffContent: "",
+      // A real diff for the finding's filePath, so classifyClaims has something to
+      // ground against -- production always classifies against fileDiffs, never
+      // against a caller-supplied classification.
+      diffContent: [
+        "diff --git a/src/example.ts b/src/example.ts",
+        "--- a/src/example.ts",
+        "+++ b/src/example.ts",
+        "@@ -8,3 +8,4 @@",
+        " function save(input) {",
+        "+  persistedState.mutate(input);",
+        "   write(input);",
+        " }",
+      ].join("\n"),
       prBody: null,
       commitMessages: [],
       tieredFiles: { isLargePR: false, abbreviated: [] },
