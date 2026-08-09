@@ -120,6 +120,15 @@ fi
 # vCPU/GiB billing; 0.75/1.5Gi keeps ~2.7x headroom over peak CPU and ~6.5x
 # over peak memory for ~$30/mo. Re-check the metrics above before shrinking
 # further — 0.5/1Gi would leave under 2x CPU headroom.
+#
+# Ephemeral disk is the non-obvious coupling: ACA sizes it off vCPU, not memory
+# (<=1 vCPU -> 4 GiB, >1 vCPU -> 8 GiB), so 1.75 -> 0.75 also halved this
+# replica's disk to 4 GiB. That is deliberate and measured, not overlooked:
+# src/jobs/workspace.ts clones each review workspace with --depth=50 into
+# tmpdir, and a depth-50 clone of xbmc/xbmc (the largest repo reviewed) is
+# 218 MB, so 4 GiB holds ~18 concurrent workspaces against stale-reaping at
+# 1 hour and a few reviews per hour. If review concurrency or repo size grows
+# materially, go to 1.25/2.5Gi to get back to 8 GiB rather than shrinking CPU.
 # NOTE: ACA requires valid cpu/memory pairings (e.g. 0.75/1.5Gi, 1.0/2Gi). Keep
 # ACA_MAX_REPLICAS=1 unless the MCP token registry is moved to shared durable
 # storage — agent MCP callbacks must reach a replica that can validate and
