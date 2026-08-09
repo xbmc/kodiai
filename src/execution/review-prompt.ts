@@ -2185,17 +2185,26 @@ export function buildReviewPromptDetails(context: {
     graphContext: 4_000,
     knowledgeContext: 5_000,
     diffContext: 24_000,
-    // The full standard instruction set measures ~23.3k chars. At 18k it
-    // overflowed by ~5.3k, and renderReviewInstructionSections responds to
-    // overflow by shedding low/medium-retention sections and then HARD-SLICING
-    // the remainder -- which cuts from the end, where the high-retention
-    // sections live (summary-standard-mode, after-review-*, severity-filter).
-    // Reviews silently lost the verdict logic, the Impact/Preference severity
-    // template, and the delta re-review template while still claiming to follow
-    // them. Sized with headroom so ordinary guidance edits do not silently
-    // truncate published review structure; the fit is enforced by
-    // "standard instruction set fits within its budget" in review-prompt.test.ts.
-    instructions: 28_000,
+    // Size this against the LARGEST instruction set, not the bare one.
+    // Measured on this tree with the cap lifted:
+    //   bare baseContext()                23,319
+    //   checkpoint + draft                24,772
+    //   checkpoint + draft + custom       25,597
+    //   full config (custom + path +      26,200
+    //     focus + suppressions + caps)
+    // At 18k even the bare set overflowed by ~5.3k. renderReviewInstructionSections
+    // responds to overflow by shedding low/medium-retention sections and then
+    // HARD-SLICING the remainder -- and the slice cuts from the end, where the
+    // high-retention sections live (summary-standard-mode, after-review-*,
+    // severity-filter). Reviews silently lost the verdict logic, the
+    // Impact/Preference severity template, and the delta re-review template
+    // while still claiming to follow them; nothing errors in that mode.
+    // 32k leaves ~22% over the 26.2k worst case, so a repo that configures
+    // custom/path instructions is not one guidance edit away from the cliff.
+    // Enforced against the worst case by "fully configured instruction set fits
+    // within its budget" in review-prompt.test.ts -- pin the largest config
+    // there, never the bare one, or the guard cannot see the cliff.
+    instructions: 32_000,
   } as const;
 
   const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {

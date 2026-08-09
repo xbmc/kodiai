@@ -3562,27 +3562,35 @@ describe("buildKnowledgeContextLines", () => {
   });
 });
 
-test("standard instruction set fits within its budget so high-retention sections are never sliced off", () => {
-  // renderReviewInstructionSections responds to overflow by shedding
-  // low/medium-retention sections and then hard-slicing whatever is left. The
-  // slice cuts from the end, where the high-retention sections live, so an
-  // over-budget instruction set silently drops the verdict logic, the
-  // Impact/Preference severity template, and the delta re-review template while
-  // the prompt still claims to follow them. That failure is invisible in
-  // production -- nothing errors, reviews just come back structurally wrong.
+test("fully configured instruction set fits within its budget so high-retention sections are never sliced off", () => {
+  // renderReviewInstructionSections handles overflow by shedding low/medium-retention
+  // sections and then hard-slicing what is left. The slice cuts from the end, where the
+  // high-retention sections live, so an over-budget instruction set silently drops the
+  // verdict logic, the Impact/Preference severity template, and the delta re-review
+  // template while the prompt still claims to follow them. Nothing errors -- reviews just
+  // come back structurally wrong.
   //
-  // Assert the plain no-context review fits, so any future guidance addition
-  // that would overflow fails here instead of silently degrading real reviews.
-  const result = buildReviewPromptDetails(baseContext());
+  // Pin the LARGEST instruction set, not the bare one. The bare baseContext() path is
+  // ~23.3k and already covered by "default review instructions fit the budget and keep
+  // the silent-approval contract"; guarding only that leaves ~6k of slack, so a guidance
+  // edit could push every configured repo over the cliff with this suite still green.
+  const result = buildReviewPromptDetails(baseContext({
+    checkpointEnabled: true,
+    isDraft: true,
+    customInstructions: "Follow the house style guide carefully. ".repeat(20),
+    focusAreas: ["security", "performance"],
+    suppressions: [{ pattern: "ignore generated files", reason: "reviewed elsewhere" }],
+    minConfidence: 60,
+    maxComments: 5,
+    pathInstructions: [{ pattern: "src/**", instructions: "Be strict about error handling here." }],
+  }));
   const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
 
   expect(instructions).toBeDefined();
-  expect(instructions!.budgetStatus).toBe("included");
+  // budgetStatus and `truncated` are both derived from this, so it alone carries the contract.
   expect(instructions!.trimmedChars).toBe(0);
-  // `truncated` is only set when a slice happened, so absent is the pass state.
-  expect(instructions!.truncated ?? false).toBe(false);
 
-  // The sections most at risk from an end-of-text slice must actually be present.
+  // The sections most at risk from an end-of-text slice must survive at this size.
   expect(result.text).toContain('A "blocker" is any finding with severity CRITICAL or MAJOR under ### Impact');
   expect(result.text).toContain("Finding Language Guidelines");
 });
