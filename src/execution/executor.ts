@@ -237,24 +237,6 @@ async function buildGitArchiveTransport(params: {
   };
 }
 
-async function hasTrackedSymlinks(repoDir: string): Promise<boolean> {
-  const result = await $`git -C ${repoDir} ls-files -s`.quiet().nothrow();
-  if (result.exitCode !== 0) {
-    return false;
-  }
-  return result.stdout.toString().split(/\r?\n/).some((line) => line.startsWith("120000 "));
-}
-
-async function exportGitWorkingTreeSnapshot(params: {
-  sourceRepoDir: string;
-  workspaceDir: string;
-}): Promise<string> {
-  const repoCwd = join(params.workspaceDir, "repo");
-  await mkdir(repoCwd, { recursive: true });
-  await $`git -C ${params.sourceRepoDir} checkout-index -a -f --prefix=${repoCwd + "/"}`.quiet();
-  return repoCwd;
-}
-
 function filterGitToolsForSnapshot(allowedTools: string[]): string[] {
   return allowedTools.filter((tool) => !tool.startsWith("Bash(git "));
 }
@@ -284,21 +266,20 @@ export async function prepareAgentWorkspace(params: {
       .then((value) => value.trim() === "true")
       .catch(() => false);
     if (sourceIsShallow) {
-      const sourceHasTrackedSymlinks = await hasTrackedSymlinks(params.sourceRepoDir);
-      if (sourceHasTrackedSymlinks) {
-        const preparedRepo = await buildGitArchiveTransport({
-          sourceRepoDir: params.sourceRepoDir,
-          workspaceDir: params.workspaceDir,
-        });
-        repoTransport = preparedRepo.repoTransport;
-        allowedTools = filterGitToolsForSnapshot(params.allowedTools);
-      } else {
-        repoCwd = await exportGitWorkingTreeSnapshot({
-          sourceRepoDir: params.sourceRepoDir,
-          workspaceDir: params.workspaceDir,
-        });
-        allowedTools = filterGitToolsForSnapshot(params.allowedTools);
-      }
+      // Always hand shallow repos to the agent as a single tar rather than
+      // materializing the working tree into workspaceDir. workspaceDir is an
+      // Azure Files (SMB) mount, so a per-file export costs several billed
+      // transactions per tracked file -- ~30k files for xbmc/xbmc, and it also
+      // leaves the agent running with its cwd on the network mount so every
+      // subsequent read is a round trip. One archive write replaces both.
+      // `git archive` emits symlinks as symlink entries, so the tracked-symlink
+      // case needs no separate path.
+      const preparedRepo = await buildGitArchiveTransport({
+        sourceRepoDir: params.sourceRepoDir,
+        workspaceDir: params.workspaceDir,
+      });
+      repoTransport = preparedRepo.repoTransport;
+      allowedTools = filterGitToolsForSnapshot(params.allowedTools);
     } else {
       const preparedRepo = await buildGitRepoTransport({
         sourceRepoDir: params.sourceRepoDir,

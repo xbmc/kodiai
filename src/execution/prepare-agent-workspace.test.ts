@@ -193,7 +193,7 @@ test("prepareAgentWorkspace uses archive transport for shallow repos with tracke
   await expect(stat(join(workspaceDir, "repo"))).rejects.toThrow();
 });
 
-test("prepareAgentWorkspace snapshots shallow PR workspaces without unshallowing", async () => {
+test("prepareAgentWorkspace archives shallow PR workspaces without unshallowing", async () => {
   const tempRoot = await makeTempDir("kodiai-shallow-bundle-");
   const bareRepoDir = join(tempRoot, "origin.git");
   const seedRepoDir = join(tempRoot, "seed");
@@ -236,7 +236,7 @@ test("prepareAgentWorkspace snapshots shallow PR workspaces without unshallowing
 
   expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
   expect(result.repoBundlePath).toBeUndefined();
-  expect(result.repoCwd).toBe(join(workspaceDir, "repo"));
+  expect(result.repoCwd).toBeUndefined();
 
   const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
   const agentConfig = JSON.parse(rawAgentConfig) as {
@@ -244,9 +244,20 @@ test("prepareAgentWorkspace snapshots shallow PR workspaces without unshallowing
     repoTransport?: unknown;
   };
 
-  expect(agentConfig.repoTransport).toBeUndefined();
-  expect(agentConfig.repoCwd).toBe(join(workspaceDir, "repo"));
+  expect(agentConfig.repoCwd).toBeUndefined();
+  expect(agentConfig.repoTransport).toEqual({
+    kind: "working-tree-archive",
+    archivePath: join(workspaceDir, "repo.tar"),
+  });
   expect((agentConfig as { allowedTools?: string[] }).allowedTools).toEqual(["Read", "Grep", "Glob"]);
-  expect(await readFile(join(workspaceDir, "repo", "feature.txt"), "utf-8")).toBe("one\ntwo\npr\n");
-  await expect(stat(join(workspaceDir, "repo", ".git"))).rejects.toThrow();
+
+  // The working tree must never be materialized into workspaceDir: that is the
+  // Azure Files mount, and a per-file export is what this transport replaces.
+  await expect(stat(join(workspaceDir, "repo"))).rejects.toThrow();
+
+  // The archive still has to carry the PR's working tree, without .git.
+  const extractDir = await makeTempDir("kodiai-shallow-archive-extract-");
+  await $`tar -xf ${join(workspaceDir, "repo.tar")} -C ${extractDir}`.quiet();
+  expect(await readFile(join(extractDir, "feature.txt"), "utf-8")).toBe("one\ntwo\npr\n");
+  await expect(stat(join(extractDir, ".git"))).rejects.toThrow();
 });
