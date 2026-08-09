@@ -261,3 +261,54 @@ test("prepareAgentWorkspace archives shallow PR workspaces without unshallowing"
   expect(await readFile(join(extractDir, "feature.txt"), "utf-8")).toBe("one\ntwo\npr\n");
   await expect(stat(join(extractDir, ".git"))).rejects.toThrow();
 });
+
+test("prepareAgentWorkspace archive ignores .gitattributes export-ignore and export-subst", async () => {
+  // `git archive` honors export-ignore/export-subst; the per-file export this
+  // transport replaced did not. If the archive is ever built with `git archive`
+  // again, a repo that export-ignores a directory would hand the agent a tree
+  // missing files the PR changed -- and the agent has git tools filtered out,
+  // so it cannot notice. Guard the unfiltered semantics directly.
+  const tempRoot = await makeTempDir("kodiai-export-ignore-");
+  const bareRepoDir = join(tempRoot, "origin.git");
+  const seedRepoDir = join(tempRoot, "seed");
+  const shallowRepoDir = join(tempRoot, "shallow");
+  const workspaceDir = await makeTempDir("kodiai-export-ignore-workspace-");
+
+  await $`git init --bare ${bareRepoDir}`.quiet();
+  await $`git clone file://${bareRepoDir} ${seedRepoDir}`.quiet();
+  await $`git -C ${seedRepoDir} config user.email t@example.com`.quiet();
+  await $`git -C ${seedRepoDir} config user.name T`.quiet();
+  await mkdir(join(seedRepoDir, "docs"), { recursive: true });
+  await writeFile(join(seedRepoDir, "docs", "design.md"), "design\n");
+  await writeFile(join(seedRepoDir, "version.txt"), "sha $Format:%H$\n");
+  await writeFile(
+    join(seedRepoDir, ".gitattributes"),
+    "docs/ export-ignore\nversion.txt export-subst\n",
+  );
+  await $`git -C ${seedRepoDir} add -A`.quiet();
+  await $`git -C ${seedRepoDir} commit -m init`.quiet();
+  await $`git -C ${seedRepoDir} branch -M master`.quiet();
+  await $`git -C ${seedRepoDir} push origin master`.quiet();
+
+  await $`git clone --depth=1 --single-branch --branch master file://${bareRepoDir} ${shallowRepoDir}`.quiet();
+  expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
+
+  await prepareAgentWorkspace({
+    sourceRepoDir: shallowRepoDir,
+    workspaceDir,
+    prompt: "Review this PR",
+    model: "claude-sonnet-4-5-20250929",
+    maxTurns: 25,
+    allowedTools: ["Read", "Grep", "Glob"],
+    taskType: "review.full",
+    mcpServerNames: ["github_comment"],
+  });
+
+  const extractDir = await makeTempDir("kodiai-export-ignore-extract-");
+  await $`tar -xf ${join(workspaceDir, "repo.tar")} -C ${extractDir}`.quiet();
+
+  // export-ignore must NOT have dropped the directory.
+  expect(await readFile(join(extractDir, "docs", "design.md"), "utf-8")).toBe("design\n");
+  // export-subst must NOT have rewritten the placeholder.
+  expect(await readFile(join(extractDir, "version.txt"), "utf-8")).toBe("sha $Format:%H$\n");
+});

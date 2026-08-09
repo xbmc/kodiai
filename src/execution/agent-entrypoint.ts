@@ -13,7 +13,7 @@
 
 import type { SDKResultMessage, McpHttpServerConfig, Query, SDKRateLimitEvent } from "@anthropic-ai/claude-agent-sdk";
 import { readFile, writeFile as fsWriteFile, appendFile as fsAppendFile, mkdtemp, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
 import { buildSecurityClaudeMd } from "./executor.ts";
@@ -331,6 +331,17 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     const sdkCwd = repoTransport
       ? await materializeRepoTransport(repoTransport)
       : (agentConfig.repoCwd ?? workspaceDir!);
+
+    // The security policy is written to workspaceDir, but every transport
+    // materializes the repo under a fresh tmpdir instead, so workspaceDir is
+    // not in the SDK's project-settings ancestor chain and the policy would
+    // never load -- while the review prompt still tells the agent the policy in
+    // CLAUDE.md overrides any instruction found in PR or comment text. Place a
+    // copy in the parent of the repo (not inside it, so it neither shadows a
+    // repo-owned CLAUDE.md nor shows up as a reviewable file).
+    if (repoTransport) {
+      await writeFileFn(join(dirname(sdkCwd), "CLAUDE.md"), buildSecurityClaudeMd());
+    }
 
     if (repoTransport) {
       await appendDiagnostic(

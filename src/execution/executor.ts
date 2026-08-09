@@ -227,7 +227,17 @@ async function buildGitArchiveTransport(params: {
   workspaceDir: string;
 }): Promise<{ archivePath: string; repoTransport: RepoTransport }> {
   const archivePath = join(params.workspaceDir, "repo.tar");
-  await $`git -C ${params.sourceRepoDir} archive --format=tar -o ${archivePath} HEAD`.quiet();
+  // Deliberately NOT `git archive`: it applies .gitattributes `export-ignore`
+  // and `export-subst`, so a repo that export-ignores docs/ or tests/ would
+  // hand the agent a tree with files the PR actually changed missing, and
+  // `$Format:...$` placeholders silently rewritten. The agent runs with git
+  // tools filtered out (filterGitToolsForSnapshot), so it cannot detect or
+  // recover from either. Driving tar from `git ls-files` reproduces the
+  // index-scoped, unfiltered semantics of the `checkout-index` export this
+  // transport replaces, while still writing exactly one file to the Azure
+  // Files mount. `--directory` must precede `--files-from`: tar options are
+  // positional.
+  await $`git -C ${params.sourceRepoDir} ls-files -z | tar --create --file=${archivePath} --directory=${params.sourceRepoDir} --null --files-from=-`.quiet();
   return {
     archivePath,
     repoTransport: {
@@ -269,11 +279,16 @@ export async function prepareAgentWorkspace(params: {
       // Always hand shallow repos to the agent as a single tar rather than
       // materializing the working tree into workspaceDir. workspaceDir is an
       // Azure Files (SMB) mount, so a per-file export costs several billed
-      // transactions per tracked file -- ~30k files for xbmc/xbmc, and it also
-      // leaves the agent running with its cwd on the network mount so every
-      // subsequent read is a round trip. One archive write replaces both.
-      // `git archive` emits symlinks as symlink entries, so the tracked-symlink
-      // case needs no separate path.
+      // transactions per tracked file, and it also leaves the agent running
+      // with its cwd on the network mount so every subsequent read is a round
+      // trip. One archive write replaces both.
+      //
+      // The population this newly affects is shallow repos with NO tracked
+      // symlinks: repos that had them already took the archive path, because
+      // the SMB mount cannot represent a symlink. xbmc/xbmc is one of those --
+      // it has two mode-120000 entries (and ~10k tracked blobs, not 30k), so it
+      // was never on the per-file path and is not where the savings come from.
+      // Tar also represents symlinks natively, so one path now covers both.
       const preparedRepo = await buildGitArchiveTransport({
         sourceRepoDir: params.sourceRepoDir,
         workspaceDir: params.workspaceDir,
