@@ -309,7 +309,7 @@ function shannonEntropy(s: string): number {
  */
 function containsHighEntropyToken(text: string): boolean {
   // Include base64-ish characters (+,/ and =) since real secrets often use them.
-  const tokenRe = /[A-Za-z0-9_\-=+/\/]{32,}/g;
+  const tokenRe = /[A-Za-z0-9_\-=+/]{32,}/g;
   const matches = text.match(tokenRe) ?? [];
   for (const m of matches) {
     // Reduce false positives for common non-secret identifiers.

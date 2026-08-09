@@ -69,7 +69,7 @@ function shannonEntropy(s: string): number {
 
 function findHighEntropyTokens(addedLines: string[]): string | undefined {
   // Include base64-ish characters (+,/ and =) since real secrets often use them.
-  const tokenRe = /[A-Za-z0-9_\-=+/\/]{32,}/g;
+  const tokenRe = /[A-Za-z0-9_\-=+/]{32,}/g;
   for (const line of addedLines) {
     const matches = line.match(tokenRe) ?? [];
     for (const m of matches) {
