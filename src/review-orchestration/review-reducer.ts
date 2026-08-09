@@ -265,9 +265,6 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       if (finding.claimClassification && !claimClassificationMap.has(finding.commentId)) {
         claimClassificationMap.set(finding.commentId, finding.claimClassification);
       }
-      if (finding.claimClassification && !input.diffContent) {
-        claimClassificationMap.set(finding.commentId, finding.claimClassification);
-      }
     }
 
     let externalClaimCount = 0;

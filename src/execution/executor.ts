@@ -100,6 +100,31 @@ async function saveCheckpoint(
   }
 }
 
+async function createAndSaveCheckpoint(params: {
+  findingCountDelta: number;
+  context: ExecutionContext;
+  resumeCheckpoint: CheckpointRecord | null;
+  knowledgeStore: typeof undefined | { saveCheckpoint?: (data: CheckpointRecord) => Promise<void> };
+  logger: Logger;
+}): Promise<void> {
+  if (!params.context.reviewOutputKey || !params.knowledgeStore) {
+    return;
+  }
+
+  const checkpoint: CheckpointRecord = {
+    reviewOutputKey: params.context.reviewOutputKey,
+    repo: `${params.context.owner}/${params.context.repo}`,
+    prNumber: params.context.prNumber,
+    filesReviewed: params.resumeCheckpoint?.filesReviewed ?? [],
+    filesInspected: params.resumeCheckpoint?.filesInspected ?? [],
+    findingCount: (params.resumeCheckpoint?.findingCount ?? 0) + params.findingCountDelta,
+    summaryDraft: params.resumeCheckpoint?.summaryDraft ?? "",
+    totalFiles: params.resumeCheckpoint?.totalFiles ?? 0,
+    createdAt: new Date().toISOString(),
+  };
+  await saveCheckpoint(checkpoint, params.knowledgeStore, params.logger);
+}
+
 async function loadCheckpoint(
   reviewOutputKey: string | undefined,
   knowledgeStore: typeof undefined | { getCheckpoint?: (key: string) => Promise<CheckpointRecord | null> },
@@ -824,14 +849,16 @@ export function createExecutor(deps: {
           });
 
           // Save checkpoint on timeout for potential resume
-          if (resumeCheckpoint && context.reviewOutputKey && context.knowledgeStore) {
-            const timeoutCheckpoint: CheckpointRecord = {
-              ...resumeCheckpoint,
-              findingCount: (resumeCheckpoint.findingCount ?? 0),
-              createdAt: new Date().toISOString(),
-            };
-            await saveCheckpoint(timeoutCheckpoint, context.knowledgeStore, logger);
-          }
+          // NOTE: filesReviewed/filesInspected are only populated from resumeCheckpoint.
+          // On first-run timeout, these will be empty. TODO: populate from executor output or
+          // extract from partial comment posted before timeout to enable smarter resume.
+          await createAndSaveCheckpoint({
+            findingCountDelta: 0,
+            context,
+            resumeCheckpoint,
+            knowledgeStore: context.knowledgeStore,
+            logger,
+          });
 
           mcpJobRegistry.unregister(mcpBearerToken);
           registeredMcpBearerToken = undefined;
@@ -895,14 +922,13 @@ export function createExecutor(deps: {
           }
 
           // Save checkpoint on failure for potential resume
-          if (resumeCheckpoint && context.reviewOutputKey && context.knowledgeStore) {
-            const failureCheckpoint: CheckpointRecord = {
-              ...resumeCheckpoint,
-              findingCount: (resumeCheckpoint.findingCount ?? 0),
-              createdAt: new Date().toISOString(),
-            };
-            await saveCheckpoint(failureCheckpoint, context.knowledgeStore, logger);
-          }
+          await createAndSaveCheckpoint({
+            findingCountDelta: 0,
+            context,
+            resumeCheckpoint,
+            knowledgeStore: context.knowledgeStore,
+            logger,
+          });
 
           mcpJobRegistry.unregister(mcpBearerToken);
           registeredMcpBearerToken = undefined;
@@ -930,6 +956,9 @@ export function createExecutor(deps: {
 
         // succeeded — read result from workspace
         const rawResult = await readJobResult(workspaceDir);
+        if (typeof rawResult !== "object" || !rawResult) {
+          throw new Error("Invalid job result: expected object");
+        }
         const jobResult = rawResult as ExecutionResult & {
           executorPhaseTimings?: unknown;
         };
@@ -945,14 +974,13 @@ export function createExecutor(deps: {
         });
 
         // Save checkpoint for potential resume on timeout/interruption
-        if (resumeCheckpoint && context.reviewOutputKey && context.knowledgeStore) {
-          const updatedCheckpoint: CheckpointRecord = {
-            ...resumeCheckpoint,
-            findingCount: (resumeCheckpoint.findingCount ?? 0) + (jobResult.numTurns ?? 0),
-            createdAt: new Date().toISOString(),
-          };
-          await saveCheckpoint(updatedCheckpoint, context.knowledgeStore, logger);
-        }
+        await createAndSaveCheckpoint({
+          findingCountDelta: jobResult.findingCount ?? 0,
+          context,
+          resumeCheckpoint,
+          knowledgeStore: context.knowledgeStore,
+          logger,
+        });
 
         // Unregister after reading result
         mcpJobRegistry.unregister(mcpBearerToken);
@@ -996,14 +1024,13 @@ export function createExecutor(deps: {
         });
 
         // Save checkpoint on unexpected error for potential resume
-        if (resumeCheckpoint && context.reviewOutputKey && context.knowledgeStore) {
-          const errorCheckpoint: CheckpointRecord = {
-            ...resumeCheckpoint,
-            findingCount: (resumeCheckpoint.findingCount ?? 0),
-            createdAt: new Date().toISOString(),
-          };
-          await saveCheckpoint(errorCheckpoint, context.knowledgeStore, logger);
-        }
+        await createAndSaveCheckpoint({
+          findingCountDelta: 0,
+          context,
+          resumeCheckpoint,
+          knowledgeStore: context.knowledgeStore,
+          logger,
+        });
 
         return withCandidateFinding({
           conclusion: "error",
