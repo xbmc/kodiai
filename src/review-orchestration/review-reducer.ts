@@ -265,6 +265,18 @@ export async function reduceReviewFindings(input: ReviewReducerInput): Promise<R
       if (finding.claimClassification && !claimClassificationMap.has(finding.commentId)) {
         claimClassificationMap.set(finding.commentId, finding.claimClassification);
       }
+      // NOT redundant with the block above, despite looking like it. classifyClaims
+      // returns an entry for every finding it is given, so `.has(commentId)` is
+      // already true by the time that block runs and it never fires. When there is
+      // no diffContent, fileDiffs is empty, so classifyClaims had nothing to ground
+      // against and its result must not win over a classification the finding
+      // already carries -- this overwrite is the only path that applies it.
+      // Removing this drops rewrite/demotion for pre-classified findings on every
+      // no-diff review path. Covered by "applies suppression, rewrite,
+      // prioritization, and min-confidence gates in handler order".
+      if (finding.claimClassification && !input.diffContent) {
+        claimClassificationMap.set(finding.commentId, finding.claimClassification);
+      }
     }
 
     let externalClaimCount = 0;
