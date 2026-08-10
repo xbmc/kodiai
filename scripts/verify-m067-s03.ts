@@ -56,6 +56,16 @@ export type M067S03ReducerEvidence = {
   low_confidence_comment_ids: number[];
   audit_sources: string[];
   details_line: string;
+  /**
+   * Whether the PRE-sanitization details line tripped the raw-leak markers.
+   *
+   * `details_line` is sanitized before it is stored, and every RAW_LEAK_MARKERS entry
+   * has a matching replacement in sanitizeEvidenceText, so hasRawLeak() on the stored
+   * value could never match and the gate passed green on any leak. Detection has to run
+   * against the pre-sanitization text -- but this whole report is JSON.stringify'd to
+   * stdout, so the raw string must never be stored here. Carry the verdict instead.
+   */
+  details_line_had_raw_leak: boolean;
   /** Review reducer lines visible in the user-facing Review Details block (must be 0). */
   visible_review_reducer_line_count: number;
   /** Review reducer lines produced by the structured-log line formatter (must be 1). */
@@ -68,6 +78,8 @@ export type M067S03DegradedEvidence = {
   visible_count: number;
   filtered_inline_count: number;
   details_line: string;
+  /** Raw-leak verdict computed pre-sanitization. See M067S03ReducerEvidence. */
+  details_line_had_raw_leak: boolean;
 };
 
 export type M067S03GraphValidationEvidence = {
@@ -329,6 +341,7 @@ function toReducerEvidence(result: ReviewReducerResult, reviewDetails: string): 
     low_confidence_comment_ids: result.lowConfidenceFindings.map((finding) => finding.commentId).sort((a, b) => a - b),
     audit_sources: result.audit.map((event) => event.source).sort(),
     details_line: sanitizeEvidenceText(result.detailsSummary.text),
+    details_line_had_raw_leak: hasRawLeak(result.detailsSummary.text),
     visible_review_reducer_line_count: countReviewReducerLines(reviewDetails),
     review_details_line_count: countReviewReducerLines(
       formatReviewReducerDetailsLine(result.detailsSummary).join("\n"),
@@ -401,7 +414,7 @@ function buildDetailsCompactCheck(evidence: M067S03ReducerEvidence): M067S03Chec
     ...(!line.includes("suppressed=1") ? ["details line omitted suppressed=1"] : []),
     ...(!line.includes("rewritten=1") ? ["details line omitted rewritten=1"] : []),
     ...(!line.includes("graphValidated=1") ? ["details line omitted graphValidated=1"] : []),
-    ...(hasRawLeak(line) ? ["details line leaked raw finding, diff, prompt, or secret-like data"] : []),
+    ...(evidence.details_line_had_raw_leak ? ["details line leaked raw finding, diff, prompt, or secret-like data"] : []),
   ];
 
   return {
@@ -422,7 +435,7 @@ function buildDegradedFailOpenCheck(evidence: M067S03DegradedEvidence): M067S03C
     ...(evidence.filtered_inline_count !== 0 ? [`filtered inline count was ${evidence.filtered_inline_count}`] : []),
     ...(!line.includes("Review reducer: degraded") ? ["degraded line missing degraded status"] : []),
     ...(!line.includes("kept=4") ? ["degraded line missing kept=4"] : []),
-    ...(hasRawLeak(line) || hasRawLeak(evidence.reason ?? "") ? ["degraded evidence leaked raw reason data"] : []),
+    ...(evidence.details_line_had_raw_leak ? ["degraded evidence leaked raw reason data"] : []),
   ];
 
   return {
@@ -499,6 +512,7 @@ function emptyReducerEvidence(): M067S03ReducerEvidence {
     low_confidence_comment_ids: [],
     audit_sources: [],
     details_line: "",
+    details_line_had_raw_leak: false,
     visible_review_reducer_line_count: 0,
     review_details_line_count: 0,
   };
@@ -521,6 +535,7 @@ function buildInvalidArgReport(params: { generatedAt?: string; issue: string }):
       visible_count: 0,
       filtered_inline_count: 0,
       details_line: "",
+      details_line_had_raw_leak: false,
     },
     graph_validation: {
       enabled: true,
@@ -547,6 +562,8 @@ export async function evaluateM067S03ReviewReducerContract(params?: EvaluateM067
     visible_count: degradedResult.visibleFindings.length,
     filtered_inline_count: degradedResult.filteredInlineFindings.length,
     details_line: sanitizeEvidenceText(degradedResult.detailsSummary.text),
+    details_line_had_raw_leak: hasRawLeak(degradedResult.detailsSummary.text)
+      || hasRawLeak(degradedResult.reason ?? ""),
   };
   const graphValidation = toGraphValidationEvidence(reducerResult);
   const checks = [

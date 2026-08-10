@@ -509,6 +509,7 @@ describe("planReviewContinuation", () => {
       hasPublishedInlineFindings: false,
       isChronicTimeout: false,
       continuationCompaction: {
+        compactionEnabled: true,
         attemptId: "attempt-2",
         promptBudgetOutcomes: [
           {
@@ -574,6 +575,7 @@ describe("planReviewContinuation", () => {
       hasPublishedInlineFindings: false,
       isChronicTimeout: false,
       continuationCompaction: {
+        compactionEnabled: true,
         attemptId: "attempt-2",
         promptBudgetOutcomes: [
           {
