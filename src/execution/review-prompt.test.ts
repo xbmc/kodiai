@@ -752,7 +752,11 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
     expect(section.budgetReason).toBe("section-over-budget");
     expect(section.trimmedChars).toBeGreaterThan(0);
     expect(section.trimmedTokens).toBeGreaterThan(0);
-    expect(section.includedChars).toBe(section.budgetChars);
+    // Not `=== budgetChars`: sections declaring truncation "blocks" stop at a block
+    // boundary, so they land at or below the budget rather than exactly on it. Exact
+    // equality only holds for char-sliced evidence sections, and asserting it here would
+    // re-forbid the whole-block degradation that keeps contracts from being cut in half.
+    expect(section.includedChars).toBeLessThanOrEqual(section.budgetChars!);
   }
   expect(result.text).toContain("You are reviewing pull request #42 in acme/app.");
   expect(result.text).toContain("## Knowledge Context");

@@ -2212,6 +2212,11 @@ export function buildReviewPromptDetails(context: {
     sectionBlocks.push({ sectionName, text, budgetChars: budgetChars ?? text.length, budgetOutcome });
   };
 
+
+  // Prose sections carry contracts the model must follow; evidence sections carry data.
+  // Only the former degrade by dropping whole blocks -- see PromptSectionBudgetPolicy.
+  const BLOCK_TRUNCATED_SECTIONS = new Set(["review-size-context"]);
+
   const buildBudgetedPromptResult = (): PromptBuildResult => {
     const evaluation = evaluatePromptBudget({
       sections: sectionBlocks.map((section) => ({
@@ -2220,6 +2225,7 @@ export function buildReviewPromptDetails(context: {
       })),
       budgets: sectionBlocks.map((section) => ({
         sectionName: section.sectionName,
+        ...(BLOCK_TRUNCATED_SECTIONS.has(section.sectionName) ? { truncation: "blocks" as const } : {}),
         budgetChars: section.budgetChars,
       })),
       separator: "\n\n",

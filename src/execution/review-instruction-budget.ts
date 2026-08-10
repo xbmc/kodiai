@@ -1,5 +1,6 @@
 import type { PromptBudgetOutcome } from "./prompt-budget.ts";
 import { estimatePromptTokens } from "./prompt-section-metrics.ts";
+import { truncateToBudgetByBlocks } from "./prompt-budget.ts";
 
 export type ReviewInstructionSectionId = (typeof REVIEW_INSTRUCTION_SECTIONS)[number]["id"];
 type ReviewInstructionRetention = (typeof REVIEW_INSTRUCTION_SECTIONS)[number]["retention"];
@@ -118,8 +119,12 @@ export function renderReviewInstructionSections(
     currentText = renderNormalizedReviewInstructionSections([...included]);
   }
 
+  // Everything above sheds whole sections; this is the last resort when even the
+  // high-retention set is over budget. Drop whole blocks rather than char-slicing, so a
+  // surviving section is never a heading with its body cut off -- the model cannot tell
+  // a truncated instruction from a complete one.
   if (currentText.length > budgetChars) {
-    currentText = currentText.slice(0, budgetChars);
+    currentText = truncateToBudgetByBlocks(currentText, budgetChars);
   }
 
   const trimmedChars = originalText.length - currentText.length;
