@@ -16,8 +16,8 @@ import { estimatePromptTokens } from "./prompt-section-metrics.ts";
  * Keeping lines preserves partial lists, which is what an over-budget file list should
  * degrade to, and the trailing-heading trim supplies the invariant that actually matters.
  *
- * Degenerate case: if the first line alone exceeds the budget there is nothing to keep,
- * so it is char-sliced. Callers in that state have a sizing problem this cannot fix.
+ * Degenerate case: if nothing survives cleanly the result is empty rather than a
+ * char-sliced fragment. A partial contract reads as complete and is worse than none.
  *
  * Which sections use this is declared by PromptSectionBudgetPolicy.truncation.
  */
@@ -34,17 +34,34 @@ export function truncateToBudgetAtLineBoundary(text: string, budgetChars: number
     length += added;
   }
 
-  // Never end on a heading with nothing under it, or on trailing blank lines.
+  // Headings are matched on the RAW line: an ATX heading starts at column 0, whereas an
+  // indented "# ..." is content (a shell comment in a fence, or Markdown-in-Markdown).
+  // Trimming first would delete those content lines and leave the fence unterminated.
+  const isHeading = (line: string) => /^#{1,6}\s/.test(line);
+  // A line ending in ":" introduces what follows. Keeping it after its content was cut
+  // leaves an instruction pointing at a list that is not there -- undetectable to the
+  // model in the same way a stranded heading is.
+  const isLeadIn = (line: string) => /:\s*$/.test(line.trimEnd());
+
   while (kept.length > 0) {
-    const last = kept[kept.length - 1]!.trim();
-    if (last === "" || /^#{1,6}\s/.test(last)) {
+    const last = kept[kept.length - 1]!;
+    if (last.trim() === "" || isHeading(last) || isLeadIn(last)) {
       kept.pop();
       continue;
     }
     break;
   }
 
-  if (kept.length === 0) return text.slice(0, budgetChars);
+  // Never end inside an open code fence: the model would receive a malformed block.
+  while (kept.length > 0 && kept.filter((line) => line.trimStart().startsWith("```")).length % 2 === 1) {
+    kept.pop();
+  }
+
+  // Nothing survives cleanly. Emit nothing rather than a partial contract: an absent
+  // instruction is recoverable, a truncated one reads as complete and is not. Reaching
+  // here means the budget cannot hold one complete unit of this section, which is a
+  // sizing bug in the caller -- the budget outcome still reports the section as trimmed.
+  if (kept.length === 0) return "";
   return kept.join("\n");
 }
 

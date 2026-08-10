@@ -173,8 +173,29 @@ describe("truncateToBudgetAtLineBoundary", () => {
     expect(truncateToBudgetAtLineBoundary(text, 10_000)).toBe(text);
   });
 
-  test("falls back to a char slice when the first line alone exceeds the budget", () => {
-    expect(truncateToBudgetAtLineBoundary("## OneVeryLongHeadingLine", 10)).toBe("## OneVeryL".slice(0, 10));
+  test("emits nothing rather than a partial contract when nothing survives cleanly", () => {
+    // Previously this fell back to text.slice(), which returned a stranded heading with a
+    // mid-word body cut -- reintroducing the exact failure this function exists to stop.
+    const text = section("## Bounded Review Disclosure", "Because this review was bounded, include this sentence.");
+    expect(truncateToBudgetAtLineBoundary(text, 40)).toBe("");
+    expect(truncateToBudgetAtLineBoundary("## OneVeryLongHeadingLine", 10)).toBe("");
+  });
+
+  test("does not mistake an indented '#' content line for a heading", () => {
+    // A shell comment inside a fence starts with '#' once trimmed. Popping it as a
+    // heading deletes real content and leaves the fence unterminated.
+    const text = ["## Example", "", "```bash", "bun test", "# run bun test before pushing", "```"].join("\n");
+    const out = truncateToBudgetAtLineBoundary(text, text.length - 4);
+    expect((out.match(/```/g) ?? []).length % 2).toBe(0);
+  });
+
+  test("drops a trailing lead-in whose content was truncated away", () => {
+    // "Review these files thoroughly:" with no files under it instructs the model to
+    // review a list that is not present, which it cannot detect.
+    const text = section("### Full Review (140 files)", "Review these files thoroughly:", "- a.ts", "- b.ts");
+    const budget = section("### Full Review (140 files)", "Review these files thoroughly:").length + 1;
+    const out = truncateToBudgetAtLineBoundary(text, budget);
+    expect(out.trimEnd().endsWith(":")).toBe(false);
   });
 
   test("returns empty for a zero or negative budget", () => {
