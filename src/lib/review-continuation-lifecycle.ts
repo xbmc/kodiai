@@ -24,6 +24,17 @@ export type ContinuationCompactionPlanningSignals = {
   attemptOrdinal?: number;
   promptBudgetOutcomes: readonly PromptBudgetOutcome[];
   cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  /**
+   * Opt-in switch for retry-prompt compaction. Defaults to disabled.
+   *
+   * This path has never executed in production: hasCompleteBudgetSignals requires
+   * EVERY prompt budget outcome to be "included", and review-instructions was
+   * permanently "trimmed" under an undersized budget, so every retry fell back to
+   * fuller-context. Fixing that budget would otherwise flip a never-exercised branch
+   * live as a silent side effect -- and on the retry-after-timeout path, where thinner
+   * prior-attempt context is most costly. Enabling it must be deliberate.
+   */
+  compactionEnabled?: boolean;
 };
 
 export type PlanReviewContinuationParams = {
@@ -184,6 +195,7 @@ function buildContinuationCompactionObservation(params: {
   omittedScopeCount: number;
   promptBudgetOutcomes: readonly PromptBudgetOutcome[];
   cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  compactionEnabled: boolean;
 }): ContinuationCompactionObservation {
   const budgetSignalNames = deriveBudgetSignalNames(params.promptBudgetOutcomes);
   const cacheSignalNames = deriveCacheSignalNames(params.cacheTelemetryObservations);
@@ -207,6 +219,17 @@ function buildContinuationCompactionObservation(params: {
     omittedScopeCount: params.omittedScopeCount,
     remainingScopeCount: params.continuationFiles.length,
   } as const;
+
+  if (!params.compactionEnabled) {
+    return {
+      ...base,
+      status: "fallback",
+      reason: "compaction-disabled",
+      fallbackState: "fuller-context",
+      budgetSignalNames,
+      cacheSignalNames,
+    };
+  }
 
   if (!params.checkpoint) {
     return {
@@ -380,6 +403,7 @@ export function planReviewContinuation(
         omittedScopeCount: filesAlreadyReviewed.length,
         promptBudgetOutcomes: params.continuationCompaction.promptBudgetOutcomes,
         cacheTelemetryObservations: params.continuationCompaction.cacheTelemetryObservations,
+        compactionEnabled: params.continuationCompaction.compactionEnabled === true,
       })
     : undefined;
 

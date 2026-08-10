@@ -15,9 +15,17 @@
       "reusedCheckpointCount": 2,
       "omittedScopeCount": 8,
       "remainingScopeCount": 3,
-      "safetySignalNames": ["budget-window", "cache-hit-safe", "checkpoint-integrity"],
-      "budgetSignalNames": ["remaining-token-budget"],
-      "cacheSignalNames": ["review-derived-prompt"]
+      "safetySignalNames": [
+        "budget-window",
+        "cache-hit-safe",
+        "checkpoint-integrity"
+      ],
+      "budgetSignalNames": [
+        "remaining-token-budget"
+      ],
+      "cacheSignalNames": [
+        "review-derived-prompt"
+      ]
     },
     {
       "caseId": "missing-budget-signal",
@@ -32,7 +40,9 @@
       "reusedCheckpointCount": 0,
       "omittedScopeCount": 0,
       "remainingScopeCount": 9,
-      "missingSignalNames": ["prompt-budget-outcomes"]
+      "missingSignalNames": [
+        "prompt-budget-outcomes"
+      ]
     },
     {
       "caseId": "degraded-cache-signal",
@@ -48,9 +58,16 @@
       "reusedCheckpointCount": 1,
       "omittedScopeCount": 4,
       "remainingScopeCount": 2,
-      "safetySignalNames": ["budget-window"],
-      "budgetSignalNames": ["remaining-token-budget"],
-      "cacheSignalNames": ["retrieval-query-embedding", "cache-ttl"]
+      "safetySignalNames": [
+        "budget-window"
+      ],
+      "budgetSignalNames": [
+        "remaining-token-budget"
+      ],
+      "cacheSignalNames": [
+        "retrieval-query-embedding",
+        "cache-ttl"
+      ]
     },
     {
       "caseId": "no-remaining-scope",
@@ -79,9 +96,15 @@
       "reusedCheckpointCount": 0,
       "omittedScopeCount": 0,
       "remainingScopeCount": 5,
-      "budgetSignalNames": ["prompt-budget.included"],
-      "cacheSignalNames": ["cache.safe-reuse"],
-      "missingSignalNames": ["checkpoint.summary"]
+      "budgetSignalNames": [
+        "prompt-budget.included"
+      ],
+      "cacheSignalNames": [
+        "cache.safe-reuse"
+      ],
+      "missingSignalNames": [
+        "checkpoint.summary"
+      ]
     },
     {
       "caseId": "unsafe-cache-state",
@@ -97,8 +120,13 @@
       "reusedCheckpointCount": 0,
       "omittedScopeCount": 1,
       "remainingScopeCount": 4,
-      "budgetSignalNames": ["prompt-budget.included"],
-      "cacheSignalNames": ["cache.disabled-cache", "cache.safe-reuse"]
+      "budgetSignalNames": [
+        "prompt-budget.included"
+      ],
+      "cacheSignalNames": [
+        "cache.disabled-cache",
+        "cache.safe-reuse"
+      ]
     },
     {
       "caseId": "malformed-prior-state",
@@ -114,9 +142,15 @@
       "reusedCheckpointCount": 0,
       "omittedScopeCount": 2,
       "remainingScopeCount": 6,
-      "budgetSignalNames": ["prompt-budget.included"],
-      "cacheSignalNames": ["cache.safe-reuse"],
-      "missingSignalNames": ["checkpoint.summary"]
+      "budgetSignalNames": [
+        "prompt-budget.included"
+      ],
+      "cacheSignalNames": [
+        "cache.safe-reuse"
+      ],
+      "missingSignalNames": [
+        "checkpoint.summary"
+      ]
     }
   ],
   "continuationCompactionSummary": {
@@ -136,7 +170,8 @@
       "degraded-cache-signal": 1,
       "unsafe-cache-state": 1,
       "malformed-prior-state": 1,
-      "no-remaining-scope": 1
+      "no-remaining-scope": 1,
+      "compaction-disabled": 0
     },
     "fallbackStateCounts": {
       "none": 2,
@@ -147,9 +182,25 @@
     "reusedCheckpointCount": 3,
     "omittedScopeCount": 15,
     "remainingScopeCount": 29,
-    "safetySignalNames": ["budget-window", "cache-hit-safe", "checkpoint-integrity"],
-    "budgetSignalNames": ["prompt-budget.included", "remaining-token-budget"],
-    "cacheSignalNames": ["cache-ttl", "cache.disabled-cache", "cache.safe-reuse", "retrieval-query-embedding", "review-derived-prompt"],
-    "missingSignalNames": ["checkpoint.summary", "prompt-budget-outcomes"]
+    "safetySignalNames": [
+      "budget-window",
+      "cache-hit-safe",
+      "checkpoint-integrity"
+    ],
+    "budgetSignalNames": [
+      "prompt-budget.included",
+      "remaining-token-budget"
+    ],
+    "cacheSignalNames": [
+      "cache-ttl",
+      "cache.disabled-cache",
+      "cache.safe-reuse",
+      "retrieval-query-embedding",
+      "review-derived-prompt"
+    ],
+    "missingSignalNames": [
+      "checkpoint.summary",
+      "prompt-budget-outcomes"
+    ]
   }
 }

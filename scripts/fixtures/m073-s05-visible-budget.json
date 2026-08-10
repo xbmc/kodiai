@@ -16,7 +16,8 @@
         "reasonCounts": {
           "within-budget": 0,
           "section-over-budget": 0,
-          "zero-budget": 0
+          "zero-budget": 0,
+          "compaction-disabled": 0
         },
         "totalBudgetTokens": 0,
         "totalIncludedTokens": 0,
@@ -37,7 +38,8 @@
           "incomplete-fingerprint": 0,
           "expired-stale-entry": 0,
           "disabled-cache": 0,
-          "unavailable-retrieval": 0
+          "unavailable-retrieval": 0,
+          "compaction-disabled": 0
         },
         "bookkeepingErrorCount": 0,
         "missingSignalCount": 0,
@@ -58,7 +60,8 @@
           "degraded-cache-signal": 0,
           "unsafe-cache-state": 0,
           "malformed-prior-state": 0,
-          "no-remaining-scope": 0
+          "no-remaining-scope": 0,
+          "compaction-disabled": 0
         },
         "fallbackStateCounts": {
           "none": 0,
@@ -90,7 +93,8 @@
         "reasonCounts": {
           "within-budget": 2,
           "section-over-budget": 2,
-          "zero-budget": 1
+          "zero-budget": 1,
+          "compaction-disabled": 0
         },
         "totalBudgetTokens": 975,
         "totalIncludedTokens": 925,
@@ -111,7 +115,8 @@
           "incomplete-fingerprint": 1,
           "expired-stale-entry": 1,
           "disabled-cache": 1,
-          "unavailable-retrieval": 1
+          "unavailable-retrieval": 1,
+          "compaction-disabled": 0
         },
         "bookkeepingErrorCount": 1,
         "missingSignalCount": 2,
@@ -132,7 +137,8 @@
           "degraded-cache-signal": 0,
           "unsafe-cache-state": 0,
           "malformed-prior-state": 0,
-          "no-remaining-scope": 0
+          "no-remaining-scope": 0,
+          "compaction-disabled": 0
         },
         "fallbackStateCounts": {
           "none": 0,
@@ -164,7 +170,8 @@
         "reasonCounts": {
           "within-budget": 0,
           "section-over-budget": 0,
-          "zero-budget": 0
+          "zero-budget": 0,
+          "compaction-disabled": 0
         },
         "totalBudgetTokens": 0,
         "totalIncludedTokens": 0,
@@ -185,7 +192,8 @@
           "incomplete-fingerprint": 0,
           "expired-stale-entry": 0,
           "disabled-cache": 0,
-          "unavailable-retrieval": 0
+          "unavailable-retrieval": 0,
+          "compaction-disabled": 0
         },
         "bookkeepingErrorCount": 0,
         "missingSignalCount": 0,
@@ -206,7 +214,8 @@
           "degraded-cache-signal": 1,
           "unsafe-cache-state": 1,
           "malformed-prior-state": 1,
-          "no-remaining-scope": 1
+          "no-remaining-scope": 1,
+          "compaction-disabled": 0
         },
         "fallbackStateCounts": {
           "none": 2,
@@ -241,7 +250,8 @@
       "prompt-budget-limited": 1,
       "continuation-compacted": 0,
       "continuation-fallback": 1,
-      "cache-degraded": 0
+      "cache-degraded": 0,
+      "compaction-disabled": 0
     },
     "promptObservationCount": 2,
     "promptSectionCount": 5,

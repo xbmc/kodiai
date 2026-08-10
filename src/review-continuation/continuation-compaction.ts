@@ -13,6 +13,9 @@ export const CONTINUATION_COMPACTION_REASONS = [
   "unsafe-cache-state",
   "malformed-prior-state",
   "no-remaining-scope",
+  // Compaction is opt-in. Reported instead of reusing "missing-budget-signal", which
+  // would misdescribe a healthy prompt budget as a missing signal to operators.
+  "compaction-disabled",
 ] as const;
 
 export const CONTINUATION_COMPACTION_FALLBACK_STATES = [
@@ -275,7 +278,7 @@ function validateDecisionSafety(observations: readonly ContinuationCompactionObs
     }
 
     if (observation.status === "fallback") {
-      if (!["missing-checkpoint", "missing-budget-signal", "unsafe-cache-state", "malformed-prior-state"].includes(observation.reason)) {
+      if (!["missing-checkpoint", "missing-budget-signal", "unsafe-cache-state", "malformed-prior-state", "compaction-disabled"].includes(observation.reason)) {
         issues.push(`${prefix} fallback status requires a fail-closed fallback reason.`);
       }
       if (observation.fallbackState !== "fuller-context") issues.push(`${prefix} fallback status requires fallbackState fuller-context.`);
