@@ -2171,7 +2171,14 @@ export function buildReviewPromptDetails(context: {
     useFallback?: boolean;
   };
 }): PromptBuildResult {
-  const sectionBlocks: Array<{ sectionName: string; text: string; budgetChars: number; budgetOutcome?: PromptBudgetOutcome }> = [];
+  const sectionBlocks: Array<{
+    sectionName: string;
+    text: string;
+    budgetChars: number;
+    /** Defaults to "chars"; see PromptSectionBudgetPolicy.truncation. */
+    truncation?: "chars" | "blocks";
+    budgetOutcome?: PromptBudgetOutcome;
+  }> = [];
   const scaleNotes: string[] = [];
   const mode = context.mode ?? "standard";
   // Budgets sized for claude-sonnet-5 (input tokens are cheap and heavily
@@ -2206,16 +2213,23 @@ export function buildReviewPromptDetails(context: {
     instructions: 64_000,
   } as const;
 
-  const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {
+  const pushSection = (
+    sectionName: string,
+    lines: string[],
+    budgetChars?: number,
+    options?: { truncation?: "chars" | "blocks"; budgetOutcome?: PromptBudgetOutcome },
+  ) => {
     const text = lines.join("\n").trim();
     if (!text) return;
-    sectionBlocks.push({ sectionName, text, budgetChars: budgetChars ?? text.length, budgetOutcome });
+    sectionBlocks.push({
+      sectionName,
+      text,
+      budgetChars: budgetChars ?? text.length,
+      ...(options?.truncation ? { truncation: options.truncation } : {}),
+      ...(options?.budgetOutcome ? { budgetOutcome: options.budgetOutcome } : {}),
+    });
   };
 
-
-  // Prose sections carry contracts the model must follow; evidence sections carry data.
-  // Only the former degrade by dropping whole blocks -- see PromptSectionBudgetPolicy.
-  const BLOCK_TRUNCATED_SECTIONS = new Set(["review-size-context"]);
 
   const buildBudgetedPromptResult = (): PromptBuildResult => {
     const evaluation = evaluatePromptBudget({
@@ -2225,7 +2239,7 @@ export function buildReviewPromptDetails(context: {
       })),
       budgets: sectionBlocks.map((section) => ({
         sectionName: section.sectionName,
-        ...(BLOCK_TRUNCATED_SECTIONS.has(section.sectionName) ? { truncation: "blocks" as const } : {}),
+        ...(section.truncation ? { truncation: section.truncation } : {}),
         budgetChars: section.budgetChars,
       })),
       separator: "\n\n",
@@ -2376,7 +2390,9 @@ export function buildReviewPromptDetails(context: {
     if (sizeContextLines.length > 0) sizeContextLines.push("");
     sizeContextLines.push(buildRetryPromptCompactionSection(context.retryPromptCompaction));
   }
-  pushSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext);
+  pushSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext, {
+    truncation: "blocks",
+  });
 
   const graphContextLines: string[] = [];
   if (context.graphBlastRadius) {
@@ -2784,7 +2800,9 @@ export function buildReviewPromptDetails(context: {
     "review-instructions",
     instructionRender.lines,
     REVIEW_SECTION_BUDGETS.instructions,
-    instructionRender.budgetOutcome,
+    // renderReviewInstructionSections already sheds whole sections and block-truncates
+    // as a last resort, so it supplies its own budget outcome and needs no re-truncation.
+    { budgetOutcome: instructionRender.budgetOutcome },
   );
 
   return buildBudgetedPromptResult();

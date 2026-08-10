@@ -10,28 +10,25 @@ import { estimatePromptTokens } from "./prompt-section-metrics.ts";
  * prefix as a complete instruction. That failure mode is what silently removed the
  * verdict logic and the severity template from published reviews.
  *
- * Blocks are blank-line separated, which is how every prose section here is authored.
- * Dropping whole blocks means the prompt always contains complete instructions -- fewer
- * of them under pressure, never partial ones.
+ * Blocks are blank-line separated. Under pressure the caller gets fewer complete
+ * instructions rather than partial ones.
  *
  * Degenerate case: if the FIRST block alone exceeds the budget there is nothing to drop,
- * so it is char-sliced. That is unavoidable, and callers whose first block can exceed
- * their budget have a sizing problem this cannot paper over.
+ * so it is char-sliced. Callers in that state have a sizing problem this cannot fix.
  *
- * Deliberately NOT applied to data sections (diff, knowledge, graph context): those
- * carry evidence rather than contracts, they are not authored as prose blocks, and a
- * shorter-but-complete diff is not obviously better than a longer truncated one.
+ * Which sections use this is declared by PromptSectionBudgetPolicy.truncation.
  */
 export function truncateToBudgetByBlocks(text: string, budgetChars: number): string {
   if (budgetChars <= 0) return "";
   if (text.length <= budgetChars) return text;
 
-  const blocks = text.split("\n\n");
   const kept: string[] = [];
-  for (const block of blocks) {
-    const candidate = kept.length === 0 ? block : `${kept.join("\n\n")}\n\n${block}`;
-    if (candidate.length > budgetChars) break;
+  let length = 0;
+  for (const block of text.split("\n\n")) {
+    const added = kept.length === 0 ? block.length : block.length + 2;
+    if (length + added > budgetChars) break;
     kept.push(block);
+    length += added;
   }
 
   if (kept.length === 0) return text.slice(0, budgetChars);
