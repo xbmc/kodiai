@@ -113,7 +113,7 @@ const RAW_LEAK_MARKERS = [
   "rawDiff",
   "secretToken",
   "Unsafe raw fixture title",
-  "external API always fails",
+  "CVE-2021-1234",
   "persisted state before validating",
 ];
 
@@ -237,18 +237,13 @@ async function buildReducerResult(reducerFn: typeof reduceReviewFindings): Promi
     prioritizationWeights: { severity: 1, fileRisk: 0, category: 0, recurrence: 0 },
     feedbackSuppression: { suppressedFingerprints: new Set(), suppressedPatternCount: 0, patterns: [] },
     priorFindingContext: null,
-    // Real diff for the classified finding's filePath, matching production, where
-    // classification is always derived from fileDiffs.
-    diffContent: [
-      "diff --git a/src/indirect.ts b/src/indirect.ts",
-      "--- a/src/indirect.ts",
-      "+++ b/src/indirect.ts",
-      "@@ -18,3 +18,4 @@",
-      " function save(payload) {",
-      "+  persistedState.mutate(payload);",
-      "   write(payload);",
-      " }",
-    ].join("\n"),
+    // Intentionally empty. A synthetic diff is inert for these fixtures (classifyClaims
+    // returns identical output with and without one) but not side-effect free: it would
+    // activate the diff-grounding gate, and naming src/indirect.ts as the only changed
+    // file directly contradicts graphBlastRadiusFixture, which declares src/direct.ts as
+    // the sole changed file and src/indirect.ts as impacted-but-unchanged -- a PR shape
+    // production cannot produce.
+    diffContent: "",
     prBody: null,
     commitMessages: [],
     tieredFiles: { isLargePR: false, abbreviated: [] },
@@ -311,7 +306,7 @@ function sanitizeEvidenceText(value: string): string {
     .replace(/rawDiff/gi, "raw-diff-redacted")
     .replace(/secretToken/gi, "secret-token-redacted")
     .replace(/Unsafe raw fixture title/gi, "unsafe-title-redacted")
-    .replace(/external API always fails/gi, "external-claim-redacted")
+    .replace(/CVE-2021-1234/gi, "external-claim-redacted")
     .replace(/persisted state before validating/gi, "grounded-claim-redacted");
 }
 

@@ -163,23 +163,24 @@ describe("reduceReviewFindings", () => {
       baseFinding({ commentId: 1, title: "Suppress this legacy issue", severity: "major", category: "correctness" }),
       baseFinding({
         commentId: 2,
-        // Deliberately NOT hand-setting claimClassification: nothing in production
-        // ever sets that field on reducer input (the only writers are
-        // claim-classifier.ts's own output and the reducer reading its map back),
-        // so a fixture that pre-populates it exercises a path real reviews cannot
-        // reach. The rewrite below must come from classifyClaims deriving "mixed"
-        // from this title against the diff, exactly as it does in production.
-        // Verified against classifyClaims: this title yields summaryLabel "mixed"
-        // ("The code mutates persisted state." -> diff-grounded, the CVE sentence ->
-        // external-knowledge), which is what drives the rewrite asserted below. The
-        // previous title ("...always fails in v1.2.3.") classified as
-        // primarily-diff-grounded in BOTH claims, so the rewrite it asserted could
-        // only ever come from the hand-set fixture, never from real classification.
-        // The diff-grounded sentence must survive MIN_WORDS_AFTER_REWRITE (10) on its
-        // own, since filterExternalClaims rebuilds the comment from the non-external
-        // claims only. The old fixture hid this: its claims[0].text carried this longer
-        // sentence while its title carried a 5-word version, so the rewritten output
-        // never matched the finding's actual title.
+        // No hand-set claimClassification: nothing in production ever sets that field
+        // on reducer input (the only writers are claim-classifier.ts's own output and
+        // the reducer reading its map back), so pre-populating it exercised a path real
+        // reviews cannot reach. classifyClaims must derive the classification itself.
+        //
+        // Verified directly against classifyClaims, this title yields "mixed":
+        //   "The code mutates persisted state and skips required validation before
+        //    writing to disk."          -> diff-grounded  (fail-open default)
+        //   "This is vulnerable to CVE-2021-1234."  -> external-knowledge (CVE_PATTERN)
+        // The old title ("...always fails in v1.2.3.") classified as diff-grounded in
+        // BOTH claims, so the rewrite it asserted could only come from the hand-set
+        // fixture, never from real classification.
+        //
+        // The diff-grounded sentence must clear MIN_WORDS_AFTER_REWRITE (10 words) on
+        // its own, because filterExternalClaims rebuilds the published comment from the
+        // non-external claim texts alone. It is 13 words. The old fixture hid this: its
+        // claims[0].text carried this longer sentence while its title carried a 5-word
+        // version, so the rewritten output never matched the finding's actual title.
         title: "The code mutates persisted state and skips required validation before writing to disk. This is vulnerable to CVE-2021-1234.",
         severity: "major",
         category: "correctness",
@@ -200,19 +201,16 @@ describe("reduceReviewFindings", () => {
       prioritizationWeights: { severity: 1, fileRisk: 0, category: 0, recurrence: 0 },
       feedbackSuppression: { suppressedFingerprints: new Set(), suppressedPatternCount: 0, patterns: [] },
       priorFindingContext: null,
-      // A real diff for the finding's filePath, so classifyClaims has something to
-      // ground against -- production always classifies against fileDiffs, never
-      // against a caller-supplied classification.
-      diffContent: [
-        "diff --git a/src/example.ts b/src/example.ts",
-        "--- a/src/example.ts",
-        "+++ b/src/example.ts",
-        "@@ -8,3 +8,4 @@",
-        " function save(input) {",
-        "+  persistedState.mutate(input);",
-        "   write(input);",
-        " }",
-      ].join("\n"),
+      // Intentionally left empty. A synthetic diff here would be inert for this
+      // fixture -- classifyClaims returns byte-identical output with and without one
+      // (sentence 1 hits classifyClaimHeuristic's fail-open diff-grounded default and
+      // never reads the diff; the CVE sentence is matched by CVE_PATTERN, which also
+      // ignores it) -- while NOT being side-effect free: reduceReviewFindings forwards
+      // diffContent to applyEnforcement, so a non-empty diff activates the
+      // diff-grounding gate and makes these findings' published severity depend on
+      // whether their cited lines fall inside the synthetic hunk. This test pins
+      // reducer gate ordering, not diff grounding, so it stays on the no-diff path.
+      diffContent: "",
       prBody: null,
       commitMessages: [],
       tieredFiles: { isLargePR: false, abbreviated: [] },
@@ -237,6 +235,14 @@ describe("reduceReviewFindings", () => {
     expect(result.suppressionMatchCounts).toEqual(new Map([["legacy issue", 1]]));
     expect(result.filterRecords).toHaveLength(1);
     expect(result.filterRecords[0]!.action).toBe("rewritten");
+    // Pin the rewritten text, not just the action. filterExternalClaims rebuilds the
+    // published comment from the non-external claims only, so the diff-grounded
+    // sentence must survive and the CVE claim must not. Asserting only `action` lets a
+    // change in extractClaims split the title differently -- still >= 10 words, still
+    // "rewritten" -- while shipping a comment body that no longer matches the diff.
+    expect(result.filterRecords[0]!.rewrittenTitle)
+      .toContain("The code mutates persisted state and skips required validation before writing to disk");
+    expect(result.filterRecords[0]!.rewrittenTitle).not.toContain("CVE-2021-1234");
     expect(result.findings.find((f) => f.commentId === 2)?.filterAction).toBe("rewritten");
     expect(result.findings.find((f) => f.commentId === 5)?.deprioritized).toBe(true);
     expect(result.prioritizationStats).toMatchObject({ maxComments: 2, selectedFindings: 2, omittedFindings: 1 });
