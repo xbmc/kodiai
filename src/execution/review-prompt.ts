@@ -2185,35 +2185,24 @@ export function buildReviewPromptDetails(context: {
     graphContext: 4_000,
     knowledgeContext: 5_000,
     diffContext: 24_000,
-    // Sized ABOVE the reachable ceiling, deliberately, rather than close to a
-    // measured worst case. Three prior attempts at a tight fit all failed, each
-    // because the "worst case" fixture understated reality (an inert
-    // `pathInstructions` key the builder ignores; a `repoDoctrine` literal missing
-    // `enabled`/`consumedContractCount`; active-rule fixtures far under the
-    // production cap). Measured here with real production caps
-    // (ABSOLUTE_ACTIVE_RULES_CAP=20 x MAX_RULE_TEXT_CHARS=500, path instructions
-    // saturating their 3k cap, custom instructions, focus areas, suppressions,
-    // severity filter, checkpoint, draft, non-English output):
-    //   bare                                          23,319
-    //   + 20 active rules at the 500-char cap          34,766
-    //   + 12 matched path instructions                 37,662
-    //   + severity/checkpoint/draft/custom/focus/caps  41,311
-    //   + non-English output language                  41,832
+    // Overflow here is silent and destructive: renderReviewInstructionSections sheds
+    // low/medium-retention sections and then HARD-SLICES the remainder from the END,
+    // which is exactly where the high-retention sections live (summary-standard-mode,
+    // after-review-*, severity-filter). An over-budget instruction set therefore drops
+    // the verdict logic and the Impact/Preference severity template while the prompt
+    // still tells the model to follow them. Nothing errors; reviews come back
+    // structurally wrong. At the previous 18k, even a BARE review overflowed by ~5.3k.
     //
-    // Why this matters: renderReviewInstructionSections handles overflow by
-    // shedding low/medium-retention sections and then HARD-SLICING the remainder.
-    // The slice cuts from the END, which is where the high-retention sections live
-    // (summary-standard-mode, after-review-*, severity-filter, confidence-threshold),
-    // so an over-budget instruction set silently drops the verdict logic, the
-    // Impact/Preference severity template and the delta re-review template while the
-    // prompt still instructs the model to follow them. Nothing errors; reviews just
-    // come back structurally wrong. At 18k even a BARE review overflowed by ~5.3k.
+    // So this is sized ABOVE the ceiling rather than near it: measured maximum with
+    // real production caps is 41,832 chars, and 64k leaves ~50% headroom. Three prior
+    // attempts at a tight fit all failed because the fixture understated reality.
+    // The per-configuration breakdown lives with the assertion that keeps it honest:
+    // see "fully configured instruction set fits within its budget" in
+    // review-prompt.test.ts.
     //
-    // 64k leaves ~50% headroom over the measured ceiling so no realistic repo sheds
-    // and the slice never reaches the tail. This raises the theoretical maximum
-    // prompt (sum of REVIEW_SECTION_BUDGETS) from 62k to 108k chars, ~27k tokens;
-    // that is the intended trade per the sizing note above, since input is cheap and
-    // prompt-cached while a truncated instruction set costs findings on every review.
+    // Cost: the theoretical maximum prompt (sum of REVIEW_SECTION_BUDGETS) goes from
+    // 62k to 108k chars (~27k tokens). Intended -- input is cheap and prompt-cached,
+    // while a truncated instruction set costs findings on every review.
     instructions: 64_000,
   } as const;
 

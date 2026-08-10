@@ -257,22 +257,14 @@ function buildContinuationCompactionObservation(params: {
     };
   }
 
-  // Placed AFTER the checkpoint/summary/budget checks and BEFORE the cache checks.
-  //
-  // After, because those three are genuine fault diagnostics that must keep reaching
-  // telemetry: gating ahead of them would report a blanket "compaction-disabled" while
-  // a checkpoint-persistence fault or an incomplete prompt budget went invisible, and
-  // would make it impossible to confirm from production evidence that the budget fix in
-  // this PR actually completed the budget signals.
-  //
-  // Before, because the two cache branches below only matter as inputs to a compaction
-  // decision that is not being made, and running them with compaction off is actively
-  // wrong: the degraded branch reports reusedCheckpointCount: 1, claiming a checkpoint
-  // reuse that never happened, and the unsafe branch fires whenever cache telemetry is
-  // simply absent (!hasCompleteCacheSignals on an empty array). Both are newly reachable
-  // because this PR completes the budget signals, so leaving them ahead of the gate
-  // would put a phantom reuse and a nonexistent cache-safety incident in front of
-  // on-call on every ordinary retry.
+  // Position matters. AFTER the checkpoint/prior-state/budget checks, because those are
+  // real fault diagnostics that must keep reaching telemetry. BEFORE the cache checks,
+  // because those only feed a compaction decision that is not being made -- and running
+  // them with compaction off is wrong: the degraded branch reports
+  // reusedCheckpointCount: 1 for a reuse that never happened, and the unsafe branch
+  // fires on an EMPTY cache-telemetry array. Both became reachable once the instruction
+  // budget stopped trimming, so either would put a phantom fault in front of on-call on
+  // every ordinary retry.
   if (!params.compactionEnabled) {
     return {
       ...base,

@@ -167,7 +167,6 @@ describe("evaluateM067S03ReviewReducerContract", () => {
           low_confidence_comment_ids: [],
           audit_sources: [],
           details_line: "",
-          details_line_had_raw_leak: false,
           visible_review_reducer_line_count: 0,
           review_details_line_count: 0,
         },
@@ -177,7 +176,6 @@ describe("evaluateM067S03ReviewReducerContract", () => {
           visible_count: 0,
           filtered_inline_count: 0,
           details_line: "",
-          details_line_had_raw_leak: false,
         },
         graph_validation: {
           enabled: true,

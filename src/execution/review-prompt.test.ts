@@ -3588,3 +3588,65 @@ describe("buildKnowledgeContextLines", () => {
     expect(lines[0]).not.toBe("");
   });
 });
+
+test("fully configured instruction set fits within its budget so high-retention sections are never sliced off", () => {
+  // renderReviewInstructionSections handles overflow by shedding low/medium-retention
+  // sections and then hard-slicing what is left. The slice cuts from the END, where the
+  // high-retention sections live, so an over-budget instruction set silently drops the
+  // verdict logic and the Impact/Preference severity template while the prompt still
+  // claims to follow them. Nothing errors -- reviews just come back structurally wrong.
+  //
+  // Pin the LARGEST instruction set. The bare path is already covered by "default review
+  // instructions fit the budget and keep the silent-approval contract", and at ~23.3k it
+  // sits ~40k under the budget, so it can never detect the cliff.
+  //
+  // Measured sizes with real production caps (ABSOLUTE_ACTIVE_RULES_CAP=20 x
+  // MAX_RULE_TEXT_CHARS=500, path instructions saturating their 3k cap):
+  //   bare                                       23,319
+  //   + 20 active rules at the 500-char cap      34,766
+  //   + 12 matched path instructions             37,662
+  //   + severity/checkpoint/draft/custom/focus   41,311
+  //   + non-English output language              41,832  <- the ceiling the budget is sized against
+  // The charCount band below is what keeps those numbers honest; if it drifts,
+  // re-measure before re-tuning REVIEW_SECTION_BUDGETS.instructions.
+  const activeRules = Array.from({ length: 20 }, (_, index) => ({
+    id: index,
+    title: `Rule ${index} about validation and cleanup`,
+    ruleText: "X".repeat(500),
+    signalScore: 0.9,
+    memberCount: 5,
+  }));
+  const matchedPathInstructions = Array.from({ length: 12 }, (_, index) => ({
+    pattern: `src/area${index}/**`,
+    instructions: "Y".repeat(400),
+    matchedFiles: [`src/area${index}/a.ts`, `src/area${index}/b.ts`],
+  }));
+
+  const result = buildReviewPromptDetails(baseContext({
+    activeRules,
+    matchedPathInstructions,
+    // buildSeverityFilterInstructions returns "" for the default "minor", so without
+    // this the severity-filter section contributes nothing to the measurement.
+    severityMinLevel: "major",
+    checkpointEnabled: true,
+    isDraft: true,
+    customInstructions: "Follow the house style guide carefully. ".repeat(80),
+    focusAreas: ["security", "performance", "concurrency"],
+    suppressions: [{ pattern: "ignore generated files" }, { pattern: "skip vendored" }],
+    minConfidence: 60,
+    maxComments: 5,
+    outputLanguage: "German",
+  }));
+  const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
+
+  expect(instructions).toBeDefined();
+  // budgetStatus and `truncated` both derive from this, so it alone carries the contract.
+  expect(instructions!.trimmedChars).toBe(0);
+  expect(instructions!.charCount).toBeGreaterThan(38_000);
+  expect(instructions!.charCount).toBeLessThan(46_000);
+
+  // The sections most at risk from an end-of-text slice must survive at this size.
+  expect(result.text).toContain('A "blocker" is any finding with severity CRITICAL or MAJOR under ### Impact');
+  expect(result.text).toContain("Finding Language Guidelines");
+  expect(result.text).toContain("Path-Specific Review Instructions");
+});
