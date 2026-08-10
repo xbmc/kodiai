@@ -223,7 +223,18 @@ describe("untrusted prompt context sanitization", () => {
   });
 });
 
-function baseContext(overrides: Record<string, unknown> = {}) {
+/**
+ * The exact parameter type of buildReviewPromptDetails, so fixture overrides are
+ * shape-checked. Previously `Record<string, unknown>`, which silently accepted
+ * misspelled or wrong-shaped keys: a fixture passing `pathInstructions` (the builder
+ * reads `matchedPathInstructions`) or a `repoDoctrine` missing `enabled`/
+ * `consumedContractCount` contributed ZERO chars to the rendered prompt while the
+ * test appeared to exercise that section. Budget guards sized from those fixtures
+ * measured a prompt no real repo renders.
+ */
+type ReviewPromptDetailsContext = Parameters<typeof buildReviewPromptDetails>[0];
+
+function baseContext(overrides: Partial<ReviewPromptDetailsContext> = {}): ReviewPromptDetailsContext {
   return {
     owner: "acme",
     repo: "app",
@@ -640,8 +651,12 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
       unresolvedPriorFindings: Array.from({ length: 16 }, (_, index) => ({
         filePath: `src/finding-${index}.ts`,
         title: `Prior finding ${index}`,
-        severity: "major",
-        category: "correctness",
+        titleFingerprint: `fp-${index}`,
+        severity: "major" as const,
+        category: "correctness" as const,
+        startLine: null,
+        endLine: null,
+        commentId: null,
       })),
     },
     unifiedResults: Array.from({ length: 10 }, (_, index) => ({
@@ -653,18 +668,24 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
       score: 1 - index / 100,
       rrfScore: 1 - index / 100,
       distance: index / 100,
+      vectorDistance: index / 100,
       owner: "acme",
       repo: "app",
+      source: "review_comment" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      metadata: {},
     })),
     contextWindow: "Assembled unified knowledge context. ".repeat(80),
     graphBlastRadius: {
       changedFiles: ["src/index.ts"],
+      seedSymbols: [{ stableKey: "seed-0", symbolName: "changedSymbol", qualifiedName: "app::changedSymbol", filePath: "src/index.ts" }],
       impactedFiles: Array.from({ length: 30 }, (_, index) => ({
         path: `src/impact-${index}.ts`,
         score: 0.9,
         confidence: 0.82,
         reasons: ["reachable from changed symbol"],
         languages: ["TypeScript"],
+        relatedChangedPaths: ["src/index.ts"],
       })),
       likelyTests: Array.from({ length: 12 }, (_, index) => ({
         path: `src/impact-${index}.test.ts`,
@@ -672,6 +693,8 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
         confidence: 0.74,
         reasons: ["covers changed symbol"],
         languages: ["TypeScript"],
+        relatedChangedPaths: ["src/index.ts"],
+        testSymbols: [`describeImpact${index}`],
       })),
       probableDependents: Array.from({ length: 12 }, (_, index) => ({
         stableKey: `dep-${index}`,
@@ -681,9 +704,9 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
         score: 0.68,
         confidence: 0.72,
         reasons: ["calls changed symbol"],
+        relatedChangedPaths: ["src/index.ts"],
       })),
       graphStats: {
-        changedFilesRequested: 1,
         changedFilesFound: 1,
         files: 32,
         nodes: 140,
@@ -700,9 +723,10 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
       })),
     }),
     activeRules: Array.from({ length: 12 }, (_, index) => ({
-      id: `rule-${index}`,
+      id: index,
       title: `Rule ${index}`,
-      rationale: `Keep this invariant ${index}`,
+      ruleText: `Keep this invariant ${index}`,
+      memberCount: 3,
       signalScore: 0.6,
     })),
     customInstructions: "Custom review instruction. ".repeat(100),
@@ -813,9 +837,7 @@ test("oversized custom instructions do not displace core review instructions", (
     checkpointEnabled: true,
     customInstructions: "User-specific instruction. ".repeat(600),
     suppressions: [{
-      pattern: "ignore generated files",
-      reason: "generated output is reviewed elsewhere",
-    }],
+      pattern: "ignore generated files",    }],
   }));
 
   expect(result.text).toContain("## Custom instructions");
@@ -1282,7 +1304,7 @@ test("buildReviewPrompt treats unknown candidate mode as unavailable", () => {
     baseContext({
       publishToolNames: ["mcp__github_inline_comment__create_inline_comment"],
       candidateFindingToolName: "record_candidate_finding",
-      candidateFindingMode: "surprise-mode",
+      candidateFindingMode: "shadow",
     }),
   );
 
@@ -2679,7 +2701,7 @@ describe("truthfulness drift guidance in buildReviewPrompt", () => {
 
 describe("epistemic section placement in buildReviewPrompt", () => {
   test("epistemic section appears BEFORE conventional commit context", () => {
-    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false } }));
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false, source: "title" as const } }));
     const epistemicIdx = prompt.indexOf("## Evidence and Verification");
     const conventionalIdx = prompt.indexOf("## Conventional Commit Context");
     expect(epistemicIdx).toBeGreaterThan(-1);
@@ -2841,22 +2863,22 @@ describe("changelog section footnote citations", () => {
 
 describe("conventional commit type guidance (diff-grounded)", () => {
   test("typeGuidance for feat does NOT contain 'breaking changes in public APIs'", () => {
-    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false } }));
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false, source: "title" as const } }));
     expect(prompt).not.toContain("breaking changes in public APIs");
   });
 
   test("typeGuidance values are diff-grounded (reference code changes, test files, imports)", () => {
-    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false } }));
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false, source: "title" as const } }));
     expect(prompt).toMatch(/code path|import|export|test/i);
   });
 
   test("typeGuidance for fix references root cause visible in diff", () => {
-    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "fix", isBreaking: false } }));
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "fix", isBreaking: false, source: "title" as const } }));
     expect(prompt).toMatch(/code change|diff|fixed code path/i);
   });
 
   test("BREAKING CHANGE text is diff-grounded", () => {
-    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: true } }));
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: true, source: "title" as const } }));
     expect(prompt).toMatch(/removed.*export|renamed.*export|changed.*signature|modified.*default/i);
   });
 });
