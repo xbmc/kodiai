@@ -3567,30 +3567,63 @@ test("fully configured instruction set fits within its budget so high-retention 
   // sections and then hard-slicing what is left. The slice cuts from the end, where the
   // high-retention sections live, so an over-budget instruction set silently drops the
   // verdict logic, the Impact/Preference severity template, and the delta re-review
-  // template while the prompt still claims to follow them. Nothing errors -- reviews just
-  // come back structurally wrong.
+  // template while the prompt still claims to follow them. Nothing errors.
   //
-  // Pin the LARGEST instruction set, not the bare one. The bare baseContext() path is
-  // ~23.3k and already covered by "default review instructions fit the budget and keep
-  // the silent-approval contract"; guarding only that leaves ~6k of slack, so a guidance
-  // edit could push every configured repo over the cliff with this suite still green.
+  // Pin the LARGEST instruction set. The bare path (~23.3k) is already covered by
+  // "default review instructions fit the budget and keep the silent-approval contract";
+  // guarding only that leaves ~17k of slack and cannot see the cliff.
+  //
+  // NOTE: the key is `matchedPathInstructions`. An earlier version of this test passed
+  // `pathInstructions`, which buildReviewPromptDetails ignores, so the "worst case" it
+  // pinned silently excluded the path-instructions section entirely.
+  const matchedPathInstructions = Array.from({ length: 8 }, (_, i) => ({
+    pattern: `src/area${i}/**`,
+    instructions: `Be strict about error handling and resource cleanup in area ${i}. `.repeat(3),
+    matchedFiles: [`src/area${i}/a.ts`, `src/area${i}/b.ts`],
+  }));
+  const activeRules = Array.from({ length: 12 }, (_, i) => ({
+    title: `Validate inputs in area ${i}`,
+    signalScore: 0.8,
+    ruleText: `Rule ${i}: always validate inputs before persisting them, and release handles on error paths.`,
+  }));
+
   const result = buildReviewPromptDetails(baseContext({
+    matchedPathInstructions,
+    activeRules,
+    // buildSeverityFilterInstructions returns "" for the default "minor", so without
+    // this the severity-filter section the comment names as at-risk contributes nothing.
+    severityMinLevel: "major",
     checkpointEnabled: true,
     isDraft: true,
     customInstructions: "Follow the house style guide carefully. ".repeat(20),
     focusAreas: ["security", "performance"],
-    suppressions: [{ pattern: "ignore generated files", reason: "reviewed elsewhere" }],
+    suppressions: [{ pattern: "ignore generated files" }],
     minConfidence: 60,
     maxComments: 5,
-    pathInstructions: [{ pattern: "src/**", instructions: "Be strict about error handling here." }],
+    repoDoctrine: {
+      status: "applied",
+      contractCount: 3,
+      matchedCount: 2,
+      omittedCount: 1,
+      reasonCodes: ["style-contract"],
+    },
   }));
   const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
 
   expect(instructions).toBeDefined();
-  // budgetStatus and `truncated` are both derived from this, so it alone carries the contract.
+  // budgetStatus and `truncated` both derive from this, so it alone carries the contract.
   expect(instructions!.trimmedChars).toBe(0);
+
+  // Growth detector, not just a cliff detector: trimmedChars only moves at the moment
+  // the tail is already being sliced. Recording the observed size means a large guidance
+  // addition trips here first, and keeps the measurement table in review-prompt.ts
+  // honest instead of letting it go stale silently.
+  expect(instructions!.charCount).toBeGreaterThan(28_000);
+  expect(instructions!.charCount).toBeLessThan(34_000);
 
   // The sections most at risk from an end-of-text slice must survive at this size.
   expect(result.text).toContain('A "blocker" is any finding with severity CRITICAL or MAJOR under ### Impact');
   expect(result.text).toContain("Finding Language Guidelines");
+  // Path instructions are the section the inert-key bug was hiding.
+  expect(result.text).toContain("Path-Specific Review Instructions");
 });

@@ -2186,12 +2186,16 @@ export function buildReviewPromptDetails(context: {
     knowledgeContext: 5_000,
     diffContext: 24_000,
     // Size this against the LARGEST instruction set, not the bare one.
-    // Measured on this tree with the cap lifted:
-    //   bare baseContext()                23,319
-    //   checkpoint + draft                24,772
-    //   checkpoint + draft + custom       25,597
-    //   full config (custom + path +      26,200
-    //     focus + suppressions + caps)
+    // Measured on this tree with the cap lifted (note: an earlier pass measured
+    // 26,200 as the "worst case" by passing `pathInstructions`, which the builder
+    // ignores -- it reads `matchedPathInstructions`. These use the real key):
+    //   bare                                        23,319
+    //   + matchedPathInstructions                   25,357
+    //   + severityMinLevel=major                    25,610
+    //   + activeRules                               27,547
+    //   + checkpoint/draft/custom/focus/doctrine    30,428
+    //   saturated (path instrs past their 3k cap,   37,693
+    //     40 active rules, long custom)
     // At 18k even the bare set overflowed by ~5.3k. renderReviewInstructionSections
     // responds to overflow by shedding low/medium-retention sections and then
     // HARD-SLICING the remainder -- and the slice cuts from the end, where the
@@ -2199,12 +2203,15 @@ export function buildReviewPromptDetails(context: {
     // severity-filter). Reviews silently lost the verdict logic, the
     // Impact/Preference severity template, and the delta re-review template
     // while still claiming to follow them; nothing errors in that mode.
-    // 32k leaves ~22% over the 26.2k worst case, so a repo that configures
-    // custom/path instructions is not one guidance edit away from the cliff.
-    // Enforced against the worst case by "fully configured instruction set fits
-    // within its budget" in review-prompt.test.ts -- pin the largest config
-    // there, never the bare one, or the guard cannot see the cliff.
-    instructions: 32_000,
+    // 40k clears even the saturated 37.7k case, so no realistic repo sheds and the
+    // hard slice never reaches the high-retention tail. Shedding beyond that point is
+    // the designed graceful degradation (low-retention sections go first); the slice
+    // is not, which is why the budget is sized above the ceiling rather than near it.
+    // Enforced by "fully configured instruction set fits within its budget" in
+    // review-prompt.test.ts -- pin the largest config there, never the bare one, and
+    // use `matchedPathInstructions`, or the guard silently measures a smaller prompt
+    // than any configured repo actually renders.
+    instructions: 40_000,
   } as const;
 
   const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {
