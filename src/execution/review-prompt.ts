@@ -2188,7 +2188,15 @@ export function buildReviewPromptDetails(context: {
     prContext: 2_400,
     smallDiffScope: 1_200,
     changeContext: 5_000,
-    sizeContext: 2_400,
+    // Measured worst case with every block present on a 200-file PR (the
+    // DEFAULT_MAX_CHANGED_FILES cap): disclosure 410 + retry compaction ~1,200 +
+    // delta-mode 400 + incremental 6,215 + large-PR triage 6,367 = ~14,600 chars.
+    // At the previous 2,400 the CONTRACTS ALONE (~2,510 without a single filename)
+    // did not fit, so some mandatory block was always dropped: the Bounded Review
+    // Disclosure, the "do NOT re-comment on prior findings" rule, or the triage
+    // tier assignment. Ordering contracts first (below) changes which one is lost,
+    // not whether one is -- only sizing fixes that. 20k leaves ~37% headroom.
+    sizeContext: 20_000,
     graphContext: 4_000,
     knowledgeContext: 5_000,
     diffContext: 24_000,

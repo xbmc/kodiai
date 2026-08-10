@@ -198,6 +198,23 @@ describe("truncateToBudgetAtLineBoundary", () => {
     expect(out.trimEnd().endsWith(":")).toBe(false);
   });
 
+  test("re-trims after closing a fence so no heading is left stranded", () => {
+    // The fence-balance pop can expose a new trailing heading. Running the trims once in
+    // sequence left "## Foo" as the last line with nothing under it.
+    const out = truncateToBudgetAtLineBoundary("intro line here\n\n## Foo\n\n```\ncode one\ncode two", 35);
+    expect(out.trimEnd().endsWith("## Foo")).toBe(false);
+    expect(out).toBe("intro line here");
+  });
+
+  test("respects fence delimiter length so nested fences are not miscounted", () => {
+    // buildModeInstructions wraps a ```yaml example in a ```` fence. Counting every
+    // ```-prefixed line as one toggle makes that nest read as balanced, so a cut inside
+    // the outer wrapper emitted an unterminated block and the model parsed the following
+    // instructions as literal code.
+    const out = truncateToBudgetAtLineBoundary("````\n```yaml\na: 1\n```\n````\ntail", 20);
+    expect(out).toBe("");
+  });
+
   test("returns empty for a zero or negative budget", () => {
     expect(truncateToBudgetAtLineBoundary("## Alpha\n\nbody", 0)).toBe("");
     expect(truncateToBudgetAtLineBoundary("## Alpha\n\nbody", -5)).toBe("");

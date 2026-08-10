@@ -675,7 +675,12 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
       createdAt: "2026-01-01T00:00:00.000Z",
       metadata: {},
     })),
-    contextWindow: "Assembled unified knowledge context. ".repeat(80),
+    // Sized to overflow the 5,000-char knowledgeContext budget on purpose, so the
+    // truncation metrics below are actually exercised. This test previously relied on
+    // review-size-context incidentally overflowing its 2,400-char budget; raising that
+    // budget to fit the mandatory contracts removed the overflow and left the assertion
+    // asserting nothing.
+    contextWindow: "Assembled unified knowledge context. ".repeat(400),
     graphBlastRadius: {
       changedFiles: ["src/index.ts"],
       seedSymbols: [{ stableKey: "seed-0", symbolName: "changedSymbol", qualifiedName: "app::changedSymbol", filePath: "src/index.ts" }],

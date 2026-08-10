@@ -43,18 +43,40 @@ export function truncateToBudgetAtLineBoundary(text: string, budgetChars: number
   // model in the same way a stranded heading is.
   const isLeadIn = (line: string) => /:\s*$/.test(line.trimEnd());
 
-  while (kept.length > 0) {
-    const last = kept[kept.length - 1]!;
-    if (last.trim() === "" || isHeading(last) || isLeadIn(last)) {
+  // Fence tracking has to respect delimiter LENGTH. Prompt sections wrap yaml examples in
+  // a 4-backtick fence containing a 3-backtick one; counting every ```-prefixed line as a
+  // toggle makes that nest read as balanced, so a cut inside the outer wrapper emits an
+  // unterminated block and the model parses following instructions as literal code.
+  const hasOpenFence = (candidate: readonly string[]): boolean => {
+    let open: string | null = null;
+    for (const line of candidate) {
+      const match = line.trimStart().match(/^(`{3,})/);
+      if (!match) continue;
+      const ticks = match[1]!;
+      if (open === null) open = ticks;
+      else if (ticks.length >= open.length) open = null;
+    }
+    return open !== null;
+  };
+
+  // Trim and fence-balance interact: popping to close a fence can expose a new trailing
+  // heading or lead-in, so both run until the result stops changing. Running them once,
+  // in sequence, left headings stranded after a fence pop.
+  for (;;) {
+    const before = kept.length;
+    while (kept.length > 0) {
+      const last = kept[kept.length - 1]!;
+      if (last.trim() === "" || isHeading(last) || isLeadIn(last)) {
+        kept.pop();
+        continue;
+      }
+      break;
+    }
+    if (kept.length > 0 && hasOpenFence(kept)) {
       kept.pop();
       continue;
     }
-    break;
-  }
-
-  // Never end inside an open code fence: the model would receive a malformed block.
-  while (kept.length > 0 && kept.filter((line) => line.trimStart().startsWith("```")).length % 2 === 1) {
-    kept.pop();
+    if (kept.length === before) break;
   }
 
   // Nothing survives cleanly. Emit nothing rather than a partial contract: an absent
