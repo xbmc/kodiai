@@ -113,7 +113,7 @@ const RAW_LEAK_MARKERS = [
   "rawDiff",
   "secretToken",
   "Unsafe raw fixture title",
-  "external API always fails",
+  "CVE-2021-1234",
   "persisted state before validating",
 ];
 
@@ -133,29 +133,18 @@ function representativeFindings(): ProcessedReviewFinding[] {
     {
       commentId: 2,
       filePath: "src/indirect.ts",
-      title: "The code mutates persisted state before validating. Some external API always fails in v1.2.3.",
+      // No hand-set claimClassification: production never sets that field on reducer
+      // input, so pre-populating it proved a path real reviews cannot reach. This title
+      // is verified to classify as "mixed" by classifyClaims itself -- the first
+      // sentence is diff-grounded (and long enough to clear MIN_WORDS_AFTER_REWRITE on
+      // its own), the CVE sentence is external-knowledge.
+      title: "The code mutates persisted state before validating the request payload and can save invalid user input to storage. This is vulnerable to CVE-2021-1234.",
       severity: "major",
       category: "correctness",
       startLine: 20,
       endLine: 21,
       suppressed: false,
       confidence: 90,
-      claimClassification: {
-        summaryLabel: "mixed",
-        claims: [
-          {
-            text: "The code mutates persisted state before validating the request payload and can save invalid user input to storage",
-            label: "diff-grounded",
-            confidence: 0.95,
-          },
-          {
-            text: "Some external API always fails in v1.2.3",
-            label: "external-knowledge",
-            evidence: "version-specific claim",
-            confidence: 0.9,
-          },
-        ],
-      },
     },
     {
       commentId: 3,
@@ -311,7 +300,7 @@ function sanitizeEvidenceText(value: string): string {
     .replace(/rawDiff/gi, "raw-diff-redacted")
     .replace(/secretToken/gi, "secret-token-redacted")
     .replace(/Unsafe raw fixture title/gi, "unsafe-title-redacted")
-    .replace(/external API always fails/gi, "external-claim-redacted")
+    .replace(/CVE-2021-1234/gi, "external-claim-redacted")
     .replace(/persisted state before validating/gi, "grounded-claim-redacted");
 }
 

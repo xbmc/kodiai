@@ -1304,7 +1304,12 @@ test("buildReviewPrompt treats unknown candidate mode as unavailable", () => {
     baseContext({
       publishToolNames: ["mcp__github_inline_comment__create_inline_comment"],
       candidateFindingToolName: "record_candidate_finding",
-      candidateFindingMode: "shadow",
+      // Deliberately OUTSIDE the union: this test exists to pin runtime behavior for
+      // a mode the type system forbids but a malformed config could still supply.
+      // #226 typed baseContext's overrides and "fixed" this to a valid "shadow",
+      // which silently inverted the test -- shadow renders the section this asserts
+      // is absent. The cast keeps the invalid value while satisfying the compiler.
+      candidateFindingMode: "surprise-mode" as unknown as undefined,
     }),
   );
 

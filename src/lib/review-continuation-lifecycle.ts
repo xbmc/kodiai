@@ -24,6 +24,18 @@ export type ContinuationCompactionPlanningSignals = {
   attemptOrdinal?: number;
   promptBudgetOutcomes: readonly PromptBudgetOutcome[];
   cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  /**
+   * Opt-in switch for retry-prompt compaction. Defaults to disabled.
+   *
+   * This path has never executed in production: hasCompleteBudgetSignals requires
+   * EVERY prompt budget outcome to be "included", and review-instructions was
+   * permanently "trimmed" under the old undersized budget, so every retry fell back
+   * to fuller-context. Raising that budget (same PR) would otherwise turn a
+   * never-exercised branch on as a silent side effect, on the retry-after-timeout
+   * path where thinner prior-attempt context is most costly. Enabling it must be a
+   * deliberate, separately-tested change.
+   */
+  compactionEnabled?: boolean;
 };
 
 export type PlanReviewContinuationParams = {
@@ -184,6 +196,7 @@ function buildContinuationCompactionObservation(params: {
   omittedScopeCount: number;
   promptBudgetOutcomes: readonly PromptBudgetOutcome[];
   cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  compactionEnabled: boolean;
 }): ContinuationCompactionObservation {
   const budgetSignalNames = deriveBudgetSignalNames(params.promptBudgetOutcomes);
   const cacheSignalNames = deriveCacheSignalNames(params.cacheTelemetryObservations);
@@ -265,6 +278,23 @@ function buildContinuationCompactionObservation(params: {
       reason: "unsafe-cache-state",
       fallbackState: "fuller-context",
       missingSignalNames: cacheSignalNames.length === 0 ? ["cache.safe-reuse"] : undefined,
+      budgetSignalNames,
+      cacheSignalNames,
+    };
+  }
+
+  // Placed last on purpose. Gating earlier would mask missing-checkpoint /
+  // malformed-prior-state / missing-budget-signal / cache diagnostics behind a
+  // single uninformative reason on every retry, hiding real regressions (e.g. a
+  // checkpoint-persistence fault) and making it impossible to confirm from
+  // telemetry that the budget fix in this PR actually completed the budget signals.
+  if (!params.compactionEnabled) {
+    return {
+      ...base,
+      status: "fallback",
+      reason: "compaction-disabled",
+      fallbackState: "fuller-context",
+      safetySignalNames: budgetSignalNames,
       budgetSignalNames,
       cacheSignalNames,
     };
@@ -380,6 +410,7 @@ export function planReviewContinuation(
         omittedScopeCount: filesAlreadyReviewed.length,
         promptBudgetOutcomes: params.continuationCompaction.promptBudgetOutcomes,
         cacheTelemetryObservations: params.continuationCompaction.cacheTelemetryObservations,
+        compactionEnabled: params.continuationCompaction.compactionEnabled === true,
       })
     : undefined;
 

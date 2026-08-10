@@ -15,9 +15,17 @@
       "reusedCheckpointCount": 2,
       "omittedScopeCount": 8,
       "remainingScopeCount": 3,
-      "safetySignalNames": ["budget-window", "cache-hit-safe", "checkpoint-integrity"],
-      "budgetSignalNames": ["remaining-token-budget"],
-      "cacheSignalNames": ["review-derived-prompt"]
+      "safetySignalNames": [
+        "budget-window",
+        "cache-hit-safe",
+        "checkpoint-integrity"
+      ],
+      "budgetSignalNames": [
+        "remaining-token-budget"
+      ],
+      "cacheSignalNames": [
+        "review-derived-prompt"
+      ]
     },
     {
       "caseId": "missing-budget-signal",
@@ -32,7 +40,9 @@
       "reusedCheckpointCount": 0,
       "omittedScopeCount": 0,
       "remainingScopeCount": 9,
-      "missingSignalNames": ["prompt-budget-outcomes"]
+      "missingSignalNames": [
+        "prompt-budget-outcomes"
+      ]
     },
     {
       "caseId": "degraded-cache-signal",
@@ -48,9 +58,16 @@
       "reusedCheckpointCount": 1,
       "omittedScopeCount": 4,
       "remainingScopeCount": 2,
-      "safetySignalNames": ["budget-window"],
-      "budgetSignalNames": ["remaining-token-budget"],
-      "cacheSignalNames": ["retrieval-query-embedding", "cache-ttl"]
+      "safetySignalNames": [
+        "budget-window"
+      ],
+      "budgetSignalNames": [
+        "remaining-token-budget"
+      ],
+      "cacheSignalNames": [
+        "retrieval-query-embedding",
+        "cache-ttl"
+      ]
     },
     {
       "caseId": "no-remaining-scope",
@@ -79,9 +96,15 @@
       "reusedCheckpointCount": 0,
       "omittedScopeCount": 0,
       "remainingScopeCount": 5,
-      "budgetSignalNames": ["prompt-budget.included"],
-      "cacheSignalNames": ["cache.safe-reuse"],
-      "missingSignalNames": ["checkpoint.summary"]
+      "budgetSignalNames": [
+        "prompt-budget.included"
+      ],
+      "cacheSignalNames": [
+        "cache.safe-reuse"
+      ],
+      "missingSignalNames": [
+        "checkpoint.summary"
+      ]
     },
     {
       "caseId": "unsafe-cache-state",
@@ -97,8 +120,13 @@
       "reusedCheckpointCount": 0,
       "omittedScopeCount": 1,
       "remainingScopeCount": 4,
-      "budgetSignalNames": ["prompt-budget.included"],
-      "cacheSignalNames": ["cache.disabled-cache", "cache.safe-reuse"]
+      "budgetSignalNames": [
+        "prompt-budget.included"
+      ],
+      "cacheSignalNames": [
+        "cache.disabled-cache",
+        "cache.safe-reuse"
+      ]
     },
     {
       "caseId": "malformed-prior-state",
@@ -114,18 +142,45 @@
       "reusedCheckpointCount": 0,
       "omittedScopeCount": 2,
       "remainingScopeCount": 6,
-      "budgetSignalNames": ["prompt-budget.included"],
-      "cacheSignalNames": ["cache.safe-reuse"],
-      "missingSignalNames": ["checkpoint.summary"]
+      "budgetSignalNames": [
+        "prompt-budget.included"
+      ],
+      "cacheSignalNames": [
+        "cache.safe-reuse"
+      ],
+      "missingSignalNames": [
+        "checkpoint.summary"
+      ]
+    },
+    {
+      "caseId": "compaction-disabled-optout",
+      "deliveryId": "delivery-continuation-008",
+      "repo": "octo/example",
+      "attemptId": "attempt-014",
+      "priorAttemptId": "attempt-013",
+      "attemptOrdinal": 2,
+      "status": "fallback",
+      "reason": "compaction-disabled",
+      "fallbackState": "fuller-context",
+      "includedDeltaCount": 3,
+      "reusedCheckpointCount": 0,
+      "omittedScopeCount": 5,
+      "remainingScopeCount": 3,
+      "budgetSignalNames": [
+        "remaining-token-budget"
+      ],
+      "cacheSignalNames": [
+        "review-derived-prompt"
+      ]
     }
   ],
   "continuationCompactionSummary": {
-    "observationCount": 7,
-    "deliveryCount": 7,
-    "attemptCount": 7,
+    "observationCount": 8,
+    "deliveryCount": 8,
+    "attemptCount": 8,
     "statusCounts": {
       "compacted": 1,
-      "fallback": 4,
+      "fallback": 5,
       "degraded": 1,
       "bypass": 1
     },
@@ -136,20 +191,37 @@
       "degraded-cache-signal": 1,
       "unsafe-cache-state": 1,
       "malformed-prior-state": 1,
-      "no-remaining-scope": 1
+      "no-remaining-scope": 1,
+      "compaction-disabled": 1
     },
     "fallbackStateCounts": {
       "none": 2,
-      "fuller-context": 4,
+      "fuller-context": 5,
       "partial-context": 1
     },
-    "includedDeltaCount": 29,
+    "includedDeltaCount": 32,
     "reusedCheckpointCount": 3,
-    "omittedScopeCount": 15,
-    "remainingScopeCount": 29,
-    "safetySignalNames": ["budget-window", "cache-hit-safe", "checkpoint-integrity"],
-    "budgetSignalNames": ["prompt-budget.included", "remaining-token-budget"],
-    "cacheSignalNames": ["cache-ttl", "cache.disabled-cache", "cache.safe-reuse", "retrieval-query-embedding", "review-derived-prompt"],
-    "missingSignalNames": ["checkpoint.summary", "prompt-budget-outcomes"]
+    "omittedScopeCount": 20,
+    "remainingScopeCount": 32,
+    "safetySignalNames": [
+      "budget-window",
+      "cache-hit-safe",
+      "checkpoint-integrity"
+    ],
+    "budgetSignalNames": [
+      "prompt-budget.included",
+      "remaining-token-budget"
+    ],
+    "cacheSignalNames": [
+      "cache-ttl",
+      "cache.disabled-cache",
+      "cache.safe-reuse",
+      "retrieval-query-embedding",
+      "review-derived-prompt"
+    ],
+    "missingSignalNames": [
+      "checkpoint.summary",
+      "prompt-budget-outcomes"
+    ]
   }
 }

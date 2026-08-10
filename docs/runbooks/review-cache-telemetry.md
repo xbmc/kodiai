@@ -158,7 +158,7 @@ The verifier reads only `scripts/fixtures/m073-s04-continuation-compaction.json`
 | `caseId`, `deliveryId`, `repo` | Bounded replay and correlation identifiers. | Use generic replay identifiers in fixtures unless live IDs are explicitly approved. |
 | `attemptId`, `priorAttemptId`, `attemptOrdinal` | Retry attempt identity and parent attempt linkage. | Compacted rows require a prior attempt; duplicates fail verification. |
 | `status` | One of `compacted`, `fallback`, `degraded`, or `bypass`. | Only `compacted` can reuse safe checkpoint deltas. |
-| `reason` | Bounded decision reason such as `safe-delta-reuse`, `missing-checkpoint`, `missing-budget-signal`, `degraded-cache-signal`, `unsafe-cache-state`, `malformed-prior-state`, or `no-remaining-scope`. | Unknown reasons fail closed. |
+| `reason` | Bounded decision reason such as `safe-delta-reuse`, `missing-checkpoint`, `missing-budget-signal`, `degraded-cache-signal`, `unsafe-cache-state`, `malformed-prior-state`, `no-remaining-scope`, or `compaction-disabled`. | Unknown reasons fail closed. |
 | `fallbackState` | One of `none`, `fuller-context`, or `partial-context`. | `fallback` rows use `fuller-context`; `degraded` rows use `partial-context`. |
 | `includedDeltaCount`, `reusedCheckpointCount`, `omittedScopeCount`, `remainingScopeCount` | Deterministic bounded counts for what retry context includes, reuses, omits, and still needs. | Counts only; never include the underlying text or file contents. |
 | `safetySignalNames`, `budgetSignalNames`, `cacheSignalNames`, `missingSignalNames` | Names of bounded signals used to decide compaction or fallback. | Names only; no raw values, fingerprints, cache keys, prompts, diffs, or chunks. |
@@ -186,6 +186,7 @@ Start with `failedCheckIds`, then inspect bounded `issues`. Do not paste raw rev
 4. For `unsafe-cache-state`, keep `reusedCheckpointCount` at zero and use fuller context until S03 cache telemetry shows bounded safe reuse.
 5. For `malformed-prior-state`, fix or discard the malformed checkpoint metadata; do not replay checkpoint summaries that failed shape/redaction checks.
 6. For `no-remaining-scope`, `bypass` is acceptable because there is no retry scope to compact.
+7. For `compaction-disabled`, no action is required: retry-prompt compaction is opt-in and off by default, so this is the expected reason on every retry until it is deliberately enabled. It is not a cache, checkpoint, or budget fault. Do not escalate it, and do not treat a 100% `continuation-fallback` rate as an incident while this reason is what the rows carry. Note that because the opt-out is evaluated last, a genuine fault still reports its own reason instead of this one -- so seeing `missing-checkpoint` or `unsafe-cache-state` alongside it is meaningful and should be triaged normally.
 
 ### S04 redaction boundary
 
