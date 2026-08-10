@@ -722,6 +722,28 @@ export function buildLargePRTriageSection(params: {
     "",
   ];
 
+  // Tier CONTRACTS first, then the file lists. This block is emitted last within
+  // review-size-context and its lists are uncapped (config allows 200 per tier), so
+  // truncation eats it from the end. With the exclusion notice and the abbreviated-tier
+  // rule sitting behind the lists, they were the first casualties -- the model lost the
+  // "CRITICAL and MAJOR only" restriction and was never told files had been excluded,
+  // while the surviving Bounded Review Disclosure still ordered it to say the review was
+  // bounded. Losing the tail of a file list is an acceptable degradation; losing the rule
+  // that governs how those files are reviewed is not.
+  if (abbreviatedFiles.length > 0) {
+    lines.push(
+      "For files under Abbreviated Review below, post inline comments only for CRITICAL and MAJOR issues; record MEDIUM/MINOR findings you notice via the candidate finding tool instead.",
+      "",
+    );
+  }
+
+  if (mentionOnlyCount > 0) {
+    lines.push(
+      `${mentionOnlyCount} additional file(s) were not included for review (lower risk score).`,
+      "",
+    );
+  }
+
   if (fullReviewFiles.length > 0) {
     lines.push(
       `### Full Review (${fullReviewFiles.length} files)`,
@@ -735,21 +757,11 @@ export function buildLargePRTriageSection(params: {
   }
 
   if (abbreviatedFiles.length > 0) {
-    lines.push(
-      `### Abbreviated Review (${abbreviatedFiles.length} files)`,
-      "",
-      "For these files, post inline comments only for CRITICAL and MAJOR issues; record MEDIUM/MINOR findings you notice via the candidate finding tool instead.",
-    );
+    lines.push(`### Abbreviated Review (${abbreviatedFiles.length} files)`, "");
     for (const file of abbreviatedFiles) {
       lines.push(`- ${file}`);
     }
     lines.push("");
-  }
-
-  if (mentionOnlyCount > 0) {
-    lines.push(
-      `${mentionOnlyCount} additional file(s) were not included for review (lower risk score).`,
-    );
   }
 
   return lines.join("\n").trimEnd();
@@ -1812,7 +1824,12 @@ function buildRetryPromptCompactionSection(input: RetryPromptCompactionInput): s
   if (observation.status !== "compacted") {
     lines.push(
       "",
-      "Compaction is not safe for this retry. Use fuller context supplied by the caller; do not infer omitted prior-attempt details from this compact section.",
+      observation.reason === "compaction-disabled"
+        // A policy opt-out, not a safety judgement. The generic wording below asserts a
+        // safety evaluation that never happened, which contradicts the runbook and is
+        // exactly the misleading-diagnostic class this prompt tells reviewers to flag.
+        ? "Retry compaction is disabled, so no prior-attempt context was compacted. Use fuller context supplied by the caller; do not infer omitted prior-attempt details from this section."
+        : "Compaction is not safe for this retry. Use fuller context supplied by the caller; do not infer omitted prior-attempt details from this compact section.",
     );
     if (observation.missingSignalNames && observation.missingSignalNames.length > 0) {
       lines.push(`Missing safety signals: ${observation.missingSignalNames.join(", ")}`);
@@ -2342,9 +2359,15 @@ export function buildReviewPromptDetails(context: {
   if (diffAnalysisSection) {
     changeContextLines.push(diffAnalysisSection, "");
   }
-  changeContextLines.push("Changed files:");
-  for (const file of changedFilesCapped) {
-    changeContextLines.push(`- ${file}`);
+  // Only emit the lead-in when there is a list to follow it. With the list last (see
+  // above) an empty changedFiles would otherwise end the section on "Changed files:"
+  // with nothing under it -- and the primitive's lead-in trim cannot help, because it
+  // only runs when the section is OVER budget and this case is far under it.
+  if (changedFilesCapped.length > 0) {
+    changeContextLines.push("Changed files:");
+    for (const file of changedFilesCapped) {
+      changeContextLines.push(`- ${file}`);
+    }
   }
   pushSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext, {
     truncation: "lines",

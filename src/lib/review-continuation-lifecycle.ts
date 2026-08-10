@@ -271,7 +271,10 @@ function buildContinuationCompactionObservation(params: {
       status: "fallback",
       reason: "compaction-disabled",
       fallbackState: "fuller-context",
-      safetySignalNames: budgetSignalNames,
+      // No safetySignalNames: nothing was evaluated. Setting it made this the only
+      // fallback branch carrying the field, and buildRetryPromptCompactionSection
+      // renders it to the model as "Available safety signals", asserting a safety gate
+      // ran and failed when the feature is simply switched off.
       budgetSignalNames,
       cacheSignalNames,
     };
