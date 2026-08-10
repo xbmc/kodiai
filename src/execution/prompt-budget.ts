@@ -1,38 +1,51 @@
 import { estimatePromptTokens } from "./prompt-section-metrics.ts";
 
 /**
- * Fit `text` into `budgetChars` by dropping whole trailing blocks instead of cutting
- * mid-content.
+ * Fit `text` into `budgetChars` by keeping whole lines, then dropping a trailing heading
+ * that would be left with nothing under it.
  *
- * A raw `slice(0, budgetChars)` truncates wherever the character count runs out, which
- * for prose sections means a heading can survive with its body amputated, or a sentence
- * can stop mid-clause. The model has no way to detect either: it reads the surviving
- * prefix as a complete instruction. That failure mode is what silently removed the
- * verdict logic and the severity template from published reviews.
+ * A raw `slice(0, budgetChars)` cuts wherever the character count runs out, so a section
+ * can end mid-word or leave a heading with its body amputated. The model cannot detect
+ * either: it reads the surviving prefix as a complete instruction. That is how the
+ * verdict logic and severity template went missing from published reviews.
  *
- * Blocks are blank-line separated. Under pressure the caller gets fewer complete
- * instructions rather than partial ones.
+ * Line boundaries rather than blank-line blocks, deliberately. Prompt sections are
+ * authored as `["## Heading", "", "body"]`, so a blank-line block IS the bare heading --
+ * dropping whole blocks both strands headings and discards most of the budget when one
+ * block is large (a 140-file triage list collapsed to 27 of 2,400 chars, zero filenames).
+ * Keeping lines preserves partial lists, which is what an over-budget file list should
+ * degrade to, and the trailing-heading trim supplies the invariant that actually matters.
  *
- * Degenerate case: if the FIRST block alone exceeds the budget there is nothing to drop,
+ * Degenerate case: if the first line alone exceeds the budget there is nothing to keep,
  * so it is char-sliced. Callers in that state have a sizing problem this cannot fix.
  *
  * Which sections use this is declared by PromptSectionBudgetPolicy.truncation.
  */
-export function truncateToBudgetByBlocks(text: string, budgetChars: number): string {
+export function truncateToBudgetAtLineBoundary(text: string, budgetChars: number): string {
   if (budgetChars <= 0) return "";
   if (text.length <= budgetChars) return text;
 
   const kept: string[] = [];
   let length = 0;
-  for (const block of text.split("\n\n")) {
-    const added = kept.length === 0 ? block.length : block.length + 2;
+  for (const line of text.split("\n")) {
+    const added = kept.length === 0 ? line.length : line.length + 1;
     if (length + added > budgetChars) break;
-    kept.push(block);
+    kept.push(line);
     length += added;
   }
 
+  // Never end on a heading with nothing under it, or on trailing blank lines.
+  while (kept.length > 0) {
+    const last = kept[kept.length - 1]!.trim();
+    if (last === "" || /^#{1,6}\s/.test(last)) {
+      kept.pop();
+      continue;
+    }
+    break;
+  }
+
   if (kept.length === 0) return text.slice(0, budgetChars);
-  return kept.join("\n\n");
+  return kept.join("\n");
 }
 
 export type PromptBudgetStatus = "included" | "trimmed" | "bypassed";
@@ -58,12 +71,12 @@ export type PromptSectionBudgetPolicy = {
    * (diff, knowledge, graph): they are not authored as prose blocks, and a longer
    * truncated diff beats a shorter complete one.
    *
-   * "blocks" drops whole trailing blank-line-separated blocks. Correct for sections
-   * that carry contracts the model must follow, where a char cut can leave a heading
-   * without its body and the model cannot tell the difference. That failure silently
-   * removed the verdict logic and severity template from published reviews.
+   * "lines" keeps whole lines and drops a trailing heading left without a body. Correct
+   * for sections carrying contracts the model must follow, where a char cut can end
+   * mid-word or strand a heading and the model cannot tell the difference. That failure
+   * silently removed the verdict logic and severity template from published reviews.
    */
-  truncation?: "chars" | "blocks";
+  truncation?: "chars" | "lines";
 };
 
 export type PromptBudgetOutcome = {
@@ -101,8 +114,8 @@ export function evaluatePromptBudget(options: EvaluatePromptBudgetOptions): Prom
       throw new Error(`Missing prompt budget for section '${section.sectionName}'`);
     }
 
-    const includedText = budget.truncation === "blocks"
-      ? truncateToBudgetByBlocks(section.text, budget.budgetChars)
+    const includedText = budget.truncation === "lines"
+      ? truncateToBudgetAtLineBoundary(section.text, budget.budgetChars)
       : section.text.slice(0, budget.budgetChars);
     const includedChars = includedText.length;
     const trimmedChars = section.text.length - includedChars;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { evaluatePromptBudget, truncateToBudgetByBlocks } from "./prompt-budget.ts";
+import { evaluatePromptBudget, truncateToBudgetAtLineBoundary } from "./prompt-budget.ts";
 
 const baseSections = [
   { sectionName: "overview", text: "alpha" },
@@ -136,40 +136,49 @@ describe("evaluatePromptBudget", () => {
   });
 });
 
-describe("truncateToBudgetByBlocks", () => {
-  const blocks = (...parts: string[]) => parts.join("\n\n");
+describe("truncateToBudgetAtLineBoundary", () => {
+  // Prompt sections are authored as ["## Heading", "", "body"], so a heading is followed
+  // by a BLANK LINE. Fixtures must use that shape: an earlier version of this suite used
+  // "## Heading\nbody" (single newline), which no real section produces, and it hid a
+  // truncation bug that stranded headings in production prompts.
+  const section = (heading: string, ...body: string[]) => [heading, "", ...body].join("\n");
 
-  test("keeps whole blocks and never strands a heading without its body", () => {
-    const text = blocks("## Alpha\nbody one", "## Beta\nbody two", "## Gamma\nbody three");
-    const out = truncateToBudgetByBlocks(text, 40);
+  test("drops a trailing heading rather than leaving it without a body", () => {
+    const text = [section("## Alpha", "alpha body line"), section("## Beta", "beta body line")].join("\n\n");
+    // Budget that lands just past the "## Beta" heading but before its body.
+    const budget = text.indexOf("beta body line") - 1;
+    const out = truncateToBudgetAtLineBoundary(text, budget);
 
-    expect(out.length).toBeLessThanOrEqual(40);
-    // Whatever survives is complete: no heading appears without the body under it.
-    for (const heading of ["## Alpha", "## Beta", "## Gamma"]) {
-      if (out.includes(heading)) {
-        expect(out.split(heading)[1]!.trim().length).toBeGreaterThan(0);
-      }
-    }
-    // Stops exactly on a block boundary: the first two blocks fit (35 chars), the third
-    // would not (55). A raw slice at the same budget lands mid-block instead.
-    expect(out).toBe(blocks("## Alpha\nbody one", "## Beta\nbody two"));
-    expect(text.startsWith(out)).toBe(true);
-    expect(text.slice(0, 40)).not.toBe(out);
+    expect(out).not.toContain("## Beta");
+    expect(out).toContain("alpha body line");
+    expect(out.endsWith("alpha body line")).toBe(true);
+  });
+
+  test("keeps partial lists instead of discarding the whole block", () => {
+    // An over-budget file list should degrade to fewer files, not to nothing. Dropping
+    // whole blank-line blocks collapsed a 140-file triage list to its bare heading.
+    const files = Array.from({ length: 140 }, (_, index) => `- src/some/deep/path/file${index}.ts`);
+    const text = section("### Full Review (140 files)", "Review these files thoroughly:", ...files);
+    const out = truncateToBudgetAtLineBoundary(text, 2_400);
+
+    expect(out.length).toBeLessThanOrEqual(2_400);
+    expect(out.length).toBeGreaterThan(2_000);
+    expect((out.match(/- src\//g) ?? []).length).toBeGreaterThan(50);
+    // Complete lines only: never ends mid-path.
+    expect(out.endsWith(".ts")).toBe(true);
   });
 
   test("returns the text unchanged when it already fits", () => {
-    const text = blocks("## Alpha\nbody", "## Beta\nbody");
-    expect(truncateToBudgetByBlocks(text, 10_000)).toBe(text);
+    const text = section("## Alpha", "body");
+    expect(truncateToBudgetAtLineBoundary(text, 10_000)).toBe(text);
   });
 
-  test("falls back to a char slice when the first block alone exceeds the budget", () => {
-    // Nothing to drop, so the cut is unavoidable. Callers in this state have a sizing
-    // problem the block strategy cannot paper over.
-    expect(truncateToBudgetByBlocks("## OnlyOneVeryLongBlock body", 10)).toBe("## OnlyOne");
+  test("falls back to a char slice when the first line alone exceeds the budget", () => {
+    expect(truncateToBudgetAtLineBoundary("## OneVeryLongHeadingLine", 10)).toBe("## OneVeryL".slice(0, 10));
   });
 
   test("returns empty for a zero or negative budget", () => {
-    expect(truncateToBudgetByBlocks("## Alpha\nbody", 0)).toBe("");
-    expect(truncateToBudgetByBlocks("## Alpha\nbody", -5)).toBe("");
+    expect(truncateToBudgetAtLineBoundary("## Alpha\n\nbody", 0)).toBe("");
+    expect(truncateToBudgetAtLineBoundary("## Alpha\n\nbody", -5)).toBe("");
   });
 });

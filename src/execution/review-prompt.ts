@@ -2176,7 +2176,7 @@ export function buildReviewPromptDetails(context: {
     text: string;
     budgetChars: number;
     /** Defaults to "chars"; see PromptSectionBudgetPolicy.truncation. */
-    truncation?: "chars" | "blocks";
+    truncation?: "chars" | "lines";
     budgetOutcome?: PromptBudgetOutcome;
   }> = [];
   const scaleNotes: string[] = [];
@@ -2217,7 +2217,7 @@ export function buildReviewPromptDetails(context: {
     sectionName: string,
     lines: string[],
     budgetChars?: number,
-    options?: { truncation?: "chars" | "blocks"; budgetOutcome?: PromptBudgetOutcome },
+    options?: { truncation?: "chars" | "lines"; budgetOutcome?: PromptBudgetOutcome },
   ) => {
     const text = lines.join("\n").trim();
     if (!text) return;
@@ -2391,7 +2391,7 @@ export function buildReviewPromptDetails(context: {
     sizeContextLines.push(buildRetryPromptCompactionSection(context.retryPromptCompaction));
   }
   pushSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext, {
-    truncation: "blocks",
+    truncation: "lines",
   });
 
   const graphContextLines: string[] = [];
