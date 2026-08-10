@@ -752,11 +752,11 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
     expect(section.budgetReason).toBe("section-over-budget");
     expect(section.trimmedChars).toBeGreaterThan(0);
     expect(section.trimmedTokens).toBeGreaterThan(0);
-    // Not `=== budgetChars`: sections declaring truncation "blocks" stop at a block
-    // boundary, so they land at or below the budget rather than exactly on it. Exact
-    // equality only holds for char-sliced evidence sections, and asserting it here would
-    // re-forbid the whole-block degradation that keeps contracts from being cut in half.
+    // Not `=== budgetChars`: line-truncated sections stop at a line boundary. The floor
+    // matters as much as the ceiling -- a policy that kept only a section's first heading
+    // would pass an upper bound alone.
     expect(section.includedChars).toBeLessThanOrEqual(section.budgetChars!);
+    expect(section.includedChars).toBeGreaterThan(section.budgetChars! * 0.8);
   }
   expect(result.text).toContain("You are reviewing pull request #42 in acme/app.");
   expect(result.text).toContain("## Knowledge Context");
@@ -802,7 +802,13 @@ test("buildReviewPromptDetails reports deterministic budget outcomes without raw
     expect(section?.budgetReason).toBe("section-over-budget");
     expect(section?.trimmedChars).toBeGreaterThan(0);
     expect(section?.trimmedTokens).toBe(Math.ceil((section?.trimmedChars ?? 0) / 4));
-    expect(section?.includedChars).toBe(section?.budgetChars);
+    // Not `=== budgetChars`: sections declaring truncation "lines" stop at a line
+    // boundary, so they land at or just under the budget. The FLOOR is the load-bearing
+    // half -- without it, a truncation policy that returned only a section's first
+    // heading (measured once at 27 of 2,400 chars) would satisfy this loop and ship
+    // green. Line-boundary slack is one line; anything below 80% is a collapse.
+    expect(section?.includedChars).toBeLessThanOrEqual(section!.budgetChars!);
+    expect(section?.includedChars).toBeGreaterThan(section!.budgetChars! * 0.8);
     expect(section?.includedTokens).toBe(Math.ceil((section?.includedChars ?? 0) / 4));
   }
 

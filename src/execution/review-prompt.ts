@@ -2318,19 +2318,29 @@ export function buildReviewPromptDetails(context: {
     pushSection("review-small-diff-scope", buildSmallDiffScopeSection().split("\n"), REVIEW_SECTION_BUDGETS.smallDiffScope);
   }
 
-  const changeContextLines = ["Changed files:"];
-  for (const file of changedFilesCapped) {
-    changeContextLines.push(`- ${file}`);
-  }
+  // Order matters: truncation cuts from the END, so the analysis contract goes FIRST and
+  // the changed-file list -- which is bounded only by DEFAULT_MAX_CHANGED_FILES (200) --
+  // goes last. At ~55-60 chars per path a ~90-file PR already exceeds this 5,000-char
+  // budget; with the list first, the whole `## Change Context` analysis block (including
+  // the concurrency deep-dive contract) was dropped and the last path was cut mid-name,
+  // so the model could burn Read/Grep calls on a path that does not exist. Degrading to
+  // a shorter file list is the right loss; degrading to no contract is not.
   const diffAnalysisSection = context.diffAnalysis
     ? buildDiffAnalysisSection(context.diffAnalysis, {
         suppressLargePRMessage: Boolean(context.largePRContext),
       })
     : "";
+  const changeContextLines: string[] = [];
   if (diffAnalysisSection) {
-    changeContextLines.push("", diffAnalysisSection);
+    changeContextLines.push(diffAnalysisSection, "");
   }
-  pushSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext);
+  changeContextLines.push("Changed files:");
+  for (const file of changedFilesCapped) {
+    changeContextLines.push(`- ${file}`);
+  }
+  pushSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext, {
+    truncation: "lines",
+  });
 
   const diffContentSanitized = sanitizeContent((context.diffContent ?? "").trim());
   if (diffContentSanitized.length > 0) {
@@ -2351,30 +2361,19 @@ export function buildReviewPromptDetails(context: {
     );
   }
 
+  // Order matters: truncation cuts from the END, so contracts the model MUST honour go
+  // first and the unbounded per-file lists go last. buildLargePRTriageSection emits one
+  // line per file with no cap, so a 140-file PR produces ~4.2k chars and alone exhausts
+  // this 2,400-char budget -- with the list first, the Bounded Review Disclosure (which
+  // requires an exact sentence in the summary) was dropped entirely and the review
+  // published as though it covered the whole PR. Degrading to a shorter triage list is
+  // the right loss.
   const sizeContextLines: string[] = [];
-  if (context.deltaMode?.enabled) {
-    sizeContextLines.push(
-      buildDeltaModeAnalysisSection({
-        totalFiles: context.deltaMode.totalFiles,
-        totalLinesChanged: context.deltaMode.totalLinesChanged,
-        useFallback: context.deltaMode.useFallback ?? false,
-      }),
-    );
-  }
-  if (context.largePRContext) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(buildLargePRTriageSection(context.largePRContext));
-  }
-  if (context.incrementalContext) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(buildIncrementalReviewSection(context.incrementalContext));
-  }
   if (
     mode !== "enhanced" &&
     context.reviewBoundedness?.disclosureRequired &&
     context.reviewBoundedness.disclosureSentence
   ) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
     sizeContextLines.push(
       "## Bounded Review Disclosure",
       "",
@@ -2389,6 +2388,24 @@ export function buildReviewPromptDetails(context: {
   if (context.retryPromptCompaction) {
     if (sizeContextLines.length > 0) sizeContextLines.push("");
     sizeContextLines.push(buildRetryPromptCompactionSection(context.retryPromptCompaction));
+  }
+  if (context.deltaMode?.enabled) {
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
+    sizeContextLines.push(
+      buildDeltaModeAnalysisSection({
+        totalFiles: context.deltaMode.totalFiles,
+        totalLinesChanged: context.deltaMode.totalLinesChanged,
+        useFallback: context.deltaMode.useFallback ?? false,
+      }),
+    );
+  }
+  if (context.incrementalContext) {
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
+    sizeContextLines.push(buildIncrementalReviewSection(context.incrementalContext));
+  }
+  if (context.largePRContext) {
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
+    sizeContextLines.push(buildLargePRTriageSection(context.largePRContext));
   }
   pushSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext, {
     truncation: "lines",
