@@ -113,7 +113,7 @@ const RAW_LEAK_MARKERS = [
   "rawDiff",
   "secretToken",
   "Unsafe raw fixture title",
-  "external API always fails",
+  "CVE-2021-1234",
   "persisted state before validating",
 ];
 
@@ -133,29 +133,18 @@ function representativeFindings(): ProcessedReviewFinding[] {
     {
       commentId: 2,
       filePath: "src/indirect.ts",
-      title: "The code mutates persisted state before validating. Some external API always fails in v1.2.3.",
+      // No hand-set claimClassification: production never sets that field on reducer
+      // input, so pre-populating it proved a path real reviews cannot reach. This title
+      // is verified to classify as "mixed" by classifyClaims itself -- the first
+      // sentence is diff-grounded (and long enough to clear MIN_WORDS_AFTER_REWRITE on
+      // its own), the CVE sentence is external-knowledge.
+      title: "The code mutates persisted state before validating the request payload and can save invalid user input to storage. This is vulnerable to CVE-2021-1234.",
       severity: "major",
       category: "correctness",
       startLine: 20,
       endLine: 21,
       suppressed: false,
       confidence: 90,
-      claimClassification: {
-        summaryLabel: "mixed",
-        claims: [
-          {
-            text: "The code mutates persisted state before validating the request payload and can save invalid user input to storage",
-            label: "diff-grounded",
-            confidence: 0.95,
-          },
-          {
-            text: "Some external API always fails in v1.2.3",
-            label: "external-knowledge",
-            evidence: "version-specific claim",
-            confidence: 0.9,
-          },
-        ],
-      },
     },
     {
       commentId: 3,
@@ -311,7 +300,7 @@ function sanitizeEvidenceText(value: string): string {
     .replace(/rawDiff/gi, "raw-diff-redacted")
     .replace(/secretToken/gi, "secret-token-redacted")
     .replace(/Unsafe raw fixture title/gi, "unsafe-title-redacted")
-    .replace(/external API always fails/gi, "external-claim-redacted")
+    .replace(/CVE-2021-1234/gi, "external-claim-redacted")
     .replace(/persisted state before validating/gi, "grounded-claim-redacted");
 }
 
@@ -401,7 +390,14 @@ function buildBehaviorParityCheck(evidence: M067S03ReducerEvidence): M067S03Chec
   };
 }
 
-function buildDetailsCompactCheck(evidence: M067S03ReducerEvidence): M067S03Check {
+/**
+ * `rawDetailsLine` is the PRE-sanitization text and is deliberately a parameter rather
+ * than a field on the evidence: `evidence.details_line` is already sanitized, and every
+ * RAW_LEAK_MARKERS entry has a matching replacement in sanitizeEvidenceText, so checking
+ * the stored value could never match and this gate passed green on any leak. The report
+ * is JSON.stringify'd to stdout, so the raw text must never be stored on the evidence.
+ */
+function buildDetailsCompactCheck(evidence: M067S03ReducerEvidence, rawDetailsLine: string): M067S03Check {
   const line = evidence.details_line;
   const failures = [
     ...(evidence.visible_review_reducer_line_count !== 0 ? [`visible Review Details emitted ${evidence.visible_review_reducer_line_count} reducer lines (must stay out of the user-visible comment)`] : []),
@@ -412,7 +408,7 @@ function buildDetailsCompactCheck(evidence: M067S03ReducerEvidence): M067S03Chec
     ...(!line.includes("suppressed=1") ? ["details line omitted suppressed=1"] : []),
     ...(!line.includes("rewritten=1") ? ["details line omitted rewritten=1"] : []),
     ...(!line.includes("graphValidated=1") ? ["details line omitted graphValidated=1"] : []),
-    ...(hasRawLeak(line) ? ["details line leaked raw finding, diff, prompt, or secret-like data"] : []),
+    ...(hasRawLeak(rawDetailsLine) ? ["details line leaked raw finding, diff, prompt, or secret-like data"] : []),
   ];
 
   return {
@@ -425,7 +421,8 @@ function buildDetailsCompactCheck(evidence: M067S03ReducerEvidence): M067S03Chec
   };
 }
 
-function buildDegradedFailOpenCheck(evidence: M067S03DegradedEvidence): M067S03Check {
+/** `rawEvidenceText` is pre-sanitization; see buildDetailsCompactCheck for why. */
+function buildDegradedFailOpenCheck(evidence: M067S03DegradedEvidence, rawEvidenceText: string): M067S03Check {
   const line = evidence.details_line;
   const failures = [
     ...(evidence.status !== "degraded" ? [`degraded status was ${evidence.status}`] : []),
@@ -433,7 +430,7 @@ function buildDegradedFailOpenCheck(evidence: M067S03DegradedEvidence): M067S03C
     ...(evidence.filtered_inline_count !== 0 ? [`filtered inline count was ${evidence.filtered_inline_count}`] : []),
     ...(!line.includes("Review reducer: degraded") ? ["degraded line missing degraded status"] : []),
     ...(!line.includes("kept=4") ? ["degraded line missing kept=4"] : []),
-    ...(hasRawLeak(line) || hasRawLeak(evidence.reason ?? "") ? ["degraded evidence leaked raw reason data"] : []),
+    ...(hasRawLeak(rawEvidenceText) ? ["degraded evidence leaked raw reason data"] : []),
   ];
 
   return {
@@ -563,8 +560,11 @@ export async function evaluateM067S03ReviewReducerContract(params?: EvaluateM067
   const checks = [
     buildCountsCheck(reducerEvidence),
     buildBehaviorParityCheck(reducerEvidence),
-    buildDetailsCompactCheck(reducerEvidence),
-    buildDegradedFailOpenCheck(degradedEvidence),
+    buildDetailsCompactCheck(reducerEvidence, reducerResult.detailsSummary.text),
+    buildDegradedFailOpenCheck(
+      degradedEvidence,
+      `${degradedResult.detailsSummary.text} ${degradedResult.reason ?? ""}`,
+    ),
     buildGraphValidationConsumedCheck(graphValidation),
   ];
   const outcome = deriveOutcome(checks);

@@ -1,5 +1,6 @@
 import type { PromptBudgetOutcome } from "./prompt-budget.ts";
 import { estimatePromptTokens } from "./prompt-section-metrics.ts";
+import { truncateToBudgetAtLineBoundary } from "./prompt-budget.ts";
 
 export type ReviewInstructionSectionId = (typeof REVIEW_INSTRUCTION_SECTIONS)[number]["id"];
 type ReviewInstructionRetention = (typeof REVIEW_INSTRUCTION_SECTIONS)[number]["retention"];
@@ -118,8 +119,19 @@ export function renderReviewInstructionSections(
     currentText = renderNormalizedReviewInstructionSections([...included]);
   }
 
+  // Everything above sheds whole sections; this is the last resort when even the
+  // high-retention set is over budget. Prefer a clean line boundary so a surviving
+  // section is never a heading with its body cut off.
+  //
+  // If nothing survives cleanly the primitive returns "" -- correct for an optional
+  // block, wrong here. These are the required review contracts, so a partial contract
+  // beats none: an empty instruction set means the model reviews with no rules at all,
+  // whereas a truncated one still carries the opening rules. Fall back to a char slice
+  // in that case only, and keep the trade explicit at the call site rather than hiding
+  // it in the primitive, because the right answer differs per caller.
   if (currentText.length > budgetChars) {
-    currentText = currentText.slice(0, budgetChars);
+    const lineBounded = truncateToBudgetAtLineBoundary(currentText, budgetChars);
+    currentText = lineBounded.length > 0 ? lineBounded : currentText.slice(0, budgetChars);
   }
 
   const trimmedChars = originalText.length - currentText.length;

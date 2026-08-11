@@ -24,7 +24,11 @@ import {
 } from "../contributor/experience-contract.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
-import { evaluatePromptBudget, type PromptBudgetOutcome } from "./prompt-budget.ts";
+import {
+  evaluatePromptBudget,
+  type PromptBudgetOutcome,
+  type PromptSectionBudgetPolicy,
+} from "./prompt-budget.ts";
 import {
   renderReviewInstructionSections,
   type ReviewInstructionSection,
@@ -712,7 +716,7 @@ export function buildLargePRTriageSection(params: {
   abbreviatedFiles: string[];
   mentionOnlyCount: number;
   totalFiles: number;
-}): string {
+}, maxChars = Number.POSITIVE_INFINITY): string {
   const { fullReviewFiles, abbreviatedFiles, mentionOnlyCount, totalFiles } = params;
 
   const lines: string[] = [
@@ -722,34 +726,63 @@ export function buildLargePRTriageSection(params: {
     "",
   ];
 
-  if (fullReviewFiles.length > 0) {
-    lines.push(
-      `### Full Review (${fullReviewFiles.length} files)`,
-      "",
-      "Review these files thoroughly for all issue categories:",
-    );
-    for (const file of fullReviewFiles) {
-      lines.push(`- ${file}`);
-    }
-    lines.push("");
-  }
-
-  if (abbreviatedFiles.length > 0) {
-    lines.push(
-      `### Abbreviated Review (${abbreviatedFiles.length} files)`,
-      "",
-      "For these files, post inline comments only for CRITICAL and MAJOR issues; record MEDIUM/MINOR findings you notice via the candidate finding tool instead.",
-    );
-    for (const file of abbreviatedFiles) {
-      lines.push(`- ${file}`);
-    }
-    lines.push("");
-  }
-
+  // This block is emitted last within review-size-context and its lists may reach the
+  // schema cap of 200 files per tier. It therefore owns its budget below instead of
+  // relying on the outer line truncator, which cannot know that the abbreviated rule
+  // and its file list must survive or disappear together.
   if (mentionOnlyCount > 0) {
     lines.push(
       `${mentionOnlyCount} additional file(s) were not included for review (lower risk score).`,
+      "",
     );
+  }
+
+  const fits = (candidate: string[]) => candidate.join("\n").trimEnd().length <= maxChars;
+  const abbreviatedRule = "For files under Abbreviated Review below, post inline comments only for CRITICAL and MAJOR issues; record MEDIUM/MINOR findings you notice via the candidate finding tool instead.";
+  const abbreviatedMinimum = abbreviatedFiles.length > 0
+    ? [
+        "### Abbreviated Review (only files listed below)",
+        "",
+        abbreviatedRule,
+        "",
+        `- ${abbreviatedFiles[0]}`,
+        "",
+      ]
+    : [];
+  // A retained full tier ends with a blank line, producing a two-character separator
+  // before abbreviated review. Reserve it with the atomic abbreviated unit so a
+  // boundary budget cannot admit full review and then drop its abbreviated contract.
+  const maxBeforeAbbreviated = maxChars
+    - abbreviatedMinimum.join("\n").trimEnd().length
+    - (fullReviewFiles.length > 0 && abbreviatedMinimum.length > 0 ? 2 : 0);
+
+  const fullPrefix = [
+      "### Full Review (only files listed below)",
+      "",
+      "Review these files thoroughly for all issue categories:",
+  ];
+  if (
+    fullReviewFiles.length > 0
+    && fits([...lines, ...fullPrefix, `- ${fullReviewFiles[0]}`])
+    && [...lines, ...fullPrefix, `- ${fullReviewFiles[0]}`].join("\n").trimEnd().length <= maxBeforeAbbreviated
+  ) {
+    lines.push(...fullPrefix);
+    for (const file of fullReviewFiles) {
+      if (lines.join("\n").trimEnd().length + `\n- ${file}`.length > maxBeforeAbbreviated) break;
+      lines.push(`- ${file}`);
+    }
+    lines.push("");
+  }
+
+  // The abbreviated rule is meaningful only with the list it governs. Reserve room for
+  // its heading, rule, and one file before filling the full-review list; then either
+  // emit that unit intact or omit it entirely.
+  if (abbreviatedMinimum.length > 0 && fits([...lines, ...abbreviatedMinimum])) {
+    lines.push(...abbreviatedMinimum);
+    for (const file of abbreviatedFiles.slice(1)) {
+      if (!fits([...lines, `- ${file}`])) break;
+      lines.push(`- ${file}`);
+    }
   }
 
   return lines.join("\n").trimEnd();
@@ -1812,7 +1845,12 @@ function buildRetryPromptCompactionSection(input: RetryPromptCompactionInput): s
   if (observation.status !== "compacted") {
     lines.push(
       "",
-      "Compaction is not safe for this retry. Use fuller context supplied by the caller; do not infer omitted prior-attempt details from this compact section.",
+      observation.reason === "compaction-disabled"
+        // A policy opt-out, not a safety judgement. The generic wording below asserts a
+        // safety evaluation that never happened, which contradicts the runbook and is
+        // exactly the misleading-diagnostic class this prompt tells reviewers to flag.
+        ? "Retry compaction is disabled, so no prior-attempt context was compacted. Use fuller context supplied by the caller; do not infer omitted prior-attempt details from this section."
+        : "Compaction is not safe for this retry. Use fuller context supplied by the caller; do not infer omitted prior-attempt details from this compact section.",
     );
     if (observation.missingSignalNames && observation.missingSignalNames.length > 0) {
       lines.push(`Missing safety signals: ${observation.missingSignalNames.join(", ")}`);
@@ -2171,7 +2209,14 @@ export function buildReviewPromptDetails(context: {
     useFallback?: boolean;
   };
 }): PromptBuildResult {
-  const sectionBlocks: Array<{ sectionName: string; text: string; budgetChars: number; budgetOutcome?: PromptBudgetOutcome }> = [];
+  const sectionBlocks: Array<{
+    sectionName: string;
+    text: string;
+    budgetChars: number;
+    /** Defaults to "chars"; see PromptSectionBudgetPolicy.truncation. */
+    truncation?: PromptSectionBudgetPolicy["truncation"];
+    budgetOutcome?: PromptBudgetOutcome;
+  }> = [];
   const scaleNotes: string[] = [];
   const mode = context.mode ?? "standard";
   // Budgets sized for claude-sonnet-5 (input tokens are cheap and heavily
@@ -2181,18 +2226,56 @@ export function buildReviewPromptDetails(context: {
     prContext: 2_400,
     smallDiffScope: 1_200,
     changeContext: 5_000,
-    sizeContext: 2_400,
+    // Measured worst case with every block present on a 200-file PR (the
+    // DEFAULT_MAX_CHANGED_FILES cap): disclosure 410 + retry compaction ~1,200 +
+    // delta-mode 400 + incremental 6,215 + large-PR triage 6,367 = ~14,600 chars.
+    // At the previous 2,400 the CONTRACTS ALONE (~2,510 without a single filename)
+    // did not fit, so some mandatory block was always dropped: the Bounded Review
+    // Disclosure, the "do NOT re-comment on prior findings" rule, or the triage
+    // tier assignment. Ordering contracts first (below) changes which one is lost,
+    // not whether one is -- only sizing fixes that. 20k leaves ~37% headroom.
+    sizeContext: 20_000,
     graphContext: 4_000,
     knowledgeContext: 5_000,
     diffContext: 24_000,
-    instructions: 18_000,
+    // Overflow here is silent and destructive: renderReviewInstructionSections sheds
+    // low/medium-retention sections and then HARD-SLICES the remainder from the END,
+    // which is exactly where the high-retention sections live (summary-standard-mode,
+    // after-review-*, severity-filter). An over-budget instruction set therefore drops
+    // the verdict logic and the Impact/Preference severity template while the prompt
+    // still tells the model to follow them. Nothing errors; reviews come back
+    // structurally wrong. At the previous 18k, even a BARE review overflowed by ~5.3k.
+    //
+    // So this is sized ABOVE the ceiling rather than near it: measured maximum with
+    // real production caps is 41,832 chars, and 64k leaves ~50% headroom. Three prior
+    // attempts at a tight fit all failed because the fixture understated reality.
+    // The per-configuration breakdown lives with the assertion that keeps it honest:
+    // see "fully configured instruction set fits within its budget" in
+    // review-prompt.test.ts.
+    //
+    // Cost: the theoretical maximum prompt (sum of REVIEW_SECTION_BUDGETS) goes from
+    // 62k to 108k chars (~27k tokens). Intended -- input is cheap and prompt-cached,
+    // while a truncated instruction set costs findings on every review.
+    instructions: 64_000,
   } as const;
 
-  const pushSection = (sectionName: string, lines: string[], budgetChars?: number, budgetOutcome?: PromptBudgetOutcome) => {
+  const pushSection = (
+    sectionName: string,
+    lines: string[],
+    budgetChars?: number,
+    options?: { truncation?: PromptSectionBudgetPolicy["truncation"]; budgetOutcome?: PromptBudgetOutcome },
+  ) => {
     const text = lines.join("\n").trim();
     if (!text) return;
-    sectionBlocks.push({ sectionName, text, budgetChars: budgetChars ?? text.length, budgetOutcome });
+    sectionBlocks.push({
+      sectionName,
+      text,
+      budgetChars: budgetChars ?? text.length,
+      ...(options?.truncation ? { truncation: options.truncation } : {}),
+      ...(options?.budgetOutcome ? { budgetOutcome: options.budgetOutcome } : {}),
+    });
   };
+
 
   const buildBudgetedPromptResult = (): PromptBuildResult => {
     const evaluation = evaluatePromptBudget({
@@ -2202,6 +2285,7 @@ export function buildReviewPromptDetails(context: {
       })),
       budgets: sectionBlocks.map((section) => ({
         sectionName: section.sectionName,
+        ...(section.truncation ? { truncation: section.truncation } : {}),
         budgetChars: section.budgetChars,
       })),
       separator: "\n\n",
@@ -2280,19 +2364,35 @@ export function buildReviewPromptDetails(context: {
     pushSection("review-small-diff-scope", buildSmallDiffScopeSection().split("\n"), REVIEW_SECTION_BUDGETS.smallDiffScope);
   }
 
-  const changeContextLines = ["Changed files:"];
-  for (const file of changedFilesCapped) {
-    changeContextLines.push(`- ${file}`);
-  }
+  // Order matters: truncation cuts from the END, so the analysis contract goes FIRST and
+  // the changed-file list -- which is bounded only by DEFAULT_MAX_CHANGED_FILES (200) --
+  // goes last. At ~55-60 chars per path a ~90-file PR already exceeds this 5,000-char
+  // budget; with the list first, the whole `## Change Context` analysis block (including
+  // the concurrency deep-dive contract) was dropped and the last path was cut mid-name,
+  // so the model could burn Read/Grep calls on a path that does not exist. Degrading to
+  // a shorter file list is the right loss; degrading to no contract is not.
   const diffAnalysisSection = context.diffAnalysis
     ? buildDiffAnalysisSection(context.diffAnalysis, {
         suppressLargePRMessage: Boolean(context.largePRContext),
       })
     : "";
+  const changeContextLines: string[] = [];
   if (diffAnalysisSection) {
-    changeContextLines.push("", diffAnalysisSection);
+    changeContextLines.push(diffAnalysisSection, "");
   }
-  pushSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext);
+  // Only emit the lead-in when there is a list to follow it. With the list last (see
+  // above) an empty changedFiles would otherwise end the section on "Changed files:"
+  // with nothing under it -- and the primitive's lead-in trim cannot help, because it
+  // only runs when the section is OVER budget and this case is far under it.
+  if (changedFilesCapped.length > 0) {
+    changeContextLines.push("Changed files:");
+    for (const file of changedFilesCapped) {
+      changeContextLines.push(`- ${file}`);
+    }
+  }
+  pushSection("review-change-context", changeContextLines, REVIEW_SECTION_BUDGETS.changeContext, {
+    truncation: "lines",
+  });
 
   const diffContentSanitized = sanitizeContent((context.diffContent ?? "").trim());
   if (diffContentSanitized.length > 0) {
@@ -2313,31 +2413,25 @@ export function buildReviewPromptDetails(context: {
     );
   }
 
+  // Order matters: truncation cuts from the END, so contracts the model MUST honour go
+  // first and the unbounded per-file lists go last. buildLargePRTriageSection emits one
+  // line per file with no cap, so a 140-file PR produces ~4.2k chars and alone exhausts
+  // this 2,400-char budget -- with the list first, the Bounded Review Disclosure (which
+  // requires an exact sentence in the summary) was dropped entirely and the review
+  // published as though it covered the whole PR. Degrading to a shorter triage list is
+  // the right loss.
   const sizeContextLines: string[] = [];
-  if (context.deltaMode?.enabled) {
-    sizeContextLines.push(
-      buildDeltaModeAnalysisSection({
-        totalFiles: context.deltaMode.totalFiles,
-        totalLinesChanged: context.deltaMode.totalLinesChanged,
-        useFallback: context.deltaMode.useFallback ?? false,
-      }),
-    );
-  }
-  if (context.largePRContext) {
+  const appendSizeContextSection = (section: string) => {
+    if (!section) return;
     if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(buildLargePRTriageSection(context.largePRContext));
-  }
-  if (context.incrementalContext) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(buildIncrementalReviewSection(context.incrementalContext));
-  }
+    sizeContextLines.push(section);
+  };
   if (
     mode !== "enhanced" &&
     context.reviewBoundedness?.disclosureRequired &&
     context.reviewBoundedness.disclosureSentence
   ) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(
+    appendSizeContextSection([
       "## Bounded Review Disclosure",
       "",
       "Because this review was bounded, include this exact sentence once in `## What Changed`:",
@@ -2346,13 +2440,34 @@ export function buildReviewPromptDetails(context: {
       "Do not repeat it elsewhere in the summary.",
       "Do not claim the review found all relevant issues when bounded files or severity filters excluded scope.",
       "If the review is bounded, frame the verdict as the result for the inspected scope.",
-    );
+    ].join("\n"));
   }
   if (context.retryPromptCompaction) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(buildRetryPromptCompactionSection(context.retryPromptCompaction));
+    appendSizeContextSection(buildRetryPromptCompactionSection(context.retryPromptCompaction));
   }
-  pushSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext);
+  if (context.deltaMode?.enabled) {
+    appendSizeContextSection(
+      buildDeltaModeAnalysisSection({
+        totalFiles: context.deltaMode.totalFiles,
+        totalLinesChanged: context.deltaMode.totalLinesChanged,
+        useFallback: context.deltaMode.useFallback ?? false,
+      }),
+    );
+  }
+  if (context.incrementalContext) {
+    appendSizeContextSection(buildIncrementalReviewSection(context.incrementalContext));
+  }
+  if (context.largePRContext) {
+    const prefixLength = sizeContextLines.join("\n").trim().length;
+    const separatorLength = prefixLength > 0 ? 2 : 0;
+    appendSizeContextSection(buildLargePRTriageSection(
+      context.largePRContext,
+      REVIEW_SECTION_BUDGETS.sizeContext - prefixLength - separatorLength,
+    ));
+  }
+  pushSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext, {
+    truncation: "lines",
+  });
 
   const graphContextLines: string[] = [];
   if (context.graphBlastRadius) {
@@ -2400,6 +2515,8 @@ export function buildReviewPromptDetails(context: {
           "Git history is not available in this remote workspace; use the changed-file list, embedded diff context, and Read/Grep/Glob instead of git commands.",
         ]),
     "Read the diff carefully before posting any comments.",
+    "Treat the supplied diff and changed-file list as the starting scope; investigate callers or dependencies only when the visible change creates a concrete question.",
+    "Do not spend tool calls on broad repository scans or re-discovering context already supplied in this prompt.",
     "",
     "## First-pass changed-file triage",
     "",
@@ -2760,7 +2877,9 @@ export function buildReviewPromptDetails(context: {
     "review-instructions",
     instructionRender.lines,
     REVIEW_SECTION_BUDGETS.instructions,
-    instructionRender.budgetOutcome,
+    // renderReviewInstructionSections already sheds whole sections and block-truncates
+    // as a last resort, so it supplies its own budget outcome and needs no re-truncation.
+    { budgetOutcome: instructionRender.budgetOutcome },
   );
 
   return buildBudgetedPromptResult();

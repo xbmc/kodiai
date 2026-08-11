@@ -506,14 +506,17 @@ const riskWeightsSchema = z
     fileExtension: 0.1,
   });
 
+export const MAX_LARGE_PR_FULL_REVIEW_FILES = 200;
+export const MAX_LARGE_PR_ABBREVIATED_FILES = 200;
+
 export const largePRSchema = z
   .object({
     /** Number of files that triggers large PR triage. Default 50. */
     fileThreshold: z.number().min(10).max(1000).default(50),
     /** Number of files to review at full depth. Default 30. */
-    fullReviewCount: z.number().min(5).max(200).default(30),
+    fullReviewCount: z.number().min(5).max(MAX_LARGE_PR_FULL_REVIEW_FILES).default(30),
     /** Number of files to review at abbreviated depth (critical/major only). Default 20. */
-    abbreviatedCount: z.number().min(0).max(200).default(20),
+    abbreviatedCount: z.number().min(0).max(MAX_LARGE_PR_ABBREVIATED_FILES).default(20),
     /** Risk scoring weights. Normalized at runtime so they need not sum to exactly 1.0. */
     riskWeights: riskWeightsSchema,
   })
@@ -680,4 +683,3 @@ export const repoConfigSchema = z.object({
   triage: triageSchema,
   guardrails: guardrailsSchema,
 });
-

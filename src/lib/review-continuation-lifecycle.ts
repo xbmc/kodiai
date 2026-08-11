@@ -24,6 +24,18 @@ export type ContinuationCompactionPlanningSignals = {
   attemptOrdinal?: number;
   promptBudgetOutcomes: readonly PromptBudgetOutcome[];
   cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  /**
+   * Opt-in switch for retry-prompt compaction. Defaults to disabled.
+   *
+   * This path has never executed in production: hasCompleteBudgetSignals requires
+   * EVERY prompt budget outcome to be "included", and review-instructions was
+   * permanently "trimmed" under the old undersized budget, so every retry fell back
+   * to fuller-context. Raising that budget (same PR) would otherwise turn a
+   * never-exercised branch on as a silent side effect, on the retry-after-timeout
+   * path where thinner prior-attempt context is most costly. Enabling it must be a
+   * deliberate, separately-tested change.
+   */
+  compactionEnabled?: boolean;
 };
 
 export type PlanReviewContinuationParams = {
@@ -184,6 +196,7 @@ function buildContinuationCompactionObservation(params: {
   omittedScopeCount: number;
   promptBudgetOutcomes: readonly PromptBudgetOutcome[];
   cacheTelemetryObservations: readonly ReviewCacheTelemetryObservation[];
+  compactionEnabled: boolean;
 }): ContinuationCompactionObservation {
   const budgetSignalNames = deriveBudgetSignalNames(params.promptBudgetOutcomes);
   const cacheSignalNames = deriveCacheSignalNames(params.cacheTelemetryObservations);
@@ -239,6 +252,29 @@ function buildContinuationCompactionObservation(params: {
       reason: "missing-budget-signal",
       fallbackState: "fuller-context",
       missingSignalNames: ["prompt-budget.included"],
+      budgetSignalNames,
+      cacheSignalNames,
+    };
+  }
+
+  // Position matters. AFTER the checkpoint/prior-state/budget checks, because those are
+  // real fault diagnostics that must keep reaching telemetry. BEFORE the cache checks,
+  // because those only feed a compaction decision that is not being made -- and running
+  // them with compaction off is wrong: the degraded branch reports
+  // reusedCheckpointCount: 1 for a reuse that never happened, and the unsafe branch
+  // fires on an EMPTY cache-telemetry array. Both became reachable once the instruction
+  // budget stopped trimming, so either would put a phantom fault in front of on-call on
+  // every ordinary retry.
+  if (!params.compactionEnabled) {
+    return {
+      ...base,
+      status: "fallback",
+      reason: "compaction-disabled",
+      fallbackState: "fuller-context",
+      // No safetySignalNames: nothing was evaluated. Setting it made this the only
+      // fallback branch carrying the field, and buildRetryPromptCompactionSection
+      // renders it to the model as "Available safety signals", asserting a safety gate
+      // ran and failed when the feature is simply switched off.
       budgetSignalNames,
       cacheSignalNames,
     };
@@ -380,6 +416,7 @@ export function planReviewContinuation(
         omittedScopeCount: filesAlreadyReviewed.length,
         promptBudgetOutcomes: params.continuationCompaction.promptBudgetOutcomes,
         cacheTelemetryObservations: params.continuationCompaction.cacheTelemetryObservations,
+        compactionEnabled: params.continuationCompaction.compactionEnabled === true,
       })
     : undefined;
 

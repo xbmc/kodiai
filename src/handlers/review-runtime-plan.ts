@@ -166,6 +166,8 @@ export function buildReviewRuntimePlan(params: {
     timeoutRiskLevel: timeoutEstimate.riskLevel,
     baseMaxTurns: params.baseMaxTurns,
     changedFiles: params.changedFiles,
+    changedFileCount: params.changedFiles.length,
+    linesChanged: params.linesChanged,
   });
 
   params.logger.info(

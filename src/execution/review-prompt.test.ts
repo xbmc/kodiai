@@ -4,6 +4,7 @@ import type { ReviewCommentMatch } from "../knowledge/review-comment-retrieval.t
 import {
   SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
   buildAuthorExperienceSection,
+  buildLargePRTriageSection,
   buildConfidenceInstructions,
   buildDeltaReviewContext,
   buildDeltaVerdictLogicSection,
@@ -33,6 +34,10 @@ import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
+import {
+  MAX_LARGE_PR_ABBREVIATED_FILES,
+  MAX_LARGE_PR_FULL_REVIEW_FILES,
+} from "./config-schema.ts";
 
 describe("small-diff review prompt scope", () => {
   test("adds small-diff review guidance when requested", () => {
@@ -675,7 +680,12 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
       createdAt: "2026-01-01T00:00:00.000Z",
       metadata: {},
     })),
-    contextWindow: "Assembled unified knowledge context. ".repeat(80),
+    // Sized to overflow the 5,000-char knowledgeContext budget on purpose, so the
+    // truncation metrics below are actually exercised. This test previously relied on
+    // review-size-context incidentally overflowing its 2,400-char budget; raising that
+    // budget to fit the mandatory contracts removed the overflow and left the assertion
+    // asserting nothing.
+    contextWindow: "Assembled unified knowledge context. ".repeat(400),
     graphBlastRadius: {
       changedFiles: ["src/index.ts"],
       seedSymbols: [{ stableKey: "seed-0", symbolName: "changedSymbol", qualifiedName: "app::changedSymbol", filePath: "src/index.ts" }],
@@ -752,7 +762,11 @@ test("buildReviewPromptDetails returns budgeted named prompt-section metrics", (
     expect(section.budgetReason).toBe("section-over-budget");
     expect(section.trimmedChars).toBeGreaterThan(0);
     expect(section.trimmedTokens).toBeGreaterThan(0);
-    expect(section.includedChars).toBe(section.budgetChars);
+    // Not `=== budgetChars`: line-truncated sections stop at a line boundary. The floor
+    // matters as much as the ceiling -- a policy that kept only a section's first heading
+    // would pass an upper bound alone.
+    expect(section.includedChars).toBeLessThanOrEqual(section.budgetChars!);
+    expect(section.includedChars).toBeGreaterThan(section.budgetChars! * 0.8);
   }
   expect(result.text).toContain("You are reviewing pull request #42 in acme/app.");
   expect(result.text).toContain("## Knowledge Context");
@@ -798,7 +812,13 @@ test("buildReviewPromptDetails reports deterministic budget outcomes without raw
     expect(section?.budgetReason).toBe("section-over-budget");
     expect(section?.trimmedChars).toBeGreaterThan(0);
     expect(section?.trimmedTokens).toBe(Math.ceil((section?.trimmedChars ?? 0) / 4));
-    expect(section?.includedChars).toBe(section?.budgetChars);
+    // Not `=== budgetChars`: sections declaring truncation "lines" stop at a line
+    // boundary, so they land at or just under the budget. The FLOOR is the load-bearing
+    // half -- without it, a truncation policy that returned only a section's first
+    // heading (measured once at 27 of 2,400 chars) would satisfy this loop and ship
+    // green. Line-boundary slack is one line; anything below 80% is a collapse.
+    expect(section?.includedChars).toBeLessThanOrEqual(section!.budgetChars!);
+    expect(section?.includedChars).toBeGreaterThan(section!.budgetChars! * 0.8);
     expect(section?.includedTokens).toBe(Math.ceil((section?.includedChars ?? 0) / 4));
   }
 
@@ -819,6 +839,12 @@ test("default config includes severity classification guidelines", () => {
   expect(prompt).toContain("MAJOR");
   expect(prompt).toContain("MEDIUM");
   expect(prompt).toContain("MINOR");
+});
+
+test("review instructions prioritize supplied diff context before broad exploration", () => {
+  const prompt = buildReviewPrompt(baseContext());
+
+  expect(prompt).toContain("Treat the supplied diff and changed-file list as the starting scope");
 });
 
 test("default review instructions fit the budget and keep the silent-approval contract", () => {
@@ -1304,7 +1330,12 @@ test("buildReviewPrompt treats unknown candidate mode as unavailable", () => {
     baseContext({
       publishToolNames: ["mcp__github_inline_comment__create_inline_comment"],
       candidateFindingToolName: "record_candidate_finding",
-      candidateFindingMode: "shadow",
+      // Deliberately OUTSIDE the union: this test exists to pin runtime behavior for
+      // a mode the type system forbids but a malformed config could still supply.
+      // #226 typed baseContext's overrides and "fixed" this to a valid "shadow",
+      // which silently inverted the test -- shadow renders the section this asserts
+      // is absent. The cast keeps the invalid value while satisfying the compiler.
+      candidateFindingMode: "surprise-mode" as unknown as undefined,
     }),
   );
 
@@ -3582,4 +3613,110 @@ describe("buildKnowledgeContextLines", () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines[0]).not.toBe("");
   });
+});
+
+test("fully configured instruction set fits within its budget so high-retention sections are never sliced off", () => {
+  // renderReviewInstructionSections handles overflow by shedding low/medium-retention
+  // sections and then hard-slicing what is left. The slice cuts from the END, where the
+  // high-retention sections live, so an over-budget instruction set silently drops the
+  // verdict logic and the Impact/Preference severity template while the prompt still
+  // claims to follow them. Nothing errors -- reviews just come back structurally wrong.
+  //
+  // Pin the LARGEST instruction set. The bare path is already covered by "default review
+  // instructions fit the budget and keep the silent-approval contract", and at ~23.3k it
+  // sits ~40k under the budget, so it can never detect the cliff.
+  //
+  // Measured sizes with real production caps (ABSOLUTE_ACTIVE_RULES_CAP=20 x
+  // MAX_RULE_TEXT_CHARS=500, path instructions saturating their 3k cap):
+  //   bare                                       23,319
+  //   + 20 active rules at the 500-char cap      34,766
+  //   + 12 matched path instructions             37,662
+  //   + severity/checkpoint/draft/custom/focus   41,311
+  //   + non-English output language              41,832  <- the ceiling the budget is sized against
+  // The charCount band below is what keeps those numbers honest; if it drifts,
+  // re-measure before re-tuning REVIEW_SECTION_BUDGETS.instructions.
+  const activeRules = Array.from({ length: 20 }, (_, index) => ({
+    id: index,
+    title: `Rule ${index} about validation and cleanup`,
+    ruleText: "X".repeat(500),
+    signalScore: 0.9,
+    memberCount: 5,
+  }));
+  const matchedPathInstructions = Array.from({ length: 12 }, (_, index) => ({
+    pattern: `src/area${index}/**`,
+    instructions: "Y".repeat(400),
+    matchedFiles: [`src/area${index}/a.ts`, `src/area${index}/b.ts`],
+  }));
+
+  const result = buildReviewPromptDetails(baseContext({
+    activeRules,
+    matchedPathInstructions,
+    // buildSeverityFilterInstructions returns "" for the default "minor", so without
+    // this the severity-filter section contributes nothing to the measurement.
+    severityMinLevel: "major",
+    checkpointEnabled: true,
+    isDraft: true,
+    customInstructions: "Follow the house style guide carefully. ".repeat(80),
+    focusAreas: ["security", "performance", "concurrency"],
+    suppressions: [{ pattern: "ignore generated files" }, { pattern: "skip vendored" }],
+    minConfidence: 60,
+    maxComments: 5,
+    outputLanguage: "German",
+  }));
+  const instructions = result.sections.find((section) => section.sectionName === "review-instructions");
+
+  expect(instructions).toBeDefined();
+  // budgetStatus and `truncated` both derive from this, so it alone carries the contract.
+  expect(instructions!.trimmedChars).toBe(0);
+  expect(instructions!.charCount).toBeGreaterThan(38_000);
+  expect(instructions!.charCount).toBeLessThan(46_000);
+
+  // The sections most at risk from an end-of-text slice must survive at this size.
+  expect(result.text).toContain('A "blocker" is any finding with severity CRITICAL or MAJOR under ### Impact');
+  expect(result.text).toContain("Finding Language Guidelines");
+  expect(result.text).toContain("Path-Specific Review Instructions");
+});
+
+test("retains the abbreviated-review rule only with a file list at schema-max tier sizes", () => {
+  const path = (tier: string, index: number) => `src/${tier}/${String(index).padStart(3, "0")}-${"x".repeat(480)}.ts`;
+  const prompt = buildReviewPrompt(baseContext({
+    largePRContext: {
+      fullReviewFiles: Array.from({ length: MAX_LARGE_PR_FULL_REVIEW_FILES }, (_, index) => path("full", index)),
+      abbreviatedFiles: Array.from({ length: MAX_LARGE_PR_ABBREVIATED_FILES }, (_, index) => path("abbreviated", index)),
+      mentionOnlyCount: 0,
+      totalFiles: 400,
+    },
+  }));
+
+  const abbreviatedRule = "For files under Abbreviated Review below, post inline comments only for CRITICAL and MAJOR issues";
+  expect(prompt).toContain(abbreviatedRule);
+  expect(prompt).toContain("### Abbreviated Review");
+  expect(prompt).toContain(`- ${path("abbreviated", 0)}`);
+});
+
+test("large-PR triage scopes a truncated tier to its retained file list", () => {
+  const path = (name: string) => `src/${name.repeat(60)}.ts`;
+  const triage = buildLargePRTriageSection({
+    fullReviewFiles: [path("a"), path("b"), path("c")],
+    abbreviatedFiles: [],
+    mentionOnlyCount: 0,
+    totalFiles: 3,
+  }, 310);
+
+  expect(triage).toContain("### Full Review (only files listed below)");
+  expect(triage).not.toContain("### Full Review (3 files)");
+  expect(triage).toContain(`- ${path("a")}`);
+  expect(triage).not.toContain(`- ${path("c")}`);
+});
+
+test("large-PR triage reserves the inter-tier separator for abbreviated review", () => {
+  const triage = buildLargePRTriageSection({
+    fullReviewFiles: ["src/full.ts"],
+    abbreviatedFiles: ["src/abbrev.ts"],
+    mentionOnlyCount: 0,
+    totalFiles: 2,
+  }, 468);
+
+  expect(triage).toContain("### Abbreviated Review");
+  expect(triage).toContain("- src/abbrev.ts");
 });

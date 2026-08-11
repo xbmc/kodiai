@@ -169,6 +169,8 @@ export async function buildMentionExplicitReviewPrompt(params: {
     timeoutRiskLevel: timeoutEstimate.riskLevel,
     baseMaxTurns: config.maxTurns,
     changedFiles: promptChangedFiles,
+    changedFileCount: promptChangedFiles.length,
+    linesChanged: explicitReviewLinesChanged,
   });
 
   logger.info(

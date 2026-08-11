@@ -36,18 +36,21 @@ describe("verify-m073-s04", () => {
       statusCode: "m073_s04_ok",
       failedCheckIds: [],
       observedTotals: {
-        observationCount: 7,
-        deliveryCount: 7,
-        attemptCount: 7,
+        // 8th row is the compaction-disabled opt-out: the shape production emits on
+        // EVERY retry while compaction is off. Without a row exercising it, the
+        // decision-safety rules for that observation were never validated.
+        observationCount: 8,
+        deliveryCount: 8,
+        attemptCount: 8,
         statusCounts: {
           compacted: 1,
-          fallback: 4,
+          fallback: 5,
           degraded: 1,
           bypass: 1,
         },
-        includedDeltaCount: 29,
+        includedDeltaCount: 32,
         reusedCheckpointCount: 3,
-        omittedScopeCount: 15,
+        omittedScopeCount: 20,
       },
     });
     expect(report.checks.map((check) => check.id)).toEqual([

@@ -151,6 +151,77 @@ describe("planReviewContinuation", () => {
     });
   });
 
+  test("keeps retry-prompt compaction disabled by default while preserving fail-closed diagnostics", async () => {
+    // Two things pinned here:
+    // 1. Compaction stays off even when checkpoint, budget and cache signals are all
+    //    complete -- i.e. exactly the state that raising the instruction budget in this
+    //    PR creates. Without the gate, that budget change alone would turn a
+    //    never-executed branch live on the retry-after-timeout path.
+    // 2. The gate sits AFTER the fail-closed checks, so a real fault still reports its
+    //    own reason instead of being masked by a blanket "compaction-disabled".
+    const mod = await loadLifecycleModule();
+    expect(mod).not.toBeNull();
+
+    const healthyBudget = [{
+      sectionName: "review-instructions",
+      sectionPosition: 0,
+      budgetChars: 4000,
+      budgetTokens: 1000,
+      includedChars: 500,
+      includedTokens: 125,
+      trimmedChars: 0,
+      trimmedTokens: 0,
+      status: "included",
+      reason: "within-budget",
+    }];
+    const healthyCache = [
+      { caseId: "cache-1", status: "hit", safetySignalNames: ["cache.fresh"] } as never,
+    ];
+    const plan = (overrides: Record<string, unknown>) => mod!.planReviewContinuation({
+      reviewOutputKey: "review-123",
+      firstPass: makeFirstPass(),
+      checkpoint: makeCheckpoint(),
+      riskScores: makeRiskScores([["src/a.ts", 10], ["src/c.ts", 90]]),
+      timeoutSeconds: 120,
+      hasPublishedInlineFindings: false,
+      isChronicTimeout: false,
+      estimateContinuationTimeout: () => ({
+        riskLevel: "low", dynamicTimeoutSeconds: 120, reasoning: "test", shouldReduceScope: false,
+      }),
+      ...overrides,
+    });
+
+    const disabled = plan({
+      continuationCompaction: {
+        // deliberately NOT setting compactionEnabled
+        attemptId: "attempt-2",
+        priorAttemptId: "attempt-1",
+        attemptOrdinal: 2,
+        promptBudgetOutcomes: healthyBudget,
+        cacheTelemetryObservations: healthyCache,
+      },
+    });
+    const disabledObservation = (disabled as { continuationCompaction?: Record<string, unknown> }).continuationCompaction;
+    expect(disabledObservation?.status).toBe("fallback");
+    expect(disabledObservation?.reason).toBe("compaction-disabled");
+    expect(disabledObservation?.fallbackState).toBe("fuller-context");
+    expect(disabledObservation?.reusedCheckpointCount).toBe(0);
+
+    // A real fault must still surface its own diagnostic, not "compaction-disabled".
+    const trimmedBudget = plan({
+      checkpoint: null,
+      continuationCompaction: {
+        attemptId: "attempt-2",
+        priorAttemptId: "attempt-1",
+        attemptOrdinal: 2,
+        promptBudgetOutcomes: healthyBudget,
+        cacheTelemetryObservations: healthyCache,
+      },
+    });
+    const faultObservation = (trimmedBudget as { continuationCompaction?: Record<string, unknown> }).continuationCompaction;
+    expect(faultObservation?.reason).toBe("missing-checkpoint");
+  });
+
   test("adds compact retry evidence when checkpoint, prompt budget, and cache safety signals are complete", async () => {
     const mod = await loadLifecycleModule();
     expect(mod).not.toBeNull();
@@ -169,6 +240,7 @@ describe("planReviewContinuation", () => {
       hasPublishedInlineFindings: false,
       isChronicTimeout: false,
       continuationCompaction: {
+        compactionEnabled: true,
         attemptId: "attempt-2",
         priorAttemptId: "attempt-1",
         attemptOrdinal: 2,
@@ -437,6 +509,7 @@ describe("planReviewContinuation", () => {
       hasPublishedInlineFindings: false,
       isChronicTimeout: false,
       continuationCompaction: {
+        compactionEnabled: true,
         attemptId: "attempt-2",
         promptBudgetOutcomes: [
           {
@@ -502,6 +575,7 @@ describe("planReviewContinuation", () => {
       hasPublishedInlineFindings: false,
       isChronicTimeout: false,
       continuationCompaction: {
+        compactionEnabled: true,
         attemptId: "attempt-2",
         promptBudgetOutcomes: [
           {
