@@ -1,6 +1,7 @@
 timeoutSeconds: 1800
 
 review:
+  enabled: false
   profile: strict
   minConfidence: 70
   formatterSuggestions:
@@ -23,9 +24,13 @@ review:
         Keep review lightweight for docs-only changes unless instructions are clearly unsafe or incorrect.
 
 write:
-  enabled: true
+  enabled: false
   allowPaths:
     - "src/**"
     - "tests/**"
     - "docs/**"
     - "README.md"
+
+mention:
+  enabled: false
+  acceptClaudeAlias: false
