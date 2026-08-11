@@ -82,6 +82,16 @@ describe("review-routing", () => {
     })).toBe(HIGH_RISK_REVIEW_MAX_TURNS);
   });
 
+  test("raises substantial low-risk full reviews to the high turn budget", () => {
+    expect(resolveReviewMaxTurnsOverride({
+      taskType: TASK_TYPES.REVIEW_FULL,
+      timeoutRiskLevel: "low",
+      baseMaxTurns: 40,
+      changedFileCount: 15,
+      linesChanged: 912,
+    })).toBe(HIGH_RISK_REVIEW_MAX_TURNS);
+  });
+
   test("raises low-risk full-review turn budget for GUI control-flow semantic fan-out", () => {
     expect(resolveReviewMaxTurnsOverride({
       taskType: TASK_TYPES.REVIEW_FULL,

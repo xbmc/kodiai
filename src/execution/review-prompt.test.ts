@@ -4,6 +4,7 @@ import type { ReviewCommentMatch } from "../knowledge/review-comment-retrieval.t
 import {
   SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
   buildAuthorExperienceSection,
+  buildLargePRTriageSection,
   buildConfidenceInstructions,
   buildDeltaReviewContext,
   buildDeltaVerdictLogicSection,
@@ -838,6 +839,12 @@ test("default config includes severity classification guidelines", () => {
   expect(prompt).toContain("MAJOR");
   expect(prompt).toContain("MEDIUM");
   expect(prompt).toContain("MINOR");
+});
+
+test("review instructions prioritize supplied diff context before broad exploration", () => {
+  const prompt = buildReviewPrompt(baseContext());
+
+  expect(prompt).toContain("Treat the supplied diff and changed-file list as the starting scope");
 });
 
 test("default review instructions fit the budget and keep the silent-approval contract", () => {
@@ -3685,4 +3692,31 @@ test("retains the abbreviated-review rule only with a file list at schema-max ti
   expect(prompt).toContain(abbreviatedRule);
   expect(prompt).toContain("### Abbreviated Review");
   expect(prompt).toContain(`- ${path("abbreviated", 0)}`);
+});
+
+test("large-PR triage scopes a truncated tier to its retained file list", () => {
+  const path = (name: string) => `src/${name.repeat(60)}.ts`;
+  const triage = buildLargePRTriageSection({
+    fullReviewFiles: [path("a"), path("b"), path("c")],
+    abbreviatedFiles: [],
+    mentionOnlyCount: 0,
+    totalFiles: 3,
+  }, 310);
+
+  expect(triage).toContain("### Full Review (only files listed below)");
+  expect(triage).not.toContain("### Full Review (3 files)");
+  expect(triage).toContain(`- ${path("a")}`);
+  expect(triage).not.toContain(`- ${path("c")}`);
+});
+
+test("large-PR triage reserves the inter-tier separator for abbreviated review", () => {
+  const triage = buildLargePRTriageSection({
+    fullReviewFiles: ["src/full.ts"],
+    abbreviatedFiles: ["src/abbrev.ts"],
+    mentionOnlyCount: 0,
+    totalFiles: 2,
+  }, 468);
+
+  expect(triage).toContain("### Abbreviated Review");
+  expect(triage).toContain("- src/abbrev.ts");
 });

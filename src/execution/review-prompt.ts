@@ -741,7 +741,7 @@ export function buildLargePRTriageSection(params: {
   const abbreviatedRule = "For files under Abbreviated Review below, post inline comments only for CRITICAL and MAJOR issues; record MEDIUM/MINOR findings you notice via the candidate finding tool instead.";
   const abbreviatedMinimum = abbreviatedFiles.length > 0
     ? [
-        `### Abbreviated Review (${abbreviatedFiles.length} files)`,
+        "### Abbreviated Review (only files listed below)",
         "",
         abbreviatedRule,
         "",
@@ -749,10 +749,15 @@ export function buildLargePRTriageSection(params: {
         "",
       ]
     : [];
-  const maxBeforeAbbreviated = maxChars - abbreviatedMinimum.join("\n").trimEnd().length;
+  // A retained full tier ends with a blank line, producing a two-character separator
+  // before abbreviated review. Reserve it with the atomic abbreviated unit so a
+  // boundary budget cannot admit full review and then drop its abbreviated contract.
+  const maxBeforeAbbreviated = maxChars
+    - abbreviatedMinimum.join("\n").trimEnd().length
+    - (fullReviewFiles.length > 0 && abbreviatedMinimum.length > 0 ? 2 : 0);
 
   const fullPrefix = [
-      `### Full Review (${fullReviewFiles.length} files)`,
+      "### Full Review (only files listed below)",
       "",
       "Review these files thoroughly for all issue categories:",
   ];
@@ -2510,6 +2515,8 @@ export function buildReviewPromptDetails(context: {
           "Git history is not available in this remote workspace; use the changed-file list, embedded diff context, and Read/Grep/Glob instead of git commands.",
         ]),
     "Read the diff carefully before posting any comments.",
+    "Treat the supplied diff and changed-file list as the starting scope; investigate callers or dependencies only when the visible change creates a concrete question.",
+    "Do not spend tool calls on broad repository scans or re-discovering context already supplied in this prompt.",
     "",
     "## First-pass changed-file triage",
     "",

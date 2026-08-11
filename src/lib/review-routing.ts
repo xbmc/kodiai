@@ -5,6 +5,8 @@ export const SMALL_DIFF_MAX_LINES = 20;
 export const MEDIUM_RISK_REVIEW_MAX_TURNS = 50;
 export const HIGH_RISK_REVIEW_MAX_TURNS = 75;
 export const SEMANTIC_FANOUT_REVIEW_MAX_TURNS = MEDIUM_RISK_REVIEW_MAX_TURNS;
+export const SUBSTANTIAL_REVIEW_FILE_COUNT = 10;
+export const SUBSTANTIAL_REVIEW_LINE_COUNT = 750;
 
 export type ReviewTimeoutRiskLevel = "low" | "medium" | "high";
 
@@ -96,6 +98,8 @@ export function resolveReviewMaxTurnsOverride(params: {
   timeoutRiskLevel: ReviewTimeoutRiskLevel;
   baseMaxTurns: number;
   changedFiles?: readonly string[];
+  changedFileCount?: number;
+  linesChanged?: number;
 }): number | undefined {
   if (params.routingMaxTurnsOverride !== undefined) {
     return params.routingMaxTurnsOverride;
@@ -107,7 +111,11 @@ export function resolveReviewMaxTurnsOverride(params: {
     return undefined;
   }
 
-  const scaledMaxTurns = params.timeoutRiskLevel === "high"
+  const substantialReview = params.taskType === TASK_TYPES.REVIEW_FULL
+    && ((params.changedFileCount ?? 0) >= SUBSTANTIAL_REVIEW_FILE_COUNT
+      || (params.linesChanged ?? 0) >= SUBSTANTIAL_REVIEW_LINE_COUNT);
+
+  const scaledMaxTurns = params.timeoutRiskLevel === "high" || substantialReview
     ? HIGH_RISK_REVIEW_MAX_TURNS
     : params.timeoutRiskLevel === "medium" || hasSemanticReviewFanout(params.changedFiles)
       ? SEMANTIC_FANOUT_REVIEW_MAX_TURNS
