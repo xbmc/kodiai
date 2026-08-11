@@ -54,7 +54,10 @@ export function truncateToBudgetAtLineBoundary(text: string, budgetChars: number
       if (!match) continue;
       const ticks = match[1]!;
       if (open === null) open = ticks;
-      else if (ticks.length >= open.length) open = null;
+      // An info string (for example ```yaml) opens a fence; only a bare delimiter
+      // can close one. Otherwise an opening fence inside a retained code example can
+      // falsely balance the outer block and let an unterminated fence escape.
+      else if (ticks.length >= open.length && /^\s*`{3,}\s*$/.test(line)) open = null;
     }
     return open !== null;
   };

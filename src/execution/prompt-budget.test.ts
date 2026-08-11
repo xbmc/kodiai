@@ -215,6 +215,13 @@ describe("truncateToBudgetAtLineBoundary", () => {
     expect(out).toBe("");
   });
 
+  test("does not treat a fence info string as a closing delimiter", () => {
+    // An opening ```yaml line is not a closer. Treating every backtick-prefixed line
+    // as one made an unterminated YAML example look balanced after truncation.
+    const out = truncateToBudgetAtLineBoundary("intro line here\n\n```\nkey: value\n```yaml\nmore: content", 43);
+    expect(out).toBe("intro line here");
+  });
+
   test("returns empty for a zero or negative budget", () => {
     expect(truncateToBudgetAtLineBoundary("## Alpha\n\nbody", 0)).toBe("");
     expect(truncateToBudgetAtLineBoundary("## Alpha\n\nbody", -5)).toBe("");

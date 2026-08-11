@@ -33,6 +33,10 @@ import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
+import {
+  MAX_LARGE_PR_ABBREVIATED_FILES,
+  MAX_LARGE_PR_FULL_REVIEW_FILES,
+} from "./config-schema.ts";
 
 describe("small-diff review prompt scope", () => {
   test("adds small-diff review guidance when requested", () => {
@@ -3664,4 +3668,21 @@ test("fully configured instruction set fits within its budget so high-retention 
   expect(result.text).toContain('A "blocker" is any finding with severity CRITICAL or MAJOR under ### Impact');
   expect(result.text).toContain("Finding Language Guidelines");
   expect(result.text).toContain("Path-Specific Review Instructions");
+});
+
+test("retains the abbreviated-review rule only with a file list at schema-max tier sizes", () => {
+  const path = (tier: string, index: number) => `src/${tier}/${String(index).padStart(3, "0")}-${"x".repeat(480)}.ts`;
+  const prompt = buildReviewPrompt(baseContext({
+    largePRContext: {
+      fullReviewFiles: Array.from({ length: MAX_LARGE_PR_FULL_REVIEW_FILES }, (_, index) => path("full", index)),
+      abbreviatedFiles: Array.from({ length: MAX_LARGE_PR_ABBREVIATED_FILES }, (_, index) => path("abbreviated", index)),
+      mentionOnlyCount: 0,
+      totalFiles: 400,
+    },
+  }));
+
+  const abbreviatedRule = "For files under Abbreviated Review below, post inline comments only for CRITICAL and MAJOR issues";
+  expect(prompt).toContain(abbreviatedRule);
+  expect(prompt).toContain("### Abbreviated Review");
+  expect(prompt).toContain(`- ${path("abbreviated", 0)}`);
 });

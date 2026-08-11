@@ -24,7 +24,11 @@ import {
 } from "../contributor/experience-contract.ts";
 import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 import { buildPromptBuildResult, type PromptBuildResult } from "./prompt-section-metrics.ts";
-import { evaluatePromptBudget, type PromptBudgetOutcome } from "./prompt-budget.ts";
+import {
+  evaluatePromptBudget,
+  type PromptBudgetOutcome,
+  type PromptSectionBudgetPolicy,
+} from "./prompt-budget.ts";
 import {
   renderReviewInstructionSections,
   type ReviewInstructionSection,
@@ -712,7 +716,7 @@ export function buildLargePRTriageSection(params: {
   abbreviatedFiles: string[];
   mentionOnlyCount: number;
   totalFiles: number;
-}): string {
+}, maxChars = Number.POSITIVE_INFINITY): string {
   const { fullReviewFiles, abbreviatedFiles, mentionOnlyCount, totalFiles } = params;
 
   const lines: string[] = [
@@ -722,21 +726,10 @@ export function buildLargePRTriageSection(params: {
     "",
   ];
 
-  // Tier CONTRACTS first, then the file lists. This block is emitted last within
-  // review-size-context and its lists are uncapped (config allows 200 per tier), so
-  // truncation eats it from the end. With the exclusion notice and the abbreviated-tier
-  // rule sitting behind the lists, they were the first casualties -- the model lost the
-  // "CRITICAL and MAJOR only" restriction and was never told files had been excluded,
-  // while the surviving Bounded Review Disclosure still ordered it to say the review was
-  // bounded. Losing the tail of a file list is an acceptable degradation; losing the rule
-  // that governs how those files are reviewed is not.
-  if (abbreviatedFiles.length > 0) {
-    lines.push(
-      "For files under Abbreviated Review below, post inline comments only for CRITICAL and MAJOR issues; record MEDIUM/MINOR findings you notice via the candidate finding tool instead.",
-      "",
-    );
-  }
-
+  // This block is emitted last within review-size-context and its lists may reach the
+  // schema cap of 200 files per tier. It therefore owns its budget below instead of
+  // relying on the outer line truncator, which cannot know that the abbreviated rule
+  // and its file list must survive or disappear together.
   if (mentionOnlyCount > 0) {
     lines.push(
       `${mentionOnlyCount} additional file(s) were not included for review (lower risk score).`,
@@ -744,24 +737,47 @@ export function buildLargePRTriageSection(params: {
     );
   }
 
-  if (fullReviewFiles.length > 0) {
-    lines.push(
+  const fits = (candidate: string[]) => candidate.join("\n").trimEnd().length <= maxChars;
+  const abbreviatedRule = "For files under Abbreviated Review below, post inline comments only for CRITICAL and MAJOR issues; record MEDIUM/MINOR findings you notice via the candidate finding tool instead.";
+  const abbreviatedMinimum = abbreviatedFiles.length > 0
+    ? [
+        `### Abbreviated Review (${abbreviatedFiles.length} files)`,
+        "",
+        abbreviatedRule,
+        "",
+        `- ${abbreviatedFiles[0]}`,
+        "",
+      ]
+    : [];
+  const maxBeforeAbbreviated = maxChars - abbreviatedMinimum.join("\n").trimEnd().length;
+
+  const fullPrefix = [
       `### Full Review (${fullReviewFiles.length} files)`,
       "",
       "Review these files thoroughly for all issue categories:",
-    );
+  ];
+  if (
+    fullReviewFiles.length > 0
+    && fits([...lines, ...fullPrefix, `- ${fullReviewFiles[0]}`])
+    && [...lines, ...fullPrefix, `- ${fullReviewFiles[0]}`].join("\n").trimEnd().length <= maxBeforeAbbreviated
+  ) {
+    lines.push(...fullPrefix);
     for (const file of fullReviewFiles) {
+      if (lines.join("\n").trimEnd().length + `\n- ${file}`.length > maxBeforeAbbreviated) break;
       lines.push(`- ${file}`);
     }
     lines.push("");
   }
 
-  if (abbreviatedFiles.length > 0) {
-    lines.push(`### Abbreviated Review (${abbreviatedFiles.length} files)`, "");
-    for (const file of abbreviatedFiles) {
+  // The abbreviated rule is meaningful only with the list it governs. Reserve room for
+  // its heading, rule, and one file before filling the full-review list; then either
+  // emit that unit intact or omit it entirely.
+  if (abbreviatedMinimum.length > 0 && fits([...lines, ...abbreviatedMinimum])) {
+    lines.push(...abbreviatedMinimum);
+    for (const file of abbreviatedFiles.slice(1)) {
+      if (!fits([...lines, `- ${file}`])) break;
       lines.push(`- ${file}`);
     }
-    lines.push("");
   }
 
   return lines.join("\n").trimEnd();
@@ -2193,7 +2209,7 @@ export function buildReviewPromptDetails(context: {
     text: string;
     budgetChars: number;
     /** Defaults to "chars"; see PromptSectionBudgetPolicy.truncation. */
-    truncation?: "chars" | "lines";
+    truncation?: PromptSectionBudgetPolicy["truncation"];
     budgetOutcome?: PromptBudgetOutcome;
   }> = [];
   const scaleNotes: string[] = [];
@@ -2242,7 +2258,7 @@ export function buildReviewPromptDetails(context: {
     sectionName: string,
     lines: string[],
     budgetChars?: number,
-    options?: { truncation?: "chars" | "lines"; budgetOutcome?: PromptBudgetOutcome },
+    options?: { truncation?: PromptSectionBudgetPolicy["truncation"]; budgetOutcome?: PromptBudgetOutcome },
   ) => {
     const text = lines.join("\n").trim();
     if (!text) return;
@@ -2400,12 +2416,17 @@ export function buildReviewPromptDetails(context: {
   // published as though it covered the whole PR. Degrading to a shorter triage list is
   // the right loss.
   const sizeContextLines: string[] = [];
+  const appendSizeContextSection = (section: string) => {
+    if (!section) return;
+    if (sizeContextLines.length > 0) sizeContextLines.push("");
+    sizeContextLines.push(section);
+  };
   if (
     mode !== "enhanced" &&
     context.reviewBoundedness?.disclosureRequired &&
     context.reviewBoundedness.disclosureSentence
   ) {
-    sizeContextLines.push(
+    appendSizeContextSection([
       "## Bounded Review Disclosure",
       "",
       "Because this review was bounded, include this exact sentence once in `## What Changed`:",
@@ -2414,15 +2435,13 @@ export function buildReviewPromptDetails(context: {
       "Do not repeat it elsewhere in the summary.",
       "Do not claim the review found all relevant issues when bounded files or severity filters excluded scope.",
       "If the review is bounded, frame the verdict as the result for the inspected scope.",
-    );
+    ].join("\n"));
   }
   if (context.retryPromptCompaction) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(buildRetryPromptCompactionSection(context.retryPromptCompaction));
+    appendSizeContextSection(buildRetryPromptCompactionSection(context.retryPromptCompaction));
   }
   if (context.deltaMode?.enabled) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(
+    appendSizeContextSection(
       buildDeltaModeAnalysisSection({
         totalFiles: context.deltaMode.totalFiles,
         totalLinesChanged: context.deltaMode.totalLinesChanged,
@@ -2431,12 +2450,15 @@ export function buildReviewPromptDetails(context: {
     );
   }
   if (context.incrementalContext) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(buildIncrementalReviewSection(context.incrementalContext));
+    appendSizeContextSection(buildIncrementalReviewSection(context.incrementalContext));
   }
   if (context.largePRContext) {
-    if (sizeContextLines.length > 0) sizeContextLines.push("");
-    sizeContextLines.push(buildLargePRTriageSection(context.largePRContext));
+    const prefixLength = sizeContextLines.join("\n").trim().length;
+    const separatorLength = prefixLength > 0 ? 2 : 0;
+    appendSizeContextSection(buildLargePRTriageSection(
+      context.largePRContext,
+      REVIEW_SECTION_BUDGETS.sizeContext - prefixLength - separatorLength,
+    ));
   }
   pushSection("review-size-context", sizeContextLines, REVIEW_SECTION_BUDGETS.sizeContext, {
     truncation: "lines",
